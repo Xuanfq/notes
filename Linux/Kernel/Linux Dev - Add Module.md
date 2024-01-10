@@ -41,7 +41,8 @@
 
 **hello.c**
 ```c
-#include <linux/init.h>
+// #include <linux/init.h>
+#include <linux/module.h>
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Aiden Qiu");
@@ -71,12 +72,20 @@ module_exit(hello_end);
 obj-m=hello.o
 
 all:
-  make -C /lib/modules/${shell uname -r}/build/ M=${PWD} modules
+  make -C /usr/src/linux-headers-${shell uname -r}/ M=${PWD} modules
+  # make -C /lib/modules/${shell uname -r}/build/ M=${PWD} modules
 clean:
-  make -C /lib/modules/${shell uname -r}/build/ M=${PWD} clean
+  make -C /usr/src/linux-headers-${shell uname -r}/ M=${PWD} modules
+  # make -C /lib/modules/${shell uname -r}/build/ M=${PWD} clean
 ```
 
-
+**modprode**
+- sudo cp ./hello.ko /lib/modules/$(uname -r)/
+- sudo depmod -a
+- sudo modprobe hello
+- lsmod | grep hello
+- sudo modprobe -r hello
+- lsmod | grep hello
 
 
 
