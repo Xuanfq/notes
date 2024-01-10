@@ -3,6 +3,7 @@
 
 1. Make Config, such as `make menuconfig`
 2. Make Compile to get the `bzImage` file, such as `make -j 4`
+3. Make Install to install into os, such as `make install`
 
 
 ## Make Config
@@ -65,9 +66,9 @@ make build by command: `make -j 4`, `4` means thead number used to make.
 
 
 
+## Make Install
 
-
-
+To install into os, use command: `make install`.
 
 
 

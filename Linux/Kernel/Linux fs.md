@@ -29,9 +29,9 @@ tmpfs, rootfs, initramfs are all a kind of ramfs, they are either some special a
 
 ### 1.2. ramfs和ramdisk
 
-- 旧的"内存磁盘"机制在一个内存空间中创建一个合成块设备并使用它作为一个文件系统的后备存储。这个块设备是固定大小的以至于挂载在它上面的文件系统也是固定大小的。除创建和销毁目录外，使用一个内存磁盘并不需要从假的块设备到页缓存拷贝内存数据(和拷贝更改回退)。另外，它需要一个文件系统驱动 (如，ext2)来格式和解释这些数据。
+- 旧的ramdisk("内存磁盘")机制在一个内存空间中创建一个合成块设备并使用它作为一个文件系统的后备存储。这个块设备是固定大小的以至于挂载在它上面的文件系统也是固定大小的。除创建和销毁目录外，使用一个ramdisk(内存磁盘)并不需要从假的块设备到页缓存拷贝内存数据(和拷贝更改回退)。另外，它需要一个文件系统驱动 (如，ext2)来格式和解释这些数据。
 
-- 与ramfs相比较，这些废弃的内存(和内存总线带宽)为CPU造成了不必要的工作并污染了CPU缓存。(这里有个技巧通过使用页表单来避免这个拷贝，但是它们难以理解并且代价反而变的与拷贝一样昂贵。)更为重要的是，由于所有的文件都通过页和目录缓存进行访问，全部的工作ramfs都要执行。内存磁盘是简单且多余的，ramfs在内部更为简单。
+- 与ramfs相比较，这些废弃的内存(和内存总线带宽)为CPU造成了不必要的工作并污染了CPU缓存。(这里有个技巧通过使用页表单来避免这个拷贝，但是它们难以理解并且代价反而变的与拷贝一样昂贵。)更为重要的是，由于所有的文件都通过页和目录缓存进行访问，全部的工作ramfs都要执行。ramdisk(内存磁盘)是简单且多余的，ramfs在内部更为简单。
 
 - 另一个理由是：ramdisks是半过时的，它引进的回环设备提供一个更灵活和方便的方式从文件而不是从大块的内存中来创建一个合成块设备。
 
@@ -44,7 +44,7 @@ tmpfs, rootfs, initramfs are all a kind of ramfs, they are either some special a
 - tmpfs是从ramfs派生出的,添加了大小的限制以及回写数据到交换空间能力的特殊ramfs。普通用户可以允许回写到tmpfs挂载中。
 
 - 使用tmpfs
-    - $ mount tmpfs /dev/shm -t tmpfs -o size=32m
+    - `$ mount tmpfs /dev/shm -t tmpfs -o size=32m`
 
 ### 1.4. rootfs
 
@@ -69,7 +69,7 @@ tmpfs, rootfs, initramfs are all a kind of ramfs, they are either some special a
 
 - 程序通过旧的initrd(叫做/initrd，而不是/init)运行一些设定并接着返回内核，而init程序从initramfs并不预计返回内核。(如果/init需要手工关闭并控制它，可以与一个新的根设备一起覆盖挂载 / 并执行另一个init程序。参见switch_root utility的后部分)
 
-- 当切换到另一个根设备，initrd会pivot_root并且接着卸载内存磁盘。但是initramfs是rootfs：你可以不用 pivot_root rootfs和卸载它。而是删除除rootfs之外的所有东西来释放空间(find -xdev / -exec rm '{}' ';'),与新的根(cd /newmount; mount --move . /; chroot .)一起覆盖挂载rootfs,附加stdin/stdout/stderr到新的/dev/console并执行新的init。
+  - 当切换到另一个根设备，initrd会pivot_root并且接着卸载内存磁盘。但是initramfs是rootfs：你可以不用 pivot_root rootfs和卸载它。而是删除除rootfs之外的所有东西来释放空间(`find -xdev / -exec rm '{}' ';'`),与新的根(cd /newmount; mount --move . /; chroot .)一起覆盖挂载rootfs,附加stdin/stdout/stderr到新的/dev/console并执行新的init。
 
 - 由于这是一个非常谨慎的进程(以及在你运行它们之前涉及到删除命令)，klibc包为你引进了一个帮助程序(utils/run_init.c)来做这些。大部分其他软件包(如，busybox)已命名在此命令"switch_root"中。
 
@@ -78,7 +78,7 @@ tmpfs, rootfs, initramfs are all a kind of ramfs, they are either some special a
 - v2.6 内核构建进程总是创建一个gzip压缩过的cpio格式的initramfs存档并连接它到生成的内核二进制文件。默认的，这些存储是空的(在x86上占用134 bytes)
 
 - 配置选项CONFIG_INITRAMFS_SOURCE(存在于menuconfig的General Setup选项和usr/Kconfig中)可为initramfs存档使用特定的一个源文件，它自动合并到生成的二进制文件中。这个选项可以指定一个现有的gzip压缩的cpio存档，这个存档可以包含一个目录文件到或者是一个文本文件详述，如下面的示例:
-    
+    ```sh
     dir /dev 755 0 0
     nod /dev/console 644 0 0 c 5 1
     nod /dev/loop0 644 0 0 b 7 0
@@ -89,7 +89,7 @@ tmpfs, rootfs, initramfs are all a kind of ramfs, they are either some special a
     dir /sys 755 0 0
     dir /mnt 755 0 0
     file /init initramfs/init.sh 755 0 0
-    
+    ```
 
 - 在文件格式之上运行"usr/gen_init_cpio"(在构建内核之后)来获得一个用法文档。
 
@@ -102,17 +102,18 @@ scripts/gen_initramfs_list.sh)创建一个配置文件，并封装该目录来�
 - 你唯一可能需要为创建或提取你自己的cpio文件以提供给内核构建(而不是一个配置文件或目录)而安装外部的cpio工具。
 
 - 以下的命令行可提取一个cpio映像(不管是通过以上脚本或是通过内核构建成的)回退到它的组成文件：
-    
+    ```sh
         cpio -i -d -H newc -F initramfs_data.cpio --no-absolute-filenames
-    
+    ```
 
 - 以下的shell脚本可创建一个预制的cpio存档，你可以使用在上述的配置文件中：
     
+    ```sh
     #!/bin/sh
     
     # Copyright 2006 Rob Landley <rob@landley.net> and TimeSys Corporation.
     # Licensed under GPL version 2
-    
+
     if [ $# -ne 2 ]
     then
         echo "usage: mkinitramfs directory imagename.cpio.gz"
@@ -127,7 +128,7 @@ scripts/gen_initramfs_list.sh)创建一个配置文件，并封装该目录来�
         echo "First argument must be a directory"
         exit 1
     fi
-    
+    ```
 
 - 注意：如果你是按照cpio的man页做的，那么它包含的一些不良建议将会破坏你的initramfs存档。它说"生成文件名列表的一个典型方式是使用 find命令，你应该提供-depth选项来搜索"。而在创建initramfs.cpio.gz映像时不要这么做，因为它并不可行。Linux内核的 cpio提取器不会在一个不存在的目录中创建文件，因此目录项必须在文件被提取到该目录之前被提取。以上脚本保证了它们的顺序正确性。
 
@@ -153,7 +154,7 @@ scripts/gen_initramfs_list.sh)创建一个配置文件，并封装该目录来�
 - 从理论上说你可以使用glibc，但是对于小型嵌入式系统象这样使用并适合。(一个"hello world"程序静态连接glibc将近400k。用uClibc的话它是7k。还要注意，glibc dlopens libnss作为名称查找，即使是使用静态连接。)
 
 - 一个好的开头是获得initramfs来运行一个静态连接的"hello world"程序作为init，并在一个类似qemu(www.qemu.org)的仿真器或用户模式的Linux中测试它，象这样：
-    
+    ```sh
     cat > hello.c << EOF
     #include <stdio.h>
     #include <unistd.h>
@@ -168,7 +169,7 @@ scripts/gen_initramfs_list.sh)创建一个配置文件，并封装该目录来�
     echo init | cpio -o -H newc | gzip > test.cpio.gz
     # Testing external initramfs using the initrd loading mechanism.
     qemu -kernel /boot/vmlinuz -initrd test.cpio.gz /dev/zero
-    
+    ```
 - 当调试一个普通根文件系统时，能够用"init=/bin/sh"来启动将是不错的。与initramfs等价的是"rdinit=/bin/sh"，而且它很有用。
 
 #### 1.5.6. 为什么是cpio而不是tar?
