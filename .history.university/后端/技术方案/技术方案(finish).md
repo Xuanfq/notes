@@ -1,0 +1,144 @@
+
+
+## 生成二维码
+- ZXing
+
+## 用户认证
+- oAuth2.0协议
+
+## API接口文档
+- Swagger
+
+## 代码生成器
+- Mybatis-Plus
+	`用于生成entity、mapper、controller、dto等`
+
+- MapStruct
+	`用于数据传输对象的转换。MapStruct 是一个注释处理器，用于生成类型安全、高性能且无依赖关系的 Bean 映射代码。`
+
+## 服务注册发现
+- Eureka
+- Nacos
+- Consul
+
+## 服务链路监控
+- Zipkin
+- Sleuth
+
+## 统一网关路由
+- Spring Cloud Gateway
+- Spring Cloud Zuul
+
+## 分布式缓存
+- Redis
+
+## 分布式事务
+- Seata
+
+## 分布式通讯
+- 远程调用
+- 消息队列
+- 发布订阅
+
+## 微服务保护
+流控、降级、保护
+- Sentinel
+- Hystix
+
+## 搜索引擎
+- Elasticsearch(分布式搜索引擎)
+
+## 远程调用
+- RPC调用
+	- Dubbo
+	- 其他
+		- gRPC
+		- Netty
+		- BRPC
+		- Thrift
+		- JSON-RPC
+- HTTP接口
+	- web接口
+	- RestTemplate+Okhttp
+- Feign
+	- Open
+- Webservice
+
+|      | Feign|Dubbo |
+| ---- | ---- | ---- |
+|   协议   | 基于HTTP协议，短连接 | 支持多种传输协议（Dubbo、Rmi、HTTP),默认使用Dubbo协议；基于Netty，TCP传输，单一，异步，长连接 |
+|   负载均衡   | 基于Ribbon实现客户端负载均衡，负载策略：随机、轮询、空闲、响应时间加权 | 支持四种算法(随机、轮询、活跃度、Hash一致性)，而且算法里引入权重概念 |
+|   容错策略   | 利用熔断机制来实现容错 | 支持多种容错策略：failover、failfast、forking等,也引入了retry次数、timeout等配置参数。 |
+|   适用场景   | 并发不高，性能要求不高 | 数据小，并发高 |
+
+## 消息队列
+- RabbitMQ
+- RocketMQ
+
+## 服务部署
+- Docker
+
+## 配置中心
+- Nacos
+- Apollo
+- Spring Cloud Config
+
+| 对比项目     | Spring Cloud Config    | Apollo                   | Nacos                    |
+| ------------ | ---------------------- | ------------------------ | ------------------------ |
+| 配置实时推送 | 支持(Spring Cloud Bus) | 支持(HTTP长轮询1s内)     | 支持(HTTP长轮询1s内)     |
+| 版本管理     | 支持(Git)              | 支持                     | 支持                     |
+| 配置回滚     | 支持(Git)              | 支持                     | 支持                     |
+| 灰度发布     | 支持                   | 支持                     | 不支持                   |
+| 权限管理     | 支持(依赖Git)          | 支持                     | 不支持                   |
+| 多集群       | 支持                   | 支持                     | 支持                     |
+| 多环境       | 支持                   | 支持                     | 支持                     |
+| 监听查询     | 支持                   | 支持                     | 支持                     |
+| 多语言       | 只支持Java             | 主流语言，提供了Open API | 主流语言，提供了Open API |
+| 配置格式校验 | 不支持                 | 支持                     | 支持                     |
+| 单机读(QPS)  | 7(限流所致)            | 9000                     | 15000                    |
+| 单击写(QPS)  | 5(限流所致)            | 1100                     | 1800                     |
+| 3节点读(QPS) | 21(限流所致)           | 27000                    | 45000                    |
+| 3节点写(QPS) | 5(限流所致)            | 3300                     | 5600                     |
+
+## 注册中心
+- Nacos(SpringCloudAlibaba中的组件)
+- Zookeeper
+- Eureka(spring Cloud中的组件)
+
+![20220502192012](https://img2022.cnblogs.com/blog/2950406/202208/2950406-20220814134031732-81630967.png)
+
+## 微服务
+- Spring Cloud
+- Spring Cloud Alibaba
+
+## 图片存储
+- 七牛云
+
+## 短信发送
+- 阿里云
+- 腾讯云（门槛低一点）
+
+## 权限控制
+- Spring Security
+
+## 页面静态化
+- Freemarker
+- Jsp
+- Thymeleaf（没用过）
+- Velocity
+
+## 图形报表
+- Apache ECharts
+
+## Excel报表
+- Apache POI
+
+## PDF报表
+- iText
+- JasperReports(基于IText的框架)+Jaspesoft Studio(软件)
+
+## 日志
+- Slf4j
+- log4j
+- log4j2
+
