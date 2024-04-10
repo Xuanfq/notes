@@ -8,12 +8,14 @@
 
 https://docs.kernel.org/userspace-api/no_new_privs.html
 
-
 - [Linux权限管理 no_new_privs](http://m.tnblog.net/hb/article/details/7191)
 
 
+### Seccomp BPF (SECure COMPuting with filters)
 
+https://docs.kernel.org/userspace-api/seccomp_filter.html
 
+- [Seccomp、BPF与容器安全](https://xz.aliyun.com/t/11480?time__1311=mqmx0DB70QiQY40vo9DynYFi%3DDkYDnjjGnoD&alichlgref=https%3A%2F%2Fwww.google.com.hk%2F#toc-4)
 
 
 
