@@ -25,6 +25,17 @@ https://docs.kernel.org/userspace-api/accelerators/ocxl.html
 - [一文了解高速互联技术CXL](https://www.sdnlab.com/26401.html)
 
 
+### eBPF
+
+https://docs.kernel.org/userspace-api/ebpf/index.html
+
+- [一文看懂eBPF、eBPF的使用（超详细）](https://zhuanlan.zhihu.com/p/480811707)
+- [深入浅出eBPF｜你要了解的七个核心问题](https://www.51cto.com/article/711018.html)
+- [EBPF 介绍](https://coolshell.cn/articles/22320.html)
+- [EBPF简介、安装和简单示例](https://kerneltravel.net/blog/2020/ebpf_ljr_no1/)
+
+
+
 
 
 
