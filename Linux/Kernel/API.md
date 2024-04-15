@@ -1,5 +1,21 @@
 
 
+# Driver API
+
+https://docs.kernel.org/driver-api/index.html
+
+## Subsystem APIs
+
+### GPIO
+
+https://docs.kernel.org/driver-api/gpio/legacy.html
+
+- [在Linux驱动中使用gpio子系统](https://www.cnblogs.com/schips/p/linux_subsystem_using_gpio_ss.html)
+- [Linux 驱动开发 / gpio子系统 / 快速入门](https://zhuanlan.zhihu.com/p/343334861)
+
+
+
+
 # Userspace API
 
 ## Security-related interfaces
@@ -33,6 +49,7 @@ https://docs.kernel.org/userspace-api/ebpf/index.html
 - [深入浅出eBPF｜你要了解的七个核心问题](https://www.51cto.com/article/711018.html)
 - [EBPF 介绍](https://coolshell.cn/articles/22320.html)
 - [EBPF简介、安装和简单示例](https://kerneltravel.net/blog/2020/ebpf_ljr_no1/)
+
 
 
 
