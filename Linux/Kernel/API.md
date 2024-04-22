@@ -4,6 +4,13 @@
 
 https://docs.kernel.org/driver-api/index.html
 
+- [Linux设备树框架介绍](https://zhuanlan.zhihu.com/p/427817544)
+- [Linux获取设备树节点信息](https://zhuanlan.zhihu.com/p/430530703)
+- [Linux设备驱动模型](https://zhuanlan.zhihu.com/p/410017057)
+- [Linux设备驱动模型实验](https://zhuanlan.zhihu.com/p/411903740)
+- [Linux设备驱动和设备匹配过程](https://blog.csdn.net/tiantianhaoxinqing__/article/details/124843344)
+
+
 ## Subsystem APIs
 
 ### GPIO
