@@ -161,29 +161,29 @@ hello: main.cpp hello.cpp factorial.cpp
 
 下面是在 makefile 的内置规则中用作程序名称的一些常用变量的表格:
 
-| 序号 | 变量和描述                                                   |
-| :--: | :----------------------------------------------------------- |
-|  1   | **AR**档案维护计划；默认为“ar”。                             |
-|  2   | **AS**编译汇编文件的程序；默认为“as”。                       |
-|  3   | **CC**编译C程序的程序；默认为“cc”。                          |
-|  4   | **CO**从 RCS 签出文件的程序；默认为“co”。                    |
-|  5   | **CXX**编译 C++ 程序的程序；默认为“g++”。                    |
-|  6   | **CPP**运行 C 预处理器的程序，并将结果输出到标准输出；默认是`$(CC) -E'。 |
-|  7   | **FC**编译或预处理 Fortran 和 Ratfor 程序的程序；默认为“f77”。 |
-|  8   | **GET**从 SCCS 中提取文件的程序；默认为“获取”。              |
-|  9   | **LEX**用于将 Lex 语法转换为源代码的程序；默认为“lex”。      |
-|  10  | **YACC**用于将 Yacc 语法转换为源代码的程序；默认为“yacc”。   |
-|  11  | **LINT**用于在源代码上运行 lint 的程序；默认为“lint”。       |
-|  12  | **M2C**用于编译 Modula-2 源代码的程序；默认为“m2c”。         |
-|  13  | **PC**用于编译 Pascal 程序的程序；默认为“电脑”。             |
-|  14  | **MAKEINFO**将 Texinfo 源文件转换为 Info 文件的程序；默认为“makeinfo”。 |
-|  15  | **TEX**从 TeX 源代码制作 TeX dvi 文件的程序；默认为“tex”。   |
-|  16  | **TEXI2DVI**从 Texinfo 源制作 TeX dvi 文件的程序；默认为“texi2dvi”。 |
-|  17  | **WEAVE**将 Web 翻译成 TeX 的程序；默认为“编织”。            |
-|  18  | **CWEAVE**将 C Web 翻译成 TeX 的程序；默认为“cweave”。       |
-|  19  | **TANGLE**将 Web 翻译成 Pascal 的程序；默认为“缠结”。        |
-|  20  | **CTANGLE**将 C Web 翻译成 C 的程序；默认为“矩形”。          |
-|  21  | **RM**删除文件的命令；默认为“rm -f”。                        |
+| 变量         | 描述                                                         |
+| :----------- | :----------------------------------------------------------- |
+| **AR**       | 档案维护计划；默认为“ar”。                                   |
+| **AS**       | 编译汇编文件的程序；默认为“as”。                             |
+| **CC**       | 编译C程序的程序；默认为“cc”。                                |
+| **CO**       | 从 RCS 签出文件的程序；默认为“co”。                          |
+| **CXX**      | 编译 C++ 程序的程序；默认为“g++”。                           |
+| **CPP**      | 运行 C 预处理器的程序，并将结果输出到标准输出；默认是`$(CC) -E'。 |
+| **FC**       | 编译或预处理 Fortran 和 Ratfor 程序的程序；默认为“f77”。     |
+| **GET**      | 从 SCCS 中提取文件的程序；默认为“获取”。                     |
+| **LEX**      | 用于将 Lex 语法转换为源代码的程序；默认为“lex”。             |
+| **YACC**     | 用于将 Yacc 语法转换为源代码的程序；默认为“yacc”。           |
+| **LINT**     | 用于在源代码上运行 lint 的程序；默认为“lint”。               |
+| **M2C**      | 用于编译 Modula-2 源代码的程序；默认为“m2c”。                |
+| **PC**       | 用于编译 Pascal 程序的程序；默认为“电脑”。                   |
+| **MAKEINFO** | 将 Texinfo 源文件转换为 Info 文件的程序；默认为“makeinfo”。  |
+| **TEX**      | 从 TeX 源代码制作 TeX dvi 文件的程序；默认为“tex”。          |
+| **TEXI2DVI** | 从 Texinfo 源制作 TeX dvi 文件的程序；默认为“texi2dvi”。     |
+| **WEAVE**    | 将 Web 翻译成 TeX 的程序；默认为“编织”。                     |
+| **CWEAVE**   | 将 C Web 翻译成 TeX 的程序；默认为“cweave”。                 |
+| **TANGLE**   | 将 Web 翻译成 Pascal 的程序；默认为“缠结”。                  |
+| **CTANGLE**  | 将 C Web 翻译成 C 的程序；默认为“矩形”。                     |
+| **RM**       | 删除文件的命令；默认为“rm -f”。                              |
 
 
 
@@ -191,22 +191,22 @@ hello: main.cpp hello.cpp factorial.cpp
 
 这是一个变量表，其值是上述程序的附加参数。除非另有说明，否则所有这些的默认值都是空字符串。
 
-| 序号 | 变量和描述                                                   |
-| :--: | :----------------------------------------------------------- |
-|  1   | **ARFLAGS**提供存档维护程序的标志；默认为“rv”。              |
-|  2   | **ASFLAGS**在 `.s` 或 `.S` 文件上显式调用时提供给汇编器的额外标志。 |
-|  3   | **CFLAGS**提供给 C 编译器的额外标志。                        |
-|  4   | **CXXFLAGS**提供给 C 编译器的额外标志。                      |
-|  5   | **COFLAGS**提供给 RCS co 程序的额外标志。                    |
-|  6   | **CPPFLAGS**提供给 C 预处理器和使用它的程序（例如 C 和 Fortran 编译器）的额外标志。 |
-|  7   | **FFLAGS**提供给 Fortran 编译器的额外标志。                  |
-|  8   | **GFLAGS**提供给 SCCS 获取程序的额外标志。                   |
-|  9   | **LDFLAGS**当编译器应该调用链接器时提供额外的标志，'ld'。    |
-|  10  | **LFLAGS**给 Lex 的额外标志。                                |
-|  11  | **YFLAGS**给 Yacc 的额外标志。                               |
-|  12  | **PFLAGS**提供给 Pascal 编译器的额外标志。                   |
-|  13  | **RFLAGS**为 Ratfor 程序提供给 Fortran 编译器的额外标志。    |
-|  14  | **LINTFLAGS**给予 lint 的额外标志。                          |
+| 变量          | 描述                                                         |
+| :------------ | :----------------------------------------------------------- |
+| **ARFLAGS**   | 提供存档维护程序的标志；默认为“rv”。                         |
+| **ASFLAGS**   | 在 `.s` 或 `.S` 文件上显式调用时提供给汇编器的额外标志。     |
+| **CFLAGS**    | 提供给 C 编译器的额外标志。                                  |
+| **CXXFLAGS**  | 提供给 C 编译器的额外标志。                                  |
+| **COFLAGS**   | 提供给 RCS co 程序的额外标志。                               |
+| **CPPFLAGS**  | 提供给 C 预处理器和使用它的程序（例如 C 和 Fortran 编译器）的额外标志。 |
+| **FFLAGS**    | 提供给 Fortran 编译器的额外标志。                            |
+| **GFLAGS**    | 提供给 SCCS 获取程序的额外标志。                             |
+| **LDFLAGS**   | 当编译器应该调用链接器时提供额外的标志，'ld'。               |
+| **LFLAGS**    | 给 Lex 的额外标志。                                          |
+| **YFLAGS**    | 给 Yacc 的额外标志。                                         |
+| **PFLAGS**    | 提供给 Pascal 编译器的额外标志。                             |
+| **RFLAGS**    | 为 Ratfor 程序提供给 Fortran 编译器的额外标志。              |
+| **LINTFLAGS** | 给予 lint 的额外标志。                                       |
 
 
 
@@ -346,13 +346,13 @@ install:
 
    `<n>` 目标依赖于 `<n>.o` ，通过运行C的编译器来运行链接程序生成（一般是 `ld` ），其生成命令是： `$(CC) $(LDFLAGS) <n>.o $(LOADLIBES) $(LDLIBS)` 。这个规则对于只有一个源文件的工程有效，同时也对多个Object文件（由不同的源文件生成）的也有效。例如如下规则:
 
-   ```
+   ```makefile
    x : y.o z.o
    ```
 
    并且 `x.c` 、 `y.c` 和 `z.c` 都存在时，隐含规则将执行如下命令:
 
-   ```
+   ```makefile
    cc -c x.c -o x.o
    cc -c y.c -o y.o
    cc -c z.c -o z.o
@@ -370,9 +370,119 @@ install:
 
 
 
+# Makefile - 指令
+
+有许多以各种形式提供的指令，系统上的程序可能不支持所有指令，需要请检查系统的**GNU make**支持些指令。
 
 
 
+## 条件指令
+
+**条件指令语法**
+
+- **ifeq**: 指令开始条件，并指定条件。它包含两个参数，用逗号分隔并用括号括起来。对两个参数执行变量替换，然后将它们进行比较。如果两个参数匹配，则遵循 ifeq 后面的 makefile 行；否则它们将被忽略。
+- **ifneq**: 指令开始条件，并指定条件。它包含两个参数，用逗号分隔并用括号括起来。对两个参数执行变量替换，然后将它们进行比较。如果两个参数不匹配，则遵循 ifneq 后面的 makefile 行；否则它们将被忽略。
+- **ifdef**: 指令开始条件，并指定条件。它包含单个参数。如果给定参数为真，则条件为真。
+- **ifndef**: 指令开始条件，并指定条件。它包含单个参数。如果给定参数为假，则条件为真。
+- **else**: 如果前一个条件失败，指令会导致遵循以下行。在上面的示例中，意味着只要不使用第一个替代项，就会使用第二个替代链接命令。在条件中有一个 else 是可选的。
+- **endif**: 指令结束条件。每个条件都必须以 endif 结尾。
+
+
+
+- 没有其他条件的简单条件的语法如下:
+
+```makefile
+conditional-directive
+   text-if-true
+endif
+```
+
+text-if-true 可以是任何文本行，如果条件为真，则将其视为 makefile 的一部分。如果条件为假，则不使用任何文本。
+
+
+
+- 复杂条件的语法如下:
+
+```makefile
+conditional-directive
+   text-if-true
+else
+   text-if-false
+endif
+```
+
+如果条件为真，则使用 text-if-true ；否则，使用 text-if-false。text-if-false 可以是任意数量的文本行。
+
+
+
+- 无论条件是简单的还是复杂的，条件指令的语法都是相同的。有四种不同的指令可以测试各种条件。它们是给定的:
+
+```makefile
+ifeq (arg1, arg2)
+ifeq 'arg1' 'arg2'
+ifeq "arg1" "arg2"
+ifeq "arg1" 'arg2'
+ifeq 'arg1' "arg2" 
+```
+
+上述条件的相反指令如下:
+
+```makefile
+ifneq (arg1, arg2)
+ifneq 'arg1' 'arg2'
+ifneq "arg1" "arg2"
+ifneq "arg1" 'arg2'
+ifneq 'arg1' "arg2" 
+```
+
+
+
+**条件指令示例**
+
+```python
+libs_for_gcc = -lgnu
+normal_libs =
+foo: $(objects)
+ifeq ($(CC),gcc)
+   $(CC) -o foo $(objects) $(libs_for_gcc)
+else
+   $(CC) -o foo $(objects) $(normal_libs)
+endif
+```
+
+
+
+
+
+## 包含指令
+
+**include directive**允许**make**暂停读取当前 makefile 并在继续之前读取一个或多个其他 makefile，完成后make继续读取指令出现的makefile。该指令是生成文件中的一行，如下所示:
+
+```makefile
+include filenames...
+```
+
+文件名可以包含 shell 文件名模式。行首允许并忽略多余的空格，但不允许使用制表符。例如，如果你有 3 个 `.mk' 文件，分别是 `a.mk'、`b.mk' 和 `c.mk'，以及 $(bar) 那么它会扩展为 bish bash，如:
+
+```makefile
+include foo *.mk $(bar)
+# is equivalent to:
+include foo a.mk b.mk c.mk bish bash
+```
+
+
+
+
+
+## 覆盖指令
+
+如果使用命令参数设置了变量，则忽略 makefile 中的普通赋值。如果你想在 makefile 中设置变量，即使它是用命令参数设置的，你可以使用覆盖指令，如下所示:
+
+```makefile
+override variable = value
+#or
+override variable := value
+```
 
 
 
