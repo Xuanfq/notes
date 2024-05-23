@@ -241,7 +241,7 @@ make_aim: file_dependency_1 file_dependency_2
 
 以下示例:
 
-```python
+```makefile
 hello: main.o factorial.o hello.o
    $(CC) main.o factorial.o hello.o -o hello
 ```
@@ -250,7 +250,7 @@ hello: main.o factorial.o hello.o
 
 同时，我们需要告诉**make**如何准备 .o 文件。因此，我们还需要如下定义这些依赖项:
 
-```python
+```makefile
 main.o: main.cpp functions.h
    $(CC) -c main.cpp
 factorial.o: factorial.cpp functions.h
@@ -263,9 +263,108 @@ hello.o: hello.cpp functions.h
 
 
 
+# Makefile - 规则
 
 
 
+Makefile 目标规则的一般语法:
+
+```makefile
+target [target...] : [dependent ....]
+[ command ...]
+```
+
+在上面的代码中，括号中的参数是可选的，省略号表示一个或多个。在这里，请注意每个命令前面的选项卡是必需的。
+
+下面给出了一个简单的示例 (在本例中，您必须给出规则以从源文件生成所有目标文件):
+
+```makefile
+hello: main.o factorial.o hello.o
+   $(CC) main.o factorial.o hello.o -o hello
+```
+
+
+
+## 显式规则
+
+- `make target`时，make找到适用的目标规则`target`并执行。
+- 如果任何家属比目标新，make一次执行一个命令（在宏替换之后）。
+- 如果必须建立任何依赖项，则首先发生（递归）。即依赖项未构建，则先递归进行依赖项构建。
+- make如果遇到命令返回失败状态（命令退出状态为非0），则终止。
+- `-`: 如果被执行的命令前面加上`-`，即使命令执行失败或出错，也会继续执行后续命令 (实际是忽略返回状态):
+
+```makefile
+clean:
+   -rm *.o *~ core paper
+```
+
+- 在宏替换之后，每条命令都会显示以向您显示执行的命令。
+- `@`: 如果被执行的命令前面加上`@`，会关闭正在执行的命令。例如:
+
+```makefile
+install:
+   @echo You must be root to install
+```
+
+- 对于阅读Makefile文件，请始终先浏览`target`。可以合理地期望找到目标 all（或只是 make）、install 和 clean:
+
+  - **make all**: 它编译所有内容，以便您可以在安装应用程序之前进行本地测试。
+
+  - **make install**: 它将应用程序安装在正确的位置。
+
+  - **make clean**: 它清理应用程序、删除可执行文件、任何临时文件、目标文件等。
+
+
+
+## 隐式规则
+
+这里我们将讲述所有预先设置（也就是make内建）的隐含规则，如果我们不明确地写下规则，那么，make就会在这些规则中寻找所需要规则和命令。
+
+当然，我们也可以使用make的参数 `-r` 或 `--no-builtin-rules` 选项来取消所有的预设置的隐含规则。
+
+当然，即使是我们指定了 `-r` 参数，某些隐含规则还是会生效，因为有许多的隐含规则都是使用了“后缀规则”来定义的，所以，只要隐含规则中有 “后缀列表”（也就一系统定义在目标 `.SUFFIXES` 的依赖目标），那么隐含规则就会生效。
+
+默认的后缀列表`.SUFFIXES` 为：`.out, .a, .ln, .o, .c, .cc, .C, .p, .f, .F, .r, .y, .l, .s, .S, .mod, .sym, .def, .h, .info, .dvi, .tex, .texinfo, .texi, .txinfo, .w, .ch .web, .sh, .elc, .el`
+
+
+
+**隐式规则列表**
+
+1. 编译C程序的隐含规则:
+
+   `<n>.o` 的目标的依赖目标会自动推导为 `<n>.c` ，并且其生成命令是 `$(CC) –c $(CPPFLAGS) $(CFLAGS)`
+
+2. 编译C++程序的隐含规则:
+
+   `<n>.o` 的目标的依赖目标会自动推导为 `<n>.cc` 或 `<n>.cpp` 或是 `<n>.C` ，并且其生成命令是 `$(CXX) –c $(CPPFLAGS) $(CXXFLAGS)` 。（建议使用 `.cc` 或 `.cpp` 作为C++源文件的后缀，而不是 `.C` ）
+
+3. 汇编和汇编预处理的隐含规则:
+
+   `<n>.o` 的目标的依赖目标会自动推导为 `<n>.s` ，默认使用编译器 `as` ，并且其生成命令是： `$ (AS) $(ASFLAGS)` 。 `<n>.s` 的目标的依赖目标会自动推导为 `<n>.S` ，默认使用C预编译器 `cpp` ，并且其生成命令是： `$(CPP) $(CPPFLAGS)` 。
+
+4. 链接Object文件的隐含规则:
+
+   `<n>` 目标依赖于 `<n>.o` ，通过运行C的编译器来运行链接程序生成（一般是 `ld` ），其生成命令是： `$(CC) $(LDFLAGS) <n>.o $(LOADLIBES) $(LDLIBS)` 。这个规则对于只有一个源文件的工程有效，同时也对多个Object文件（由不同的源文件生成）的也有效。例如如下规则:
+
+   ```
+   x : y.o z.o
+   ```
+
+   并且 `x.c` 、 `y.c` 和 `z.c` 都存在时，隐含规则将执行如下命令:
+
+   ```
+   cc -c x.c -o x.o
+   cc -c y.c -o y.o
+   cc -c z.c -o z.o
+   cc x.o y.o z.o -o x
+   rm -f x.o
+   rm -f y.o
+   rm -f z.o
+   ```
+
+   如果没有一个源文件（如上例中的x.c）和你的目标名字（如上例中的x）相关联，那么，你最好写出自己的生成规则，不然，隐含规则会报错的。
+
+5. ....
 
 
 
