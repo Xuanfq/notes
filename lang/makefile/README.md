@@ -89,6 +89,24 @@ gcc  main.cpp hello.cpp factorial.cpp -o hello
 
 
 
+# Makefile - 流程
+
+GNU的make工作时的执行步骤入下：
+
+1. 读入所有的Makefile。
+2. 读入被include的其它Makefile。
+3. 初始化文件中的变量。
+4. 推导隐晦规则，并分析所有规则。
+5. 为所有的目标文件创建依赖关系链。
+6. 根据依赖关系，决定哪些目标要重新生成。
+7. 执行生成命令。
+
+1-5步为第一阶段，6-7为第二阶段。第一阶段中，如果定义的变量被使用了，那么，make会把其展开在使用的位置。但make并不会完全马上展开，make使用的是拖延战术，如果变量出现在依赖关系的规则中，那么仅当这条依赖被决定要使用了，变量才会在其内部展开。
+
+
+
+
+
 # Makefile - 宏
 
 
@@ -490,7 +508,147 @@ override variable := value
 
 
 
+# Makefile - 其他功能
 
+## Make - 递归执行: `-C`
+
+递归使用**make**意味着使用**make**作为makefile中的命令。当您需要为组成更大系统的各种子系统分别生成文件时，此技术很有用。例如，假设您有一个名为 `subdir' 的子目录，它有自己的 makefile，并且您希望包含目录的 makefile 运行**make**子目录上。您可以通过编写以下代码来做到这一点 -
+
+```makefile
+subsystem:
+   cd subdir && $(MAKE)
+
+# or, equivalently:
+   
+subsystem:
+   $(MAKE) -C subdir
+   
+# make -C subdir1 subdir2 subdir3 ...
+# =
+# cd subdir1 && $(MAKE); cd subdir2 && $(MAKE); cd subdir3 && $(MAKE)
+```
+
+
+
+
+
+## Make - 指定Makefile文件: `-f`
+
+如果您已经准备好名为“Makefile”的 Makefile，那么只需在命令提示符下编写 make，它就会运行 Makefile 文件。但是，如果您的 Makefile 文件名为其他名称，请使用以下命令:
+
+```makefile
+make -f your-makefile-name
+```
+
+
+
+
+
+## Makefile - 递归传递变量: `export`
+
+- 顶层变量值**make**可以通过显式请求通过环境传递给子make。这些变量在 sub-make 中定义为默认值。除非您使用 `-e` ，否则您不能覆盖sub-make makefile 使用的 makefile 中指定的内容。在`make`工具中，`-e`选项（或者`--environment-overrides`）用于指示`make`在处理Makefile时，如果Makefile中的变量与环境中的同名变量发生冲突(Makefile中使用=)，则优先使用环境中的变量值。
+
+- 要传递或导出变量，**make**将变量及其值添加到运行每个命令的环境中。反过来，sub-make使用环境来初始化其变量值表。
+
+- 特殊变量 SHELL 和 MAKEFLAGS 始终被导出（除非您取消导出它们）。
+
+如果要将特定变量导出到sub-make或`shell`，请使用导出指令，如下所示:
+
+```makefile
+export variable ...
+```
+
+如果要防止变量被导出，请使用 unexport 指令，如下所示:
+
+```makefile
+unexport variable ...
+```
+
+
+
+
+
+## Makefile - MAKEFILES
+
+在 `Makefile` 中，`MAKEFILES` 是一个特殊的变量，它允许你指定一个或多个额外的 `Makefile` 文件，这些文件将被 `make` 命令在读取主 `Makefile` 之前首先读取。这在某些复杂的项目结构中特别有用，当你想要在不同的目录或不同的 `Makefile` 片段中共享一些公共的构建规则时。
+
+这里有一些关键点关于 `MAKEFILES` 变量：
+
+1. **定义**：你可以在命令行上设置 `MAKEFILES` 变量，也可以在 `Makefile` 中设置它。但是，如果在命令行上设置了该变量，它将覆盖任何在 `Makefile` 中设置的定义。
+
+   * 在命令行上：`MAKEFILES=/path/to/extra.mk make`
+
+   * 在 `Makefile` 中：`MAKEFILES += /path/to/extra.mk`
+
+2. **顺序**：如果 `MAKEFILES` 变量包含多个文件，这些文件将按照在 `MAKEFILES` 变量中列出的顺序被读取。每个额外的 `Makefile` 都可以包含变量定义、规则等。
+3. **递归**：当 `make` 递归地调用自身（例如，在子目录中）时，`MAKEFILES` 变量也会被传递给子 `make` 实例。但是，你需要注意，如果子 `Makefile` 也设置了 `MAKEFILES`，那么子 `Makefile` 的设置将覆盖从父 `Makefile` 继承的设置。
+4. **覆盖**：如果 `MAKEFILES` 和主 `Makefile` 中定义了同名的变量，那么后读取的 `Makefile`（即主 `Makefile`）中的变量定义会覆盖先前读取的 `Makefile` 中的定义。这是因为 `make` 在处理 `Makefile` 时，变量的值是在解析过程中逐步确定的，并且后定义的变量值会覆盖先定义的变量值。MAKEFILES 的主要用途是在递归调用之间进行通信**make**。
+5. **用途**：`MAKEFILES` 的主要用途之一是允许在多个不同的项目中共享公共的构建规则。例如，你可以有一个包含所有常见编译器标志和链接器选项的 `Makefile`，然后在每个项目的 `Makefile` 中包含这个公共的 `Makefile`。
+5. **区别**：需要注意的是，`MAKEFILES` 变量和 `include` 指令在 `make` 中是两种不同的机制。`MAKEFILES` 变量用于指定在读取主 `Makefile` 之前要读取的额外 `Makefile` 文件，而 `include` 指令则用于在主 `Makefile` 内部包含其他 `Makefile` 文件的内容。使用 `include` 指令时，被包含的 `Makefile` 文件会在 `include` 指令所在的位置被插入到主 `Makefile` 中，并且其内容会按照常规的解析顺序进行处理。
+6. **注意事项**：虽然 `MAKEFILES` 变量在某些情况下可能很有用，但它也可能使构建过程变得复杂和难以维护。因此，在使用它之前，请确保你了解它的工作原理和潜在问题。
+
+
+
+
+
+## Makefile - 指定头文件路径: `-I`
+
+如果您将头文件放在不同的目录中并且您正在运行**make**在不同的目录下，则需要提供头文件的路径。这可以使用 `makefile` 中的 `-I` 选项来完成。假设 `functions.h` 文件在 `/home/project/include` 文件夹中，其余文件在 /home/project/src/ 文件夹中，则 `makefile` 将编写如下:
+
+```makefile
+INCLUDES = -I "/home/project/include"
+CC = gcc
+LIBS =  -lm
+CFLAGS = -g -Wall
+OBJ =  main.o factorial.o hello.o
+hello: ${OBJ}
+   ${CC} ${CFLAGS} ${INCLUDES} -o $@ ${OBJS} ${LIBS}
+.cpp.o:
+   ${CC} ${CFLAGS} ${INCLUDES} -c
+```
+
+
+
+
+
+## Makefile - 变量追加内容: `+=`
+
+可以使用 `+=` 来向已定义的变量的值添加更多文本，如图所示:
+
+```makefile
+objects += another.o
+```
+
+它获取变量`objects`的值，并将文本`another.o`添加到其中，前面有一个**空格**，如下所示。
+
+```makefile
+objects = main.o hello.o factorial.o
+objects += another.o  # 此时 object = main.o hello.o factorial.o another.o
+```
+
+上面的代码将对象设置为`main.o hello.o factorial.o another.o'
+
+使用 `+=` 类似于:
+
+```makefile
+objects = main.o hello.o factorial.o
+objects := $(objects) another.o
+```
+
+
+
+
+
+## Makefile - 续行: `\`
+
+如果您不喜欢 Makefile 中的行太长，那么您可以使用反斜杠`\`换行，如下所示:
+
+```python
+OBJ =  main.o factorial.o \
+   hello.o
+# is equivalent to
+OBJ =  main.o factorial.o hello.o
+```
 
 
 
