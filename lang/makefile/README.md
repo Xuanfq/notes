@@ -295,13 +295,6 @@ hello: main.cpp hello.cpp factorial.cpp
 
 
 
-## 使用
-
-- 在变量名前加上 `$` 符号，但最好用小括号 `()` 或是大括号 `{}` 把变量给包括起来。示例：`$ABC`，`$(ABC)`，`${ABC}`
-- 如果你要使用真实的 `$` 字符，那么你需要用 `$$` 来表示。
-
-
-
 ## 定义
 
 ### `=`
@@ -345,7 +338,7 @@ B = $(A)
 
 为了避免上面的这种方法，我们可以使用make中的另一种用变量来定义变量的方法。这种方法使用的是 `:=` 操作符，如：
 
-```
+```makefile
 x := foo
 y := $(x) bar
 x := later
@@ -353,14 +346,14 @@ x := later
 
 其等价于：
 
-```
+```makefile
 y := foo bar
 x := later
 ```
 
 值得一提的是，这种方法，前面的变量不能使用后面的变量，只能使用前面已定义好了的变量。如果是这样：
 
-```
+```makefile
 y := $(x) bar
 x := foo
 ```
@@ -369,7 +362,7 @@ x := foo
 
 上面都是一些比较简单的变量使用了，让我们来看一个复杂的例子，其中包括了make的函数、条件表达式和一个系统变量“MAKELEVEL”的使用：
 
-```
+```makefile
 ifeq (0,${MAKELEVEL})
 cur-dir   := $(shell pwd)
 whoami    := $(shell whoami)
@@ -378,38 +371,154 @@ MAKE := ${MAKE} host-type=${host-type} whoami=${whoami}
 endif
 ```
 
-关于条件表达式和函数，我们在后面再说，对于系统变量“MAKELEVEL”，其意思是，如果我们的make有一个嵌套执行的动作（参见前面的“嵌套使用make”），那么，这个变量会记录了我们的当前Makefile的调用层数。
+对于系统变量“MAKELEVEL”，如果我们的make有一个嵌套/递归执行的动作，这个变量会记录了我们的当前Makefile的调用层数。
 
-下面再介绍两个定义变量时我们需要知道的，请先看一个例子，如果我们要定义一个变量，其值是一个空格，那么我们可以这样来：
 
-```
+
+- #### **特殊案例**：`#`与`空格变量`
+
+```makefile
 nullstring :=
 space := $(nullstring) # end of the line
 ```
 
-nullstring是一个Empty变量，其中什么也没有，而我们的space的值是一个空格。因为在操作符的右边是很难描述一个空格的，这里采用的技术很管用，先用一个Empty变量来标明变量的值开始了，而后面采用“#”注释符来表示变量定义的终止，这样，我们可以定义出其值是一个空格的变量。请注意这里关于“#”的使用，注释符“#”的这种特性值得我们注意，如果我们这样定义一个变量：
+nullstring是一个Empty变量，其中什么也没有，而我们的space的值是一个空格。因为在操作符的右边是很难描述一个空格的，这里采用的技术很管用，先用一个Empty变量来标明变量的值开始了，而后面采用**“#”注释符来表示变量定义的终止**，这样，我们可以定义出其值是一个空格的变量。请注意这里关于“#”的使用，注释符“#”的这种特性值得我们注意，如果我们这样定义一个变量：
 
-```
+```makefile
 dir := /foo/bar    # directory to put the frobs in
 ```
 
-dir这个变量的值是“/foo/bar”，后面还跟了4个空格，如果我们这样使用这个变量来指定别的目录——“$(dir)/file”那么就完蛋了。
+dir这个变量的值是`/foo/bar`，后面还跟了4个空格，如果我们这样使用这个变量来指定别的目录——`$(dir)/file`那么就寄了。
 
-还有一个比较有用的操作符是 `?=` ，先看示例：
 
-```
+
+### `?=` 
+
+```makefile
 FOO ?= bar
 ```
 
 其含义是，如果FOO没有被定义过，那么变量FOO的值就是“bar”，如果FOO先前被定义过，那么这条语将什么也不做，其等价于：
 
-```
+```makefile
 ifeq ($(origin FOO), undefined)
     FOO = bar
 endif
 ```
 
 
+
+
+
+## 使用
+
+- 在变量名前加上 `$` 符号，但最好用小括号 `()` 或是大括号 `{}` 把变量给包括起来。示例：`$ABC`，`$(ABC)`，`${ABC}`
+- 如果你要使用真实的 `$` 字符，那么你需要用 `$$` 来表示。
+
+
+
+### 变量值的替换
+
+替换变量中的共有的部分，其格式是 `$(var:a=b)` 或是 `${var:a=b}` ，即把变量“var”中所有以“a”字串“结尾”的“a”替换成“b”字串。这里的“结尾”意思是“空格”或是“结束符”。示例：
+
+```makefile
+foo := a.o b.o c.o
+bar := $(foo:.o=.c)
+```
+
+这个示例中，我们先定义了一个 `$(foo)` 变量，而第二行的意思是把 `$(foo)` 中所有以 `.o` 字串“结尾”全部替换成 `.c` ，所以我们的 `$(bar)` 的值就是“a.c b.c c.c”。
+
+另外一种变量替换的技术是以“静态模式”（参见前面章节）定义的，如：
+
+```makefile
+foo := a.o b.o c.o
+bar := $(foo:%.o=%.c)
+```
+
+这依赖于被替换字串中的有相同的模式，模式中必须包含一个 `%` 字符，这个例子同样让 `$(bar)` 变量的值为“a.c b.c c.c”。
+
+
+
+### 动态变量名
+
+以变量的值作为变量名进行取值。示例：
+
+```makefile
+x = y
+y = z
+a := $($(x))
+
+a_objects := a.o b.o c.o
+1_objects := 1.o 2.o 3.o
+sources := $($(a1)_objects:.o=.c)  # a1=a or a1=1
+```
+
+在这个例子中，$(x)的值是“y”，所以$($(x))就是$(y)，于是$(a)的值就是“z”。（注意，是“x=y”，而不是“x=$(y)”）
+
+
+
+### 追加变量值
+
+使用 `+=` 操作符给变量追加值，如：
+
+```makefile
+objects = main.o foo.o bar.o utils.o
+
+objects += another.o
+# =
+objects += $(objects) another.o
+```
+
+于是，我们的 `$(objects)` 值变成：“main.o foo.o bar.o utils.o another.o”（another.o被追加进去了）。
+
+
+
+### override
+
+如果有变量是通过make的命令行参数设置的，那么Makefile文件中对这个变量的赋值会被忽略。如果你想在Makefile文件中设置这类参数的值，那么，你可以使用“override”指令。其语法是:
+
+```makefile
+override <variable>; = <value>;
+
+override <variable>; := <value>;
+```
+
+当然，你还可以追加:
+
+```makefile
+override <variable>; += <more text>;
+```
+
+对于多行的变量定义，我们用define指令，在define指令前，也同样可以使用override指令，如:
+
+```makefile
+override define foo
+bar
+endef
+```
+
+
+
+### define & 多行变量
+
+还有一种设置变量值的方法是使用`define`键字。使用`define`键字设置变量的值可以有换行，这有利于定义一系列的命令。
+
+`define`指令后面跟的是变量的名字，而重起一行定义变量的值，定义是以`endef`关键字结束。其工作方式和“=”操作符一样。变量的值可以包含`函数`、`命令`、`文字`，或是`其它变量`。因为命令需要以`[Tab]`键开头，所以如果你用define定义的命令变量中没有以 `Tab` 键开头，那么make 就不会把其认为是命令。
+
+下面的这个示例展示了define的用法:
+
+```makefile
+define two-lines
+echo foo
+echo a-$(bar)
+endef
+
+all:
+	@echo --$(two-lines)+
+	# result: 
+	# --echo foo
+	# a-++
+```
 
 
 
