@@ -4,6 +4,10 @@ The full name of onie is `Open Network Install Environment`
 
 ONIE is a small operating system, pre-installed on bare metal network switches, that provides an environment for automated provisioning.
 
+## Source Code
+
+[GitHub](https://github.com/opencomputeproject/onie)
+
 ## Documentation
 
 [Documentation](https://opencomputeproject.github.io/onie)
