@@ -3,7 +3,7 @@
 - 静态注册
 - 动态注册
 - 用户空间注册
-- I2C驱动扫描注册
+- 驱动扫描注册
 
 ## 1.静态注册
 
@@ -178,10 +178,12 @@ MODULE_DESCRIPTION("This my i2c device for tmp75");
 - 1）创建i2c设备
 
 ```c
-echo i2c_test 0x48 > /sys/bus/i2c/devices/i2c-6/new_device
+echo i2c_test 0x48 > /sys/bus/i2c/devices/i2c-6/new_device  // i2c_test 是 compatible 中的值之一
 ```
 
-使用这种方法创建的i2c设备会挂在i2c_adapter的链表上，为了方便用户空间删除i2c设备！
+使用这种方法创建的i2c设备会挂在`i2c_adapter`的链表上，为了方便用户空间删除i2c设备。
+
+注意：是在`i2c-x`目录下，而`/sys/bus/i2c/devices/x-xxxx`是已经创建了的有设备的。
 
 - 2）删除设备
 
