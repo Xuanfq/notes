@@ -72,9 +72,34 @@ To install into os, use command: `make install`.
 
 
 
+## Kernel Driver Compile
+
+### Compile Single Module
+
+```bash
+cd linux-x.x.x
+
+make oldconfig && make prepare && make scripts
+
+cd path/to/driver
+
+# config build as module first
+# make CONFIG_BRIDGE=m -C /path/to/linux-x.x.x/ M=`pwd` modules
+make CONFIG_DRIVER_AS_MODULE=m -C /path/to/linux-x.x.x/ M=`pwd` modules
+```
+
+### Compile all Modules
 
 
+```bash
+cd linux-x.x.x
 
+make oldconfig && make prepare && make scripts
+
+# config build as module first
+
+make modules -j12
+```
 
 
 
