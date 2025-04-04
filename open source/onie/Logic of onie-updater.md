@@ -1,10 +1,11 @@
 # Logic of onie-updater
 
-### 更新包制作和安装逻辑
+## 更新包制作和安装逻辑
 
-#### 制作命令
+### 制作命令
+
 ```sh
-onie-mk-installer.sh 
+onie-mk-installer.sh  \  # 调用自`images.make`, 若是`onie-firmware`则自`firmware-update.make`
 	onie \  # update_type: onie | firmware
 	grub-arch \  # rootfs_arch, arch_dir
 	../machine/celestica/cls_xxx \  # machine_dir
@@ -24,13 +25,15 @@ UPDATER_IMAGE_PARTS=$(UPDATER_VMLINUZ) $(UPDATER_INITRD) $(UPDATER_ONIE_TOOLS) \
 			$(ROOTCONFDIR)/grub-arch/sysroot-lib-onie/onie-blkdev-common \
 			$(ROOTCONFDIR)/grub-arch/sysroot-lib-onie/nos-mode-arch \
       # $(UPDATER_VMLINUZ).sig $(UPDATER_INITRD).sig
+      # $(GRUB_SECURE_BOOT_IMAGE)  # grubx64.efi  from grub.make
+      # $(SHIM_BINS)  # shimx64.efi fbx64.efi mmx64.efi from shim.make
       # $(GRUB_SECURE_BOOT_IMAGE).sig
 
 GRUB_TIMEOUT ?= 5
 ```
 
 
-#### 安装包/更新包文件内容Package
+### 安装包/更新包文件内容
 
 ```sh
 installer/
@@ -47,21 +50,159 @@ installer/
   *installer.conf             # from $machine_dir/installer.conf  # only onie update-type and grub-arch
   *machine-build.conf         # create
   install-platform            # option, from machine directory: $machine_dir/installer/install-platform
-  onie-tools.tar.xz           # UPDATER_IMAGE_PARTS
+  onie-tools.tar.xz           # UPDATER_IMAGE_PARTS, UPDATER_ONIE_TOOLS
   onie.initrd                 # UPDATER_IMAGE_PARTS
   onie.vmlinuz                # UPDATER_IMAGE_PARTS
   onie-blkdev-common          # UPDATER_IMAGE_PARTS, $(ROOTCONFDIR)/grub-arch/sysroot-lib-onie/onie-blkdev-common
   nos-mode-arch               # UPDATER_IMAGE_PARTS, $(ROOTCONFDIR)/grub-arch/sysroot-lib-onie/nos-mode-arch
 ```
 
-#### 安装包/更新包制作原理
+
+#### onie-tools.tar.xz制作
+
+`onie-tools.tar.gz`包是静态的
+
+```sh
+onie-mk-tools.sh \  # 调用自`images.make`
+   $(ROOTFS_ARCH) \  # rootfs_arch = u-boot-arch | grub-arch
+   $(ONIE_TOOLS_DIR) \  # tools_dir = onieroot/tools/, 主文件grub-arch/bin/onie-version
+   $@ \  # output_file
+   $(SYSROOTDIR) \  # sysroot = $(MBUILDDIR)/sysroot = ../build/onie-updater-x86_64-cls_xxx-r0/sysroot/
+   $(ONIE_SYSROOT_TOOLS_LIST)  # $*, sysroot目录下的文件和目录，来源onieroot/rootconf/grub-arch/下的, -替换成/
+
+ONIE_SYSROOT_TOOLS_LIST = \
+	lib/onie \
+	bin/onie-boot-mode \
+	bin/onie-nos-mode \
+	bin/onie-fwpkg
+```
+
+**onie-mk-tools.sh**工具文件内容来源于两个位置：
+- CPU架构无关的工具来自ONIE安装程序镜像的目录: sysroot(SYSROOTDIR), /rootconf/$rootfs_arch/*
+- CPU架构相关的工具来自ONIE仓库中特定架构的目录: tools_dir(ONIE_TOOLS_DIR), /tools/$rootfs_arch/*
+
+主要制作过程：
+- cpu无关,sysroot: 
+   ```sh
+   for f in $* ; do
+      tdir="${tmp_dir}/$(dirname $f)"
+      mkdir -p $tdir || exit 1
+      cp -a "${sysroot}/$f" $tdir || exit 1
+      echo -n "."
+   done
+   ```
+- cpu有关,tools_dir: `cp -a "${tools_dir}/${arch_dir}"/* $tmp_dir`
+
+制作结果：tools.tar.xz解压后
+```
+tools/
+   lib/
+      onie/
+         ...
+   bin/
+      ...
+```
+
+实质上`onie-tools.tar.gz`包是静态的！！！
+
+
+#### sysroot/rootfs文件系统制作
+
+交叉编译：xtools.make
+
+- ONIE_ARCH = x86_64
+- XTOOLS_CONFIG ?= conf/crosstool/gcc-$(GCC_VERSION)/$(XTOOLS_LIBC)-$(XTOOLS_LIBC_VERSION)/crosstool.$(ONIE_ARCH).config
+- XTOOLS_ROOT = build/x-tools
+- XTOOLS_VERSION = $(ONIE_ARCH)-g$(GCC_VERSION)-lnx$(LINUX_RELEASE)-$(XTOOLS_LIBC)-$(XTOOLS_LIBC_VERSION)
+- XTOOLS_DIR = $(XTOOLS_ROOT)/$(XTOOLS_VERSION)
+- XTOOLS_BUILD_DIR	= $(XTOOLS_DIR)/build
+- XTOOLS_INSTALL_DIR	= $(XTOOLS_DIR)/install
+- ARCH ?= x86_64
+- TARGET ?= $(ARCH)-onie-linux-uclibc
+- CROSSPREFIX ?= $(TARGET)-
+- CROSSBIN ?= $(XTOOLS_INSTALL_DIR)/$(TARGET)/bin
+- EFI_ARCH ?= x64
+
+
+制作过程: images.make
+
+1. 软件包准备与安装(即需要安装到机器上的软件), 需要安装到SYSROOTDIR目录的文件系统上: (SYSROOTDIR = $(MBUILDDIR)/sysroot = ../build/onie-updater-x86_64-cls_xxx-r0/sysroot/): 
+   - 安装过程参照: `build-config/make/*.make`, 可能在`DEV_SYSROOT`上build, 然后拷贝到`SYSROOTDIR`
+2. sysroot-check:
+   1. 准备C标准库依赖库`uClibc/uClibc-ng/glibc` (前两种是嵌入式Linux系统设计的轻量级的库), 拷贝到`$(SYSROOTDIR)/lib/`:
+      1. 获取配置的库: `ifeq ($(XTOOLS_LIBC),uClibc-ng?|uClibc?|glibc?) SYSROOT_LIBS=xxx.so.1 ...?`
+      2. 添加GCC共享库: `ifeq ($(REQUIRE_CXX_LIBS),yes) ifeq ($(GCC_VERSION),6.3.0) SYSROOT_LIBS += libstdc++.so.6.0.22 ...?`
+      3. 查找是否缺少共享库: `for file in $(SYSROOT_LIBS) find $(DEV_SYSROOT)/lib -name $$file | xargs -i cp -av {} $(SYSROOTDIR)/lib/ || exit 1 ;` 
+         - DEV_SYSROOT=build/user/$(XTOOLS_VERSION)/dev-sysroot/
+   2. 去除 ELF 二进制文件（GRUB 模块和内核）中的无关信息
+      1. `find $(SYSROOTDIR) -path */lib/grub/* -prune -o \( -type f -print0 \) | xargs -0 file | grep ELF | awk -F':' '{ print $$1 }' | grep -v "/lib/modules/" | xargs $(CROSSBIN)/$(CROSSPREFIX)strip`: 目的是在 sysroot 目录中查找所有 ELF 文件（除了在 /lib/grub 和 /lib/modules 目录下的），然后对这些文件执行 strip 操作。strip 操作会移除调试符号和其他非必要信息，减小文件大小。这通常用于优化最终的系统镜像大小。
+         - $(CROSSBIN)/$(CROSSPREFIX)strip=build/x-tools/$XTOOLS_VERSION/install/x86_64-onie-linux-uclibc-strip
+   3. 验证在我们最终的系统根目录（sysroot）中，可执行文件所需的所有共享库是否都已具备:
+      1. `$(SCRIPTDIR)/check-libs $(CROSSBIN)/$(CROSSPREFIX)populate $(DEV_SYSROOT) $(SYSROOTDIR) $(CHECKROOT)`
+         - check-libs检查$(DEV_SYSROOT) $(SYSROOTDIR)是否有不一样
+3. 拷贝CPU无关的程序或脚本`onieroot/rootconf/default/*`到`SYSROOTDIR`(SYSROOTDIR = $(MBUILDDIR)/sysroot = ../build/onie-updater-x86_64-cls_xxx-r0/sysroot/): 
+   - `cd $(ROOTCONFDIR) && $(SCRIPTDIR)/install-rootfs.sh default $(SYSROOTDIR)`
+4. 拷贝CPU相关的程序或脚本`onieroot/rootconf/$(ROOTFS_ARCH)/*`到`SYSROOTDIR`对应目录下:
+   - `cp $(ROOTCONFDIR)/$(ROOTFS_ARCH)/sysroot-lib-onie/* $(SYSROOTDIR)/lib/onie`
+   - `cp $(ROOTCONFDIR)/$(ROOTFS_ARCH)/sysroot-bin/* $(SYSROOTDIR)/bin`
+5. 拷贝/映射平台机器相关的程序或脚本`machine/rootconf/`到`SYSROOTDIR`对应目录下:
+   - `cp $(MACHINEDIR)/rootconf/sysroot-lib-onie/* $(SYSROOTDIR)/lib/onie`
+   - `cp $(MACHINEDIR)/rootconf/sysroot-bin/* $(SYSROOTDIR)/bin`
+   - `cp $(MACHINEDIR)/rootconf/sysroot-init/* $(SYSROOTDIR)/etc/init.d`
+   - `cp -a $(MACHINEDIR)/rootconf/sysroot-rcS/* $(SYSROOTDIR)/etc/rcS.d`
+   - `cp -a $(MACHINEDIR)/rootconf/sysroot-rcK/* $(SYSROOTDIR)/etc/rc0.d` & `cp -a $(MACHINEDIR)/rootconf/sysroot-rcK/* $(SYSROOTDIR)/etc/rc6.d`
+   - `cp -ar $(MACHINEDIR)/rootconf/sysroot-etc/* $(SYSROOTDIR)/etc/`
+6. 其他程序和脚本的修改或覆盖:
+   - 安全启动相关:
+     - 通用: `cp $(SYSROOTDIR)/bin/onie-console $(SYSROOTDIR)/bin/onie-console-open`
+     - 通用: `sed -i 's/exec \/bin\/sh -l/exec \/bin\/login/' $(SYSROOTDIR)/bin/onie-console`
+     - 通用: `cp $(SYSROOTDIR)/bin/onie-console $(SYSROOTDIR)/bin/onie-console-secure`
+     - 机器相关(登录密码): `cp -a $(MACHINEDIR)/rootconf/sysroot-etc/passwd-secured $(SYSROOTDIR)/etc/passwd`
+   - 通用: `cd $(SYSROOTDIR) && ln -fs sbin/init ./init`
+7. 构建`$(MBUILDDIR)/lsb-release`并拷贝到`SYSROOTDIR/etc/`
+   - `echo "DISTRIB_ID=onie" >> $(LSB_RELEASE_FILE)`
+   - `echo "DISTRIB_RELEASE=$(LSB_RELEASE_TAG)" >> $(LSB_RELEASE_FILE)` 
+     - LSB_RELEASE_TAG=$(ONIE_RELEASE_TAG)$(VENDOR_VERSION)$(DIRTY)
+     - ONIE_RELEASE_TAG=$(cat build-config/conf/onie-release)
+   - `echo "DISTRIB_DESCRIPTION=Open Network Install Environment" >> $(LSB_RELEASE_FILE)`
+8. 构建`$(MBUILDDIR)/os-release`并拷贝到`SYSROOTDIR/etc/`
+   - `echo "NAME=\"onie\"" >> $(OS_RELEASE_FILE)`
+   - `echo "VERSION=\"$(LSB_RELEASE_TAG)\"" >> $(OS_RELEASE_FILE)`
+   - `echo "ID=linux" >> $(OS_RELEASE_FILE)`
+9.  构建`$(MBUILDDIR)/machine-build.conf`并拷贝到`SYSROOTDIR/etc/`
+   - `echo "onie_version=$(LSB_RELEASE_TAG)" >> $(MACHINE_CONF)`
+   - `echo "onie_build_platform=$(ARCH)-$(ONIE_BUILD_MACHINE)-r$(MACHINE_REV)" >> $(MACHINE_CONF)`
+   - `echo "onie_kernel_version=$(LINUX_RELEASE)" >> $(MACHINE_CONF)`
+   - ...
+10. 创建 cpio 归档并对其进行压缩
+   1. CPIO归档: `fakeroot -- $(SCRIPTDIR)/make-sysroot.sh $(SYSROOTDIR) $(SYSROOT_CPIO)`; SYSROOT_CPIO=$(MBUILDDIR)/sysroot.cpio
+     - 创建归档文件: `touch "$cpio_archive"` cpio_archive=SYSROOT_CPIO
+     - 给rootfs重新创建空/dev目录: `rm -rf ${sysroot}/dev; mkdir -p ${sysroot}/dev` sysroot=SYSROOTDIR
+     - `cd $sysroot && find . | cpio --create -H newc > $cpio_archive` -H newc: 指定使用 "new ASCII" 格式创建归档。这是一种常用于 initramfs 的格式。
+   2. 压缩: `xz --compress --force --check=crc32 --stdout -8 $(SYSROOT_CPIO) > $@` $@=SYSROOT_CPIO_XZ=$(IMAGEDIR)/$(MACHINE_PREFIX).initrd=../build/images/cls_xxx-r0.initrd
+   3. 签名(安全启动相关，option): `fakeroot -- $(SCRIPTDIR)/gpg-sign.sh $(GPG_SIGN_SECRING) $(SYSROOT_CPIO_XZ)`, 得到签名文件SYSROOT_CPIO_XZ_SIG=$(SYSROOT_CPIO_XZ).sig
+     - GPG_SIGN_SECRING: 配置到`machine-security.make`(从machine/kvm_x86_64/拷贝)
+   4. 链接到`UPDATER_INITRD=$(MBUILDDIR)/onie.initrd`,`UPDATER_INITRD_SIG=$(MBUILDDIR)/onie.initrd.sig`: ln -sf $SYSROOT_CPIO_XZ(.sig) $UPDATER_INITRD(.sig)
+11. 制作image
+   1. 制作成uboot 多文件 .itb image (arm,onie-mk-itb.sh, need $(IMAGEDIR)/$(MACHINE_PREFIX).dtb) -> $(IMAGEDIR)/$(MACHINE_PREFIX).itb | $(MBUILDDIR)/onie.itb
+   2. 制作成uboot image-bin (arm,onie-mk-bin.sh) -> $(IMAGEDIR)/onie-$(MACHINE_PREFIX).bin
+   3. 制作成image-updater (onie-mk-installer.sh) -> $(IMAGEDIR)/onie-updater-$(ARCH)-$(MACHINE_PREFIX)
+   4. 制作成recovery-initrd (make-sysroot.sh, 带image-updater的onie.initrd) -> $(MBUILDDIR)/recovery/initrd.cpio | $(MBUILDDIR)/recovery/$(ARCH)-$(MACHINE_PREFIX).initrd
+       - `cp -a $(SYSROOTDIR) $(RECOVERY_SYSROOT)` RECOVERY_SYSROOT=$(MBUILDDIR)/recovery
+       - `cp $(UPDATER_IMAGE) $(RECOVERY_SYSROOT)/lib/onie/onie-updater`
+   5. 制作成recovery-iso (onie-mk-iso.sh, need recovery-initrd及其相关内容)
+
+
+
+
+### 安装包/更新包制作原理
 
 1. 压缩 package 成 xz
 2. 追加package包到脚本/installer/sharch_body.sh后
 3. 更新包onie-updater-x86_64-xxx-r0就是脚本sharch_body.sh
 
 
-#### 安装/更新过程
+### 安装/更新过程
 
 1. 运行安装包（`sharch_body.sh`），创建临时目录`/tmp/tmp.xxx/`
 2. `sharch_body.sh`将安装包`exit_marker`后的内容解压到/tmp/tmp.xxx/目录下，即/tmp/tmp.xxx/installer/
@@ -100,15 +241,16 @@ installer/
             3. 若启用安全启动, 即image_secure_grub=yes, 拷贝签名文件onie.vmlinuz.sig和onie.initrd.sig
             4. tools子目录，内容时onie-tools.tar.xz解压后的文件和目录，即源码中/rootconf/grub-arch/*/下的的内容
               ```
-              bin/
-                onie-boot-mode
-                onie-fwpkg
-                onie-nos-mode
-                onie-version
-              lib/
-                onie/
-                  onie-blkdev-common
-                  ...
+               tools/
+                  bin/
+                     onie-boot-mode
+                     onie-fwpkg
+                     onie-nos-mode
+                     onie-version
+                  lib/
+                     onie/
+                        onie-blkdev-common
+                        ...
               ```
             5. grub, grub.d子目录
          2. grub目录，内容来自`grub-install`命令
