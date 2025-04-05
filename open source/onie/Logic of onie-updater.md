@@ -2,7 +2,19 @@
 
 ## 更新包制作和安装逻辑
 
-### 制作命令
+### 安装包/更新包制作过程
+
+
+#### 制作原理
+
+1. 压缩 package 成 xz
+2. 追加package包到脚本/installer/sharch_body.sh后
+3. 更新包onie-updater-x86_64-xxx-r0就是脚本sharch_body.sh
+
+
+#### 制作命令
+
+images.make
 
 ```sh
 onie-mk-installer.sh  \  # 调用自`images.make`, 若是`onie-firmware`则自`firmware-update.make`
@@ -15,7 +27,7 @@ onie-mk-installer.sh  \  # 调用自`images.make`, 若是`onie-firmware`则自`f
 	../build/onie-updater-x86_64-cls_xxx-r0/grubx64.efi \  # UPDATER_IMAGE_PARTS, update image parts, which will be packed into onie-update.tar.xz
 	../machine/celestica/cls_xxx/rootconf/sysroot-lib-onie/test-install-sharing  # UPDATER_IMAGE_PARTS_PLATFORM, update image parts platform, which will be packed into onie-update.tar.xz
 
-MBUILDDIR=../build/onie-updater-x86_64-cls_xxx-r0
+MBUILDDIR=../build/cls_xxx-r0
 
 installer_conf=$machine_dir/installer.conf
 
@@ -33,32 +45,100 @@ GRUB_TIMEOUT ?= 5
 ```
 
 
-### 安装包/更新包文件内容
+#### 安装包/更新包文件内容
 
 ```sh
 installer/
-  *onie-update.tar.xz         # update image parts, params of onie-mk-installer.sh
+  *onie-update.tar.xz         # update image parts, params of onie-mk-installer.sh, `UPDATER_IMAGE_PARTS` 和 `UPDATER_IMAGE_PARTS_PLATFORM`都会被压缩到这里
+      onie-tools.tar.xz           # UPDATER_IMAGE_PARTS, UPDATER_ONIE_TOOLS
+      onie.initrd                 # UPDATER_IMAGE_PARTS
+      onie.vmlinuz                # UPDATER_IMAGE_PARTS
+      onie-blkdev-common          # UPDATER_IMAGE_PARTS, $(ROOTCONFDIR)/grub-arch/sysroot-lib-onie/onie-blkdev-common
+      nos-mode-arch               # UPDATER_IMAGE_PARTS, $(ROOTCONFDIR)/grub-arch/sysroot-lib-onie/nos-mode-arch
   *update-type                # create with content: [update_type=onie\r\nupdate_label=ONIE\r\n]
   *grub/                      # from ../installer/grub-arch/*   # if arm, does not exist this
     ...
+    *grub-common.cfg          # from ../installer/grub-arch/*   # if arm, does not exist this
     *grub-variables           # create with content: [## Begin grub-variables......serial --unit=0 --speed=115200 --word=8 --parity=no --stop=1...]
     *grub-machine.cfg         # create 
     *grub-extra.cfg           # create 
   *grub.d/                    # from ../installer/grub-arch/*   # if arm, does not exist this
+    *50_onie_grub             # from ../installer/grub-arch/*   # if arm, does not exist this
+   #  51_onie_grub_secure_boot  # option, from ../installer/grub-arch/*   # if arm or not secure boot, does not exist this
   *install-arch               # from ../installer/grub-arch/*   # or arm from ../installer/u-boot-arch/*
   *install.sh                 # from ../installer/install.sh
   *installer.conf             # from $machine_dir/installer.conf  # only onie update-type and grub-arch
-  *machine-build.conf         # create
+  *machine-build.conf         # create in images.make with $(MBUILDDIR)/machine-build.conf, or in firmware-update.make with $(MBUILDDIR)/firmware/machine-build.conf
   install-platform            # option, from machine directory: $machine_dir/installer/install-platform
-  onie-tools.tar.xz           # UPDATER_IMAGE_PARTS, UPDATER_ONIE_TOOLS
-  onie.initrd                 # UPDATER_IMAGE_PARTS
-  onie.vmlinuz                # UPDATER_IMAGE_PARTS
-  onie-blkdev-common          # UPDATER_IMAGE_PARTS, $(ROOTCONFDIR)/grub-arch/sysroot-lib-onie/onie-blkdev-common
-  nos-mode-arch               # UPDATER_IMAGE_PARTS, $(ROOTCONFDIR)/grub-arch/sysroot-lib-onie/nos-mode-arch
 ```
 
 
-#### onie-tools.tar.xz制作
+#### 制作过程
+
+onie-mk-installer.sh
+
+1. 传入参数准备
+   - `update_type`=onie | firmware
+   - `rootfs_arch`=`arch_dir`=grub-arch | u-boot-arch
+   - `machine_dir`=../machine/xxx/cls_xxx
+   - `machine_conf`=MACHINE_CONF | FIRMWARE_CONF, FIRMWARE_CONF用的onie_version是fw_version且比MACHINE_CONF少很多项。
+     - create in images.make with $(MBUILDDIR)/machine-build.conf
+     - create in firmware-update.make with $(MBUILDDIR)/firmware/machine-build.conf
+   - `installer_dir`=../installer
+   - `output_file`=$(IMAGEDIR)/onie-updater-$(ARCH)-$(MACHINE_PREFIX) | $(IMAGEDIR)/$(FIRMWARE_UPDATE_BASE)
+     - IMAGEDIR=../build/images/
+   - `$*`: 其他需要打包的文件, 传入`include_files`
+     - 若update_type=onie: include_files=$*, $*实质由 UPDATER_IMAGE_PARTS 和 UPDATER_IMAGE_PARTS_PLATFORM 组成
+       - UPDATER_IMAGE_PARTS: 由编译指定, 如x86:
+         - UPDATER_VMLINUZ: $(MBUILDDIR)/onie.vmlinuz (from x86_64.make)
+         - UPDATER_INITRD: $(MBUILDDIR)/onie.initrd (from x86_64.make)
+         - UPDATER_ONIE_TOOLS:  (from x86_64.make)
+         - $(ROOTCONFDIR)/grub-arch/sysroot-lib-onie/onie-blkdev-common (from x86_64.make)
+         - $(ROOTCONFDIR)/grub-arch/sysroot-lib-onie/nos-mode-arch (from x86_64.make)
+         - (option, secure boot) GRUB_SECURE_BOOT_IMAGE: $(MBUILDDIR)/grub$(EFI_ARCH).efi (from grub.make)
+         - (option, secure boot) $(SHIM_BINS): shimx64.efi fbx64.efi mmx64.efi (from shim.make)
+       - UPDATER_IMAGE_PARTS_PLATFORM: 由平台/机器按需扩展
+         - i.e. ../machine/xxx/cls_xxx/rootconf/sysroot-lib-onie/test-install-sharing
+     - 若update_type=firmware: include_files=${machine_dir}/firmware
+2. 其他参数准备
+   - `installer_conf`(当grub-arch时需要)=${machine_dir}/installer.conf
+   - `update_label`=ONIE | Firmware
+3. 创建临时安装目录: `tmp_dir=$(mktemp --directory)`, `tmp_installdir=$tmp_dir/installer/`
+4. `onie-update.tar.xz`: 遍历`include_files`文件归档到`$tmp_installdir/onie-update.tar.xz`, (解压后出现在installer下)
+5. `update-type`: 创建该文件并写入`update_type="$update_type"\nupdate_label="$update_label"`, update_label=ONIE or update_label=Firmware
+6. `install.sh`: 拷贝安装器通用安装脚本, `cp $installer_dir/install.sh $tmp_installdir`即`cp ../installer/install.sh $tmp_installdir`
+7. `install-arch`(`grub/`,`grub.d/`): 拷贝安装器特定架构脚本和配置, `cp -r $installer_dir/$arch_dir/* $tmp_installdir`
+   - 若arch_dir=u-boot-arch: `sed -e "s/%%UPDATER_UBOOT_NAME%%/$UPDATER_UBOOT_NAME/" -i $tmp_installdir/install-arch`, UPDATER_UBOOT_NAME=u-boot.bin|u-boot.pbl
+   - 若rootfs_arch=grub-arch且update_type=onie时, 修改Grub配置文件:
+     - grub/grub-common.cfg: `sed -i -e "s/%%GRUB_TIMEOUT%%/$GRUB_TIMEOUT/" $tmp_installdir/grub/grub-common.cfg`
+     - grub/grub-variables: create
+     - grub/grub-machine.cfg: create
+     - grub/grub-extra.cfg: create
+     - grub.d/50_onie_grub: `sed -i -e "s/%%UEFI_BOOT_LOADER%%/$UEFI_BOOT_LOADER/" $tmp_installdir/grub.d/50_onie_grub`
+     - 若是安全GRUB, gpg签名: 
+       - 运行`$tmp_installdir/grub.d/51_onie_grub_secure_boot`
+       - 签名grub_sb.cfg: `$SCRIPT_DIR/gpg-sign.sh $GPG_SIGN_SECRING $tmp_installdir/grub_sb.cfg`
+       - 签名grub.cfg: `$SCRIPT_DIR/gpg-sign.sh $GPG_SIGN_SECRING $tmp_installdir/grub.cfg`
+8. `install-platform`(若$update_type=onie且文件存在): 拷贝平台特定安装器函数以覆盖/新增某些函数, `cp $machine_dir/installer/install-platform $tmp_installdir`, 覆盖位置处于库加载完后的执行安装前
+9. `machine-build.conf`: 将machine-build.conf中的onie_字眼替换成image_, `sed -e 's/onie_/image_/' $machine_conf > $tmp_installdir/machine-build.conf`
+10. `installer.conf`(若rootfs_arch=grub-arch且update_type=onie时): 拷贝平台机器特定安装器配置文件, `cp "$installer_conf" $tmp_installdir`, 目的:
+     - 获取安装磁盘设备(必须): install_device_platform
+     - 前置安装钩子函数: pre_install_hook
+     - 后置安装钩子函数: post_install_hook
+11. 若update_type=firmware, 更新文件:
+    1. `update-type`: 添加firmware安装器安装函数`install_image`和`parse_arg_arch`到update-type, `cat $installer_dir/firmware-update/install >> $tmp_installdir/update-type`
+    2. `installer.conf`: 创建必要的installer.conf防止缺少该文件(实际上不影响), `touch $tmp_installdir/installer.conf`, 不影响已经存在installer.conf
+12. 打包成可运行的安装脚本, 即image(onie-updater|firmware-xx):
+    1. 将`$tmp_installer`的父级`$tmp_dir`压缩成sharch.tar包(保留installer目录): `sharch="$tmp_dir/sharch.tar"; tar -C $tmp_dir -cf $sharch installer`
+    2. 准备安装脚本(onie-updater|firmware-xx): `cp $installer_dir/sharch_body.sh $output_file`
+    3. 计算sharch.tar的sha1sum值, 并填充到安装脚本作为变量值:
+       1. `sha1=$(cat $sharch | sha1sum | awk '{print $1}')`
+       2. `sed -i -e "s/%%IMAGE_SHA1%%/$sha1/" $output_file`
+    4. 将sharch.tar包追加到安装脚本最后, 安装时再将其解压处理: `cat $sharch >> $output_file`
+
+
+
+### onie-tools.tar.xz制作
 
 `onie-tools.tar.gz`包是静态的
 
@@ -106,7 +186,7 @@ tools/
 实质上`onie-tools.tar.gz`包是静态的！！！
 
 
-#### sysroot/rootfs文件系统制作
+### sysroot/rootfs文件系统制作
 
 交叉编译：xtools.make
 
@@ -195,19 +275,17 @@ tools/
 
 
 
-### 安装包/更新包制作原理
-
-1. 压缩 package 成 xz
-2. 追加package包到脚本/installer/sharch_body.sh后
-3. 更新包onie-updater-x86_64-xxx-r0就是脚本sharch_body.sh
-
 
 ### 安装/更新过程
 
 1. 运行安装包（`sharch_body.sh`），创建临时目录`/tmp/tmp.xxx/`
 2. `sharch_body.sh`将安装包`exit_marker`后的内容解压到/tmp/tmp.xxx/目录下，即/tmp/tmp.xxx/installer/
+   - 包括onie-update.tar.xz
+   - 暂时不解压onie-tools.tar.xz，看后续重新创建onie-boot分区时再解压
 3. `sharch_body.sh`执行`/tmp/tmp.xxx/installer/`下的`install.sh`进行安装
-4. `install.sh`初始化环境：`. ./installer.conf`, `. ./machine-build.conf`, `. ./update-type`, `. ./install-arch`
+4. `install.sh`初始化环境：`. ./installer.conf`, `. ./machine-build.conf`, `. ./update-type`, `. ./install-arch`(update_type=onie), `. ./install-platform`, `. /etc/machine.conf`
+   - `. ./install-arch`会初始化: `. ./installer.conf`, `. ./machine-build.conf`, `. /etc/machine.conf`
+   - `. ./update-type`: 若(update_type!=onie)即firmware-update, update-type会携带函数`install_image`和`parse_arg_arch`
 5. `install.sh`校验image，看跟现在用的onie是否是匹配的平台: function `check_machine_image`
 6. `install.sh`调用`install-arch`中的函数`install_image`
 7. 函数`install_image`调用`init_onie_install`：
@@ -239,7 +317,7 @@ tools/
             1. `cp onie.vmlinuz /mnt/onie-boot/onie/vmlinuz-${image_kernel_version}-onie` image_kernel_version来自machine-build.conf
             2. `cp onie.initrd /mnt/onie-boot/onie/initrd.img-${image_kernel_version}-onie` image_kernel_version来自machine-build.conf
             3. 若启用安全启动, 即image_secure_grub=yes, 拷贝签名文件onie.vmlinuz.sig和onie.initrd.sig
-            4. tools子目录，内容时onie-tools.tar.xz解压后的文件和目录，即源码中/rootconf/grub-arch/*/下的的内容
+            4. tools子目录，内容时onie-tools.tar.xz解压后(这个时候才解压onie-tools.tar.xz)的文件和目录，即源码中/rootconf/grub-arch/*/下的的内容
               ```
                tools/
                   bin/
