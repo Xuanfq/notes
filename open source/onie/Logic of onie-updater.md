@@ -300,7 +300,7 @@ tools/
 8. 函数`install_image`执行安装：
    1. 判断是否有钩子函数`pre_install_hook`并执行，配置于(`machine/xxx/platform/installer.conf`)
    2. 取消挂载：
-      1. 若是embed模式，取消挂载当前onie启动时的磁盘设备(ONIE-BOOT) 和 平台设置的安装设备
+      1. 若是embed模式，取消挂载当前onie启动时的磁盘设备的所有分区(ONIE-BOOT) 和 平台设置的安装设备, 并重新初始化块设备
       2. 若是升级模式，取消挂载当前onie启动时的磁盘设备(ONIE-BOOT)
    3. 保存升级前ONIE-BOOT的珍贵文件（重新挂载，拷贝后取消挂载）：
       1. 重新挂载`onie_boot_dev=`到`onie_boot_mnt=/mnt/onie-boot/`
