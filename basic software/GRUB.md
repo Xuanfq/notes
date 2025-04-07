@@ -363,11 +363,213 @@ Done.
 
 ## 配置文件
 
+grub2的默认配置文件为`/boot/grub2/grub.cfg`。
+
+该配置文件的写法弹性非常大，但绝大多数需要修改该配置文件时，都只需修改其中一小部分内容就可以达成目标。
+
+`grub2-mkconfig`程序可用来生成符合绝大多数情况的grub.cfg文件，默认它会自动尝试探测有效的操作系统内核，并生成对应的操作系统菜单项。使用方法非常简单，只需一个选项"-o"指定输出文件即可。
+
+```sh
+shell> grub2-mkconfig -o /boot/grub2/grub.cfg
+```
+
+
+### 通过/etc/default/grub文件生成grub.cfg
+
+grub2-mkconfig是根据/etc/default/grub文件来创建配置文件的。该文件中定义的是grub的全局宏，修改内置的宏可以快速生成grub配置文件。实际上在/etc/grub.d/目录下还有一些grub配置脚本，这些shell脚本读取一些脚本配置文件(如/etc/default/grub)，根据指定的逻辑生成grub配置文件：
+
+```sh
+[root@xxx ~]# ls /etc/grub.d/
+00_header  00_tuned  01_users  10_linux  20_linux_xen  20_ppc_terminfo  30_os-prober  40_custom  41_custom  README
+```
+
+在/etc/default/grub中，使用"key=vaule"的格式，key全部为大小字母，如果vaule部分包含了空格或其他特殊字符，则需要使用引号包围。
+
+例如，下面是一个/etc/default/grub文件的示例：
+```conf
+GRUB_TIMEOUT=5
+GRUB_DISTRIBUTOR="$(sed 's, release .*$,,g' /etc/system-release)"
+GRUB_DEFAULT=saved
+GRUB_DISABLE_SUBMENU=true
+GRUB_TERMINAL_OUTPUT="console"
+GRUB_CMDLINE_LINUX="crashkernel=auto biosdevname=0 net.ifnames=0 rhgb quiet"
+GRUB_DISABLE_RECOVERY="true"
+```
+
+虽然可用的宏较多，但可能用的上的就几个：GRUB_DEFAULT、GRUB_TIMEOUT、GRUB_CMDLINE_LINUX和GRUB_CMDLINE_LINUX_DEFAULT。
+
+
+#### 常用的配置KEY
+
+1. GRUB_DEFAULT
+
+默认的菜单项，默认值为0。其值可为数值N，表示从0开始计算的第N项是默认菜单，也可以指定对应的title表示该项为默认的菜单项。使用数值比较好，因为使用的title可能包含了容易改变的设备名。例如有如下菜单项：
+
+```conf
+menuentry 'Example GNU/Linux distribution' --class gnu-linux --id example-gnu-linux {
+    ...
+}
+```
+
+如果想将此菜单设为默认菜单，则可设置"GRUB_DEFAULT=example-gnu-linux"。
+
+如果GRUB_DEFAULT的值设置为"saved"，则表示默认的菜单项是"GRUB_SAVEDEFAULT"或"grub-set-default"所指定的菜单项。
+
+
+2. GRUB_SAVEDEFAULT
+
+默认该key的值未设置。如果该key的值设置为true时，如果选定了某菜单项，则该菜单项将被认为是新的默认菜单项。该key只有在设置了"GRUB_DEFAULT=saved"时才有效。
+
+不建议使用该key，因为GRUB_DEFAULT配合grub-set-default更方便。
+
+
+3. GRUB_TIMEOUT
+
+在开机选择菜单项的超时时间，超过该时间将使用默认的菜单项来引导对应的操作系统。默认值为5秒。等待过程中，按下任意按键都可以中断等待。
+
+设置为0时，将不列出菜单直接使用默认的菜单项引导与之对应的操作系统，设置为"-1"时将永久等待选择。
+
+是否显示菜单，和"GRUB_TIMEOUT_STYLE"的设置有关。
+
+
+4. GRUB_TIMEOUT_STYLE
+
+如果该key未设置值或者设置的值为"menu"，则列出启动菜单项，并等待"GRUB_TIMEOUT"指定的超时时间。
+
+如果设置为"countdown"和"hidden"，则不显示启动菜单项，而是直接等待"GRUB_TIMEOUT"指定的超时时间，如果超时了则启动默认菜单项并引导对应的操作系统。在等待过程中，按下"ESC"键可以列出启动菜单。设置为countdown和hidden的区别是countdown会显示超时时间的剩余时间，而hidden则完全隐藏超时时间。
+
+
+5. GRUB_DISTRIBUTOR
+
+设置发行版的标识名称，一般该名称用来作为菜单的一部分，以便区分不同的操作系统。
+
+
+6. GRUB_CMDLINE_LINUX
+
+添加到菜单中的内核启动参数。例如：
+```sh
+GRUB_CMDLINE_LINUX="crashkernel=ro root=/dev/sda3 biosdevname=0 net.ifnames=0 rhgb quiet"
+```
+
+
+7. GRUB_CMDLINE_LINUX_DEFAULT
+
+除非"GRUB_DISABLE_RECOVERY"设置为"true"，否则该key指定的默认内核启动参数将生成两份，一份是用于默认启动参数，一份用于恢复模式(recovery mode)的启动参数。
+
+该key生成的默认内核启动参数将添加在"GRUB_CMDLINE_LINUX"所指定的启动参数之后。
 
 
 
+8. GRUB_DISABLE_RECOVERY
+
+该项设置为true时，将不会生成恢复模式的菜单项。
 
 
+9. GRUB_DISABLE_LINUX_UUID
+
+默认情况下，grub2-mkconfig在生产菜单项的时候将使用uuid来标识Linux 内核的根文件系统，即"root=UUID=..."。
+
+例如，下面是/boot/grub2/grub.cfg中某菜单项的部分内容。
+```sh
+menuentry 'CentOS Linux (3.10.0-327.el7.x86_64) 7 (Core)' --class centos --class gnu-linux --class gnu --class os --unrestricted $menuentry_id_option 'gnulinux-3.10.0-327.el7.x86_64-advanced-b2a70faf-aea4-4d8e-8be8-c7109ac9c8b8' {
+
+        ......
+
+        linux16 /vmlinuz-3.10.0-327.el7.x86_64 root=UUID=b2a70faf-aea4-4d8e-8be8-c7109ac9c8b8 ro crashkernel=auto biosdevname=0 net.ifnames=0 quiet LANG=en_US.UTF-8
+
+        initrd16 /initramfs-3.10.0-327.el7.x86_64.img
+
+}
+```
+虽然使用UUID的方式更可靠，但有时候不太方便，所以可以设置该key为true来禁用。
+
+
+10. GRUB_BACKGROUND
+
+设置背景图片，背景图片必须是grub可读的，图片文件名后缀必须是".png"、".tga"、".jpg"、".jpeg"，在需要的时候，grub会按比例缩小图片的大小以适配屏幕大小。
+
+
+11. GRUB_THEME
+
+设置grub菜单的主题。
+
+
+12. GRUB_GFXPAYLOAD_LINUX
+
+设置为"text"时，将强制使用文本模式启动Linux。在某些情况下，可能不支持图形模式。
+
+
+13. GRUB_DISABLE_OS_PROBER
+
+默认情况下，grub2-mkconfig会尝试使用os-prober程序(如果已经安装的话，默认应该都装了)探测其他可用的操作系统内核，并为其生成对应的启动菜单项。设置为"true"将禁用自动探测功能。
+
+
+14. GRUB_DISABLE_SUBMENU
+
+默认情况下，grub2-mkconfig如果发现有多个同版本的或低版本的内核时，将只为最高版本的内核生成顶级菜单，其他所有的低版本内核菜单都放入子菜单中，设置为"y"将全部生成为顶级菜单。
+
+
+15. GRUB_HIDDEN_TIMEOUT(已废弃，但为了向后兼容，仍有效)
+
+使用"GRUB_TIMEOUT_STYLE={countdown|hidden}"替代该项
+
+
+16. GRUB_HIDDEN_TIMEOUT_QUIET(已废弃，但为了向后兼容，仍有效)
+
+配合GRUB_HIDDEN_TIMEOUT使用，可以使用GRUB_TIMEOUT_STYLE=countdown来替代这两项。
+
+
+
+### 通过脚本方式直接编写grub.cfg
+
+
+- 注释符：从#开始的字符都被认为是注释，所以grub支持行中注释
+- 连接操作符：{ } | & $ ; < >
+- 保留关键字和符号：! [[ ]] { } case do done elif else esac fi for function if in menuentry select then time until while。并非所有的关键字都有用，只是为了日后的功能扩展而提前提供的。
+- 引号和转义符
+  - 对于特殊的字符需要转义。有三种方式转义：使用反斜线、使用单引号、使用双引号。
+  - 反斜线转义方式和shell一样。
+  - 单引号中的所有字符串都是字面意思，没有任何特殊意义，即使单引号中的转义符也被认为是纯粹的字符。所以'\''是无法保留单引号的。单引号需要使用双引号来转移，所以应该写"'"。
+  - 双引号和单引号作用一样，但它不能转义某几个特殊字符，包括"$"和"\"。对于双引号中的"$"符号，它任何时候都保留本意。对于"\"，只有反斜线后的字符是'$'、'"'、'\'时才表示转义的意思，另外 ，某行若以反斜线结尾，则表示续行，但官方不建议在grub.cfg中使用续行符。
+- 变量扩展
+  - 使用$符号引用变量，也可以使用${var}的方式引用var变量。
+  - 支持位置变量，例如$1引用的是第一个参数。
+  - 还支持特殊的变量，如$?表示上一次命令的退出状态码。如果使用了位置变量，则还支持$*、$@和$#，$*代表的所有参数整体，各参数之间是不可分割的，$@也代表所有变量，但$@的各参数是可以被分割的，$#表示参数的个数。
+- 简单的命令
+  - 可以在grub.cfg中使用简单的命令。各命令之间使用换行符或分号表示该命令结束。
+  - 如果在命令前使用了"!"，则表示逻辑取反。
+- 循环结构：for name in word …; do list; done
+- 循环结构：while cond; do list; done
+- 循环结构：until cond; do list; done
+- 条件判断结构：if list; then list; [elif list; then list;] … [else list;] fi
+- 函数结构：function name { command; … }
+- 菜单项命令：menuentry title [--class=class …] [--users=users] [--unrestricted] [--hotkey=key] [--id=id] { command; … }
+  - 这是grub.cfg中最重要的项，官方原文：https://www.gnu.org/software/grub/manual/html_node/menuentry.html#menuentry
+
+  - 该命令定义了一个名为title的grub菜单项。当开机时选中该菜单项时，grub会将chosen环境变量的值赋给"--id"(如果给定了"--id"的话)，执行大括号中的命令列表，如果直到最后一个命令都全部执行成功，且成功加载了对应的内核后，将执行boot命令。随后grub就将控制权交给了操作系统内核。
+   ```text
+      --class：该选项用于将菜单分组，从而使得grub可以通过主题样式为不同组的菜单显示不同的样式风格。一个menuentry中，可以使用多次class表示将该菜单分到多个组中去。
+
+      --users：该选项限定只有此处列出的用户才能访问该菜单项，不指定该选项时将表示所有用户都能访问该菜单。
+
+      --unrestricted：该选项表示所有用户都有权访问该菜单项。
+
+      --hotkey：该选项为该菜单项关联一个热键，也就是快捷键，关联热键后只要按下该键就会选中该菜单。热键只能是字母键、backspace键、tab键或del键。
+
+      --id：该选项为该菜单关联一个唯一的数值。id的值可以由ASCII字母、数字//下划线组成，且不得以数字开头。
+
+      所有其他的参数包括title都被当作位置参数传递给大括号中的命令，但title总是$1，除title外的其余参数，位置值从前向后类推。
+   ```
+- break [n]：强制退出for/while/until循环
+- continue [n]：跳到下一次迭代，即进入下一次循环
+- return [n]：指定返回状态码
+- setparams [arg] …：从$1开始替换位置参数
+- shift [n]：踢掉前n个参数，使得第n+1个参数变为$1，但和shell中不一样的是，踢掉了前n个参数后，从$#-n+1到$#这些参数的位置不变
+
+
+## 命令行和菜单项中的命令
+
+grub2支持很多命令，有些命令只能在交互式命令行下使用，有些命令可用在配置文件中。在救援模式下，只有insmod、ls、set和unset命令可用。
 
 
 
