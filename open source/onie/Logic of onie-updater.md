@@ -137,6 +137,12 @@ onie-mk-installer.sh
     4. 将sharch.tar包追加到安装脚本最后, 安装时再将其解压处理: `cat $sharch >> $output_file`
 
 
+Notice:
+- onieroot/installer/charch_body.sh:
+  - ONIE-UPDATER-COOKIE的存在意味着是ONIE Update Installer，否则是NOS!
+  - %%VAR%% 形式的字符串在构造过程中被替换，即使用该文件是应替换%%VAR%%成对应的值！如%%IMAGE_SHA1%%
+
+
 
 ### onie-tools.tar.xz制作
 
