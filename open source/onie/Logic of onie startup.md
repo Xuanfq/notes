@@ -19,12 +19,12 @@ onie启动逻辑
 ## 步骤概述
 
 1. /etc/inittab (rootconf/default/etc/inittab): inittab为系统的PID=1的进程，决定这系统启动调用哪些启动脚本文件
-   1. `::shutdown:/etc/init.d/rc 6`: 设置关机时执行的rc脚步
+   1. `::shutdown:/etc/init.d/rc 6`: 设置关机时执行的rc脚本，`/etc/rc6.d/`, 与`/etc/rc0.d/`一样
    2. `::restart:/sbin/init`: restart是非标准动作，需要查看busybox文档? `busybox init --help`?
-   3. `::sysinit:/etc/init.d/rc S`: 系统初始化时执行命令`/etc/init.d/rc S`
-   4. `::wait:/etc/init.d/rc 3`: 等待命令`/etc/init.d/rc 3`执行完成
-      1. `S10dropbear.sh`: 启动ssh服务
-      2. `S10telnetd.sh`: 启动telnet服务
+   3. `::sysinit:/etc/init.d/rc S`: 系统初始化时执行命令`/etc/init.d/rc S`, 即优先完成`/etc/rcS.d/`下的脚本
+   4. `::wait:/etc/init.d/rc 3`: 等待命令`/etc/init.d/rc 3`执行完成，完成运行级别为3(完整的多用户模式)的`/etc/rc3.d/`下的脚本
+      1. `S10dropbear.sh`: 启动sshd服务
+      2. `S10telnetd.sh`: 启动telnetd服务
       3. `S50discover.sh`: 启动发现服务
          1. 读取环境变量: `$onie_boot_reason`
          2. `echo "$daemon: xxx mode detected.  (Installer disabled.|Running uninstaller.|Running installer.|Running updater.)" > /dev/console`
@@ -51,8 +51,9 @@ Source: `/bin/discover`
 
 1. 准备好库函数/变量等：
    1. `. /lib/onie/functions`
-   2. `import_cmdline` of `/lib/onie/functions`
-   3. `. /lib/onie/discover-arch` in `rootconf/grub-arch/sysroot-lib-onie/`
+   2. 导入内核启动参数: `import_cmdline` of `/lib/onie/functions`
+   3. 允许不同架构跳过查找某些分区里的安装器: `. /lib/onie/discover-arch` in `rootconf/grub-arch/sysroot-lib-onie/` to cover function `skip_parts_arch`
+      - 如`grub-arch`跳过`/EFI/`分区和`-DIAG`分区
 
 
 

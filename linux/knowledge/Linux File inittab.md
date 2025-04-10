@@ -1,4 +1,4 @@
-# File inittab
+# Linux File inittab
 
 `inittab`, 位于`/etc/inittab`, 是Linux初始化系统使用的配置文件，在不同发行版Linux的位置不同。
 
