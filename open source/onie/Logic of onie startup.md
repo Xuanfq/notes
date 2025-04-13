@@ -136,7 +136,7 @@ onie启动逻辑
          6. `config_ethmgmt`: 配置管理接口IP，逐个配置
             1. check_link_up: `$(cat /sys/class/net/${intf}/operstate) = "up"|"unknown"|"down"`持续10s等待网口link up
             2. static ip: 来自内核命令参数
-            3. DHCPv6:
+            3. DHCPv6: 未实现
             4. DHCPv4:
             5. 回退到知名的（常用的）IP 地址:
       7. `S40syslogd.sh`: syslogd（System Log Daemon）是Unix/Linux 系统中的 ​​系统日志守护进程​​，负责 ​​收集、记录和管理系统日志​​。它通常与 klogd（内核日志守护进程）配合使用，形成完整的日志记录体系。
@@ -180,16 +180,75 @@ Source: `/bin/discover`
       2. 环境变量`onie_installer`="/var/tmp/installer"
       3. 变量`ONIE_RUN_DIR`="/var/run/onie"
       4. 变量`tee_log_file`=/dev/console
-      5. 变量`filename_prefix`="onie-updater"|"onie-installer"
+      5. 变量`filename_prefix`="onie-updater"(update or embed mode)|"onie-installer"(install mode)
       6. 变量`onie_operation`="onie-update"|"os-install"
       7. 变量`onie_default_filename`="${filename_prefix}-${onie_platform}"=
+      8. 哪些文件名会当作默认的image/installer/updater的文件名?
+         1. `onie-updater/installer-$onie_platform`
+         2. `onie-updater/installer-$onie_arch-$onie_machine`=onie-updater-x86_64-$onie_platform
+         3. `onie-updater/installer-$onie_machine`=onie-updater-cls_xxx
+         4. `onie-updater/installer-${onie_arch}-$onie_switch_asic`=onie-updater-x86_64-bcm
+         5. `onie-updater/installer-$onie_switch_asic`=onie-updater-bcm
+         6. `onie-updater/installer`
    2. 导入内核启动参数: `import_cmdline` of `/lib/onie/functions`
    3. 允许不同架构跳过查找某些分区里的安装器: `. /lib/onie/discover-arch` in `rootconf/grub-arch/sysroot-lib-onie/` to cover function `skip_parts_arch`
       - 如`grub-arch`跳过`/EFI/`分区和`-DIAG`分区
    4. 定义用于将参数传递给`exec_installer`的文件:\
       1. onie_neigh_file="${ONIE_RUN_DIR}/onie_neigh_file.txt"=/var/run/onie/onie_neigh_file.txt
       2. onie_parms_file="${ONIE_RUN_DIR}/onie_parms_file.txt"=/var/run/onie/onie_parms_file.txt
-   5. 
+2. 循环发现installer/updater：
+   1. `/etc/init.d/networking.sh discover`: 仅配置IP
+   2. `/etc/init.d/syslogd.sh discover`: 开启日志守护进程
+   3. `service_discovery`: 服务发现，查找可供安装程序使用的 URL（一个或多个）
+      1. `sd_static  && return`: 如果通用引导加载程序（u-boot）传递给我们的是静态网址（onie_install_url），那么就使用该网址。 
+      2. `sd_localfs`: 查找本地文件系统，只查找文件系统根目录（跳过arch指定的分区如EFI和-DIAG）
+      3. `sd_localubifs`: 查找本地UBI文件系统，只查找文件系统根目录（跳过arch指定的分区如EFI和-DIAG）（UBI（​​Unsorted Block Images​​）是 Linux 专为 ​​NAND Flash​​ 设计的文件系统管理层，位于 ​​MTD（Memory Technology Device）​​ 之上）
+         1. `for p in /sys/class/ubi/ubi?/ubi?_?`
+         2. `ubiname=$(cat $p/name)`
+         3. `mount -t ubifs ubi:$ubiname $mp`
+      4. `sd_dhcp6`: 未实现
+      5. `sd_dhcp4`: 包括http, tftp, dhcp, pxe, dns等服务器地址和配置
+         1. `udhcpc $(udhcpc_args) -t 2 -T 2 -n  -O 7 -O 43 -O 54 -O 66 -O 67 -O 72 -O 114 -O 125  -i $intf -s /lib/onie/udhcp4_sd`: 在所有网络接口上依次尝试 DHCP 请求，以获取 IP 和配置，包括DNS服务器(7), 厂商特定信息（如 PXE 配置）(43),DHCP 服务器标识(54),TFTP 服务器地址（用于网络启动）(66),启动文件名（如 onie-installer）(67),HTTP 代理(72),自定义选项（ONIE 扩展）(114),厂商识别码(125)
+      6. `sd_mdns`: mDNS / DNS-SD，未实现
+      7. `sd_fallback`: 未实现
+   4. `neigh_discovery`: 网络邻居发现,存放于到文件`onie_neigh_file`=/var/run/onie/onie_neigh_file.txt
+      1. `ip addr show dev $i | grep tentative`: 等待接口链路本地地址脱离不确定状态。 
+      2. `ip -4 neigh show | awk '{print $1}' | tr '\n' ',' >> $onie_neigh_file`: 收集IPv4网络邻居
+      3. `ip -6 neigh show | awk '{print "[" $1 "-" $3 "]"}' | tr '\n' ',' >> $onie_neigh_file`: 收集IPv6网络邻居
+   5. `rm -f /var/run/install.rc`: 强制删除之前的安装结果
+   6. 构造exec_installer参数文件onie_parms_file=/var/run/onie/onie_parms_file.txt:
+      1. `cat $onie_neigh_file > $onie_parms_file`: 添加邻居发现
+      2. `echo "$onie_disco" >>  $onie_parms_file`: 添加服务发现
+      3. `sed -e 's/@@/ = /g' -e 's/##/\n/g' $onie_parms_file | logger -t discover -p ${syslog_onie}.info`: 修改`name1@@val1##name2@@val2##..nameX@@valX##`格式为 `key = value \n key1 = value1`并输出到日志，syslog_onie="local0"
+      4. `exec_installer $onie_parms_file 2>&1 | tee $tee_log_file | logger -t onie-exec -p ${syslog_onie}.info`: 执行安装并输出结果到控制台和系统日志
+         1. 变量和环境准备：
+            1. `. /lib/onie/functions`
+            2. `syslog_tag`=onie-exec
+            3. `install_result`="/var/run/install.rc"
+            4. `[ -r /lib/onie/exec-installer-arch ] && . /lib/onie/exec-installer-arch`: 允许架构重写覆盖函数`finish_nos_install()`和`finish_update_install()`，主要是grub-arch的，u-boot-arch没有实现
+            5. `parm_file`="$1"=onie_parms_file="${ONIE_RUN_DIR}/onie_parms_file.txt"=/var/run/onie/onie_parms_file.txt
+            6. `parms`="$(cat $parm_file)"
+         2. `import_parms "$parms"`: 导入参数,将`name1@@val1##name2@@val2##..nameX@@valX##`字符串转为name=value的环境变量
+            1. ...export name=val...
+            2. `[ -n "$onie_disco_vivso" ] && import_vivso "$onie_disco_vivso"`: 解析 DHCP Option 125（厂商特定信息）中的 ONIE（Open Network Install Environment）相关配置，用于网络设备自动化安装的引导环境，设置并导出环境变量`onie_disco_onie_url`的值，但由于`onie_disco_vivso`没有设值，一般不会调用。可以通过设置环境变量`onie_disco_vivso`进行协助发现installer/updater！
+               - `onie_disco_vivso`: i.e. 0000A67F0C01687474703A2F2F6578616D706C652E636F6D
+                  - 0000A67F：Open Compute Project onie_iana_enterprise 企业号 42623（0xA67F）
+                  - 13：长度 19，自动*2 = 38
+                  - 01687474703A2F2F6578616D706C652E636F6D:
+                    - 01：类型 1（安装程序 URL installer_url）, 类型 2 时为 （更新程序 URL updater_url），要匹配到对应的onie模式才能有用
+                    - 687474703A2F2F6578616D706C652E636F6D: ASCII 编码的 "http://example.com"
+               - `onie_disco_onie_url`: 解释 687474703A2F2F6578616D706C652E636F6D 为 http://example.com
+         3. `rm -f $onie_installer`: 移除onie_installer="/var/tmp/installer" form `/lib/onie/functions`
+         4. `[ -z "$onie_eth_addr" ] && onie_eth_addr="$(onie-sysinfo -e)"`:
+            1. is it set in the environment?  highest priority: /proc/cmdline(import_cmdline) or env name = `onie_eth_addr`
+            2. platform function provided: function is `get_ethaddr_platform()`
+            3. architecture function provided: function is `get_ethaddr_arch()` from `rootconf/grub-arch/sysroot-lib-onie/sysinfo-arch` in grub-arch
+            4. use the contents of /sys/class/net/eth0/address: eth_addr=`$(cat /sys/class/net/eth0/address)`
+            5. return "unknown"
+         5. `[ -z "$onie_serial_num" ] && onie_serial_num="$(onie-sysinfo -s)"`: /proc/cmdline(import_cmdline) or onie-sysinfo -s
+         6. 
+   7. `[ -r /var/run/install.rc ] && [ "$(cat /var/run/install.rc)" = "0" ] && exit 0`: 若安装成功则退出Discover程序
+   8. 等待20s, 避免自身程序的网络发现成为其他服务器的DoS攻击
 
 
 
