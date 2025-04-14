@@ -165,11 +165,13 @@ onie启动逻辑
          2. 初始化环境变量（如 PATH, HOME）、别名（alias）和函数。
 
 
-### Discover
+### discover
 
 Source: `/bin/discover`
 
 目的：发现并运行安装installer/updater程序
+
+用法：`discover`
 
 
 #### 代码逻辑
@@ -220,41 +222,113 @@ Source: `/bin/discover`
       1. `cat $onie_neigh_file > $onie_parms_file`: 添加邻居发现
       2. `echo "$onie_disco" >>  $onie_parms_file`: 添加服务发现
       3. `sed -e 's/@@/ = /g' -e 's/##/\n/g' $onie_parms_file | logger -t discover -p ${syslog_onie}.info`: 修改`name1@@val1##name2@@val2##..nameX@@valX##`格式为 `key = value \n key1 = value1`并输出到日志，syslog_onie="local0"
-      4. `exec_installer $onie_parms_file 2>&1 | tee $tee_log_file | logger -t onie-exec -p ${syslog_onie}.info`: 执行安装并输出结果到控制台和系统日志
-         1. 变量和环境准备：
-            1. `. /lib/onie/functions`
-            2. `syslog_tag`=onie-exec
-            3. `install_result`="/var/run/install.rc"
-            4. `[ -r /lib/onie/exec-installer-arch ] && . /lib/onie/exec-installer-arch`: 允许架构重写覆盖函数`finish_nos_install()`和`finish_update_install()`，主要是grub-arch的，u-boot-arch没有实现
-            5. `parm_file`="$1"=onie_parms_file="${ONIE_RUN_DIR}/onie_parms_file.txt"=/var/run/onie/onie_parms_file.txt
-            6. `parms`="$(cat $parm_file)"
-         2. `import_parms "$parms"`: 导入参数,将`name1@@val1##name2@@val2##..nameX@@valX##`字符串转为name=value的环境变量
-            1. ...export name=val...
-            2. `[ -n "$onie_disco_vivso" ] && import_vivso "$onie_disco_vivso"`: 解析 DHCP Option 125（厂商特定信息）中的 ONIE（Open Network Install Environment）相关配置，用于网络设备自动化安装的引导环境，设置并导出环境变量`onie_disco_onie_url`的值，但由于`onie_disco_vivso`没有设值，一般不会调用。可以通过设置环境变量`onie_disco_vivso`进行协助发现installer/updater！
-               - `onie_disco_vivso`: i.e. 0000A67F0C01687474703A2F2F6578616D706C652E636F6D
-                  - 0000A67F：Open Compute Project onie_iana_enterprise 企业号 42623（0xA67F）
-                  - 13：长度 19，自动*2 = 38
-                  - 01687474703A2F2F6578616D706C652E636F6D:
-                    - 01：类型 1（安装程序 URL installer_url）, 类型 2 时为 （更新程序 URL updater_url），要匹配到对应的onie模式才能有用
-                    - 687474703A2F2F6578616D706C652E636F6D: ASCII 编码的 "http://example.com"
-               - `onie_disco_onie_url`: 解释 687474703A2F2F6578616D706C652E636F6D 为 http://example.com
-         3. `rm -f $onie_installer`: 移除onie_installer="/var/tmp/installer" form `/lib/onie/functions`
-         4. `[ -z "$onie_eth_addr" ] && onie_eth_addr="$(onie-sysinfo -e)"`:
-            1. is it set in the environment?  highest priority: /proc/cmdline(import_cmdline) or env name = `onie_eth_addr`
-            2. platform function provided: function is `get_ethaddr_platform()`
-            3. architecture function provided: function is `get_ethaddr_arch()` from `rootconf/grub-arch/sysroot-lib-onie/sysinfo-arch` in grub-arch
-            4. use the contents of /sys/class/net/eth0/address: eth_addr=`$(cat /sys/class/net/eth0/address)`
-            5. return "unknown"
-         5. `[ -z "$onie_serial_num" ] && onie_serial_num="$(onie-sysinfo -s)"`: /proc/cmdline(import_cmdline) or onie-sysinfo -s
-         6. 
+      4. `exec_installer $onie_parms_file 2>&1 | tee $tee_log_file | logger -t onie-exec -p ${syslog_onie}.info`: 执行安装并输出结果到控制台和系统日志，参照下文 ### exec_installer
    7. `[ -r /var/run/install.rc ] && [ "$(cat /var/run/install.rc)" = "0" ] && exit 0`: 若安装成功则退出Discover程序
    8. 等待20s, 避免自身程序的网络发现成为其他服务器的DoS攻击
 
 
 
+### exec_installer
+
+Source: `/bin/exec_installer`
+
+目的：运行安装installer/updater程序
+
+用法：`exec_installer $params_file_path`
 
 
+#### 代码逻辑
 
+
+1. 变量和环境准备：
+   1. `. /lib/onie/functions`
+   2. `syslog_tag`=onie-exec
+   3. `install_result`="/var/run/install.rc"
+   4. `[ -r /lib/onie/exec-installer-arch ] && . /lib/onie/exec-installer-arch`: 允许架构重写覆盖函数`finish_nos_install()`和`finish_update_install()`，主要是grub-arch的finish_update_install，u-boot-arch没有实现
+   5. `parm_file`="$1"=onie_parms_file="${ONIE_RUN_DIR}/onie_parms_file.txt"=/var/run/onie/onie_parms_file.txt
+   6. `parms`="$(cat $parm_file)"
+2. `import_parms "$parms"`: 导入参数,将`name1@@val1##name2@@val2##..nameX@@valX##`字符串转为name=value的环境变量
+   1. ...export name=val...
+   2. `[ -n "$onie_disco_vivso" ] && import_vivso "$onie_disco_vivso"`: 解析 DHCP Option 125（厂商特定信息）中的 ONIE（Open Network Install Environment）相关配置，用于网络设备自动化安装的引导环境，设置并导出环境变量`onie_disco_onie_url`的值，但由于`onie_disco_vivso`没有设值，一般不会调用。可以通过设置环境变量`onie_disco_vivso`进行协助发现installer/updater！
+      - `onie_disco_vivso`: i.e. 0000A67F0C01687474703A2F2F6578616D706C652E636F6D
+         - 0000A67F：Open Compute Project onie_iana_enterprise 企业号 42623（0xA67F）
+         - 13：长度 19，自动*2 = 38
+         - 01687474703A2F2F6578616D706C652E636F6D:
+           - 01：类型 1（安装程序 URL installer_url）, 类型 2 时为 （更新程序 URL updater_url），要匹配到对应的onie模式才能有用
+           - 687474703A2F2F6578616D706C652E636F6D: ASCII 编码的 "http://example.com"
+      - `onie_disco_onie_url`: 解释 687474703A2F2F6578616D706C652E636F6D 为 http://example.com
+3. `rm -f $onie_installer`: 移除onie_installer="/var/tmp/installer" form `/lib/onie/functions`
+4. `[ -z "$onie_eth_addr" ] && onie_eth_addr="$(onie-sysinfo -e)"`: onie_eth_addr的值获取顺序如下
+   1. is it set in the environment?  highest priority: /proc/cmdline(import_cmdline) or env name = `onie_eth_addr`
+   2. platform function provided: function is `get_ethaddr_platform()`
+   3. architecture function provided: function is `get_ethaddr_arch()` from `rootconf/grub-arch/sysroot-lib-onie/sysinfo-arch` in grub-arch
+   4. use the contents of /sys/class/net/eth0/address: eth_addr=`$(cat /sys/class/net/eth0/address)`
+   5. return "unknown"
+5. `[ -z "$onie_serial_num" ] && onie_serial_num="$(onie-sysinfo -s)"`: onie_serial_num 来源于 /proc/cmdline(import_cmdline) or onie-sysinfo -s
+6. `from_cli`=no; 
+7. `onie_installer_parms`=""
+8. `if [ -n "$onie_cli_static_url" ]`: 尝试使用静态安装器的URL，来源于`onie-nos-installer nos.bin(i.e. sonic.bin)`
+   1. `from_cli`=yes
+   2. `tee_log_file`=`/proc/$$/fd/1`: 发送当前stdout输出到当前进程
+   3. `onie_installer_parms`="$onie_cli_static_parms": `onie-nos-installer`携带的除 nos image 本身的其他参数
+   4. `url_run "$onie_cli_static_url" && exit 0`: 执行通过URL更新
+      - `url_run $url`: url 格式为 http:// | ftp:// | tftp:// | file://
+         ```
+         1. rm -f $onie_installer
+         2. http | https | ftp: 
+            1. wget -o $onie_installer
+            2. run_installer $url && return 0
+         3. tftp:
+            1. tftp_run -> tftp_wrap -> tftp -o $onie_installer
+            2. run_installer $url && return 0
+         4. file:
+            1. copy $url $onie_installer
+            2. run_installer $url && return 0
+         5. rm -f $onie_installer
+         6. return 1
+         ```
+      - `run_installer $url`: 
+         ```
+         1. export onie_exec_url="$1"    # 传递给installer/updater中的 installer.sh (echo "Source URL: $onie_exec_url")
+         2. image_type=$(get_image_type $onie_installer)    # update | nos
+         3. check_installer $image_type || return 1    # 检查onie的模式和image是否匹配，rescue允许NOS和Updater，update|embed允许Updater，install允许NOS 
+         4. chmod +x $onie_installer
+         5. $onie_installer $onie_installer_parms; echo "$?" > $install_result;    # 执行安装器/更新器，并将安装/更新结果存放到install_result=/var/run/install.rc上
+         6. 处理安装结果：
+            1. nos: finish_nos_install "$(cat $install_result)" "$onie_exec_url" "$onie_installer" && return 0    # 若安装成功，则重启reboot
+            2. updater: finish_update_install "$(cat $install_result)" "$onie_exec_url" "$onie_installer" && return 0
+               - u-boot-arch: 若成功, 有 /tmp/reboot-cmd 则执行，无则 reboot
+               - grub-arch:
+                  1. 判断 url 是不是 onie_update_pending_dir 从而是否为 fw_update (yes|no)
+                  2. 存放install_result,url和image信息到 /mnt/onie-boot/update/results/$(basename $URL)
+                  3. 若安装成功：
+                     - if [ "$fw_update" = "yes" ] then rm -f $url $attempts_file(/mnt/onie-boot/update/attempts/$(basename $URL))
+                     - else ([ -x /tmp/reboot-cmd ] && /tmp/reboot-cmd) || reboot
+                  4. 若安装失败：
+                     - if [ "$fw_update" = "yes" ] 计算重试次数存放到 $attempts_file(/mnt/onie-boot/update/attempts/$(basename $URL))，超过5次移除更新 rm -f $URL $attempts_file
+         7. return 1
+         ```
+   5. 安装失败则退出1，成功退出0
+9. `if [ -n "$onie_cli_static_update_url" ]`: 尝试使用静态更新器的URL，来源于`onie-self-update onie-updater-xxx.bin`
+   1. `from_cli`=yes
+   2. `tee_log_file`=/proc/$$/fd/1: 发送当前stdout输出到当前进程
+   3. `onie_installer_parms`="$onie_cli_static_parms": `onie-self-update`携带的除 update image 本身的其他参数
+   4. `url_run "$onie_cli_static_url" && exit 0`: 执行通过URL更新
+   5. 安装失败则退出1，成功退出0
+10. `if [ -n "$onie_static_url" ]`: 尝试使用静态内核命令行参数的URL，来源于GRUB加载内核时指定
+   1. `url_run "$onie_static_url" && exit 0`: 成功则退出，不成功继续尝试其他方式
+11. `if [ -d "$onie_update_pending_dir" ]`: 查找待处理的固件更新，一般是`grub-arch`架构才有，该变量源于`grub-arch/sysroot-lib-onie/onie-blkdev-common`，若为discover程序，在加载`grub-arch/sysroot-lib-onie/discover-arch`时会加载。
+   1. `firmware_update_run && exit 0`: 执行更新，成功则退出
+12. `if [ -n "$onie_local_parts" ]`: 尝试安装本地磁盘所有分区文件系统的discover查找的image
+   1. `local_fs_run && exit 0`:  执行更新，成功则退出
+13. `if [ -n "$onie_disco_onie_url" ]`: 尝试安装其他额外发现的URL, 来源于本章节2.2.
+   1. `url_run "$onie_disco_onie_url" && exit 0`: 
+14. `if [ -n "$onie_disco_url" ]`: 尝试安装其他额外发现的URL, 暂无`onie_disco_url`的其他设值，可通过环境变量进行发现
+   1. `url_run "$onie_disco_url" && exit 0`
+15. `http_download && exit 0`: 尝试使用 HTTP 发现方法去尝试URL
+16. `tftp_download && exit 0`: 尝试使用 TFTP 发现方法去尝试URL
+17. `waterfall && exit 0`: 尝试使用 HTTP/TFTP 瀑布式方法去尝试URL
+18. `exit 1`
 
 
 
