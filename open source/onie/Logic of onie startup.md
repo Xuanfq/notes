@@ -185,7 +185,7 @@ Source: `/bin/discover`
       5. 变量`filename_prefix`="onie-updater"(update or embed mode)|"onie-installer"(install mode)
       6. 变量`onie_operation`="onie-update"|"os-install"
       7. 变量`onie_default_filename`="${filename_prefix}-${onie_platform}"=
-      8. 哪些文件名会当作默认的image/installer/updater的文件名?
+      8. 哪些文件名会当作默认的image/installer/updater的文件名? 存放在 `onie_default_filenames`, func `get_default_filenames`
          1. `onie-updater/installer-$onie_platform`
          2. `onie-updater/installer-$onie_arch-$onie_machine`=onie-updater-x86_64-$onie_platform
          3. `onie-updater/installer-$onie_machine`=onie-updater-cls_xxx
@@ -202,21 +202,22 @@ Source: `/bin/discover`
    1. `/etc/init.d/networking.sh discover`: 仅配置IP
    2. `/etc/init.d/syslogd.sh discover`: 开启日志守护进程
    3. `service_discovery`: 服务发现，查找可供安装程序使用的 URL（一个或多个）
-      1. `sd_static  && return`: 如果通用引导加载程序（u-boot）传递给我们的是静态网址（onie_install_url），那么就使用该网址。 
-      2. `sd_localfs`: 查找本地文件系统，只查找文件系统根目录（跳过arch指定的分区如EFI和-DIAG）
-      3. `sd_localubifs`: 查找本地UBI文件系统，只查找文件系统根目录（跳过arch指定的分区如EFI和-DIAG）（UBI（​​Unsorted Block Images​​）是 Linux 专为 ​​NAND Flash​​ 设计的文件系统管理层，位于 ​​MTD（Memory Technology Device）​​ 之上）
+      1. `sd_static  && return`: 如果通用引导加载程序（u-boot）传递给我们的是静态网址（onie_install_url），那么就使用该网址。 存放到变量`onie_static_url`
+      2. `sd_localfs`: 查找本地文件系统，只查找文件系统根目录（跳过arch指定的分区如EFI和-DIAG），存放在变量`onie_local_parts`
+      3. `sd_localubifs`: 查找本地UBI文件系统，只查找文件系统根目录（跳过arch指定的分区如EFI和-DIAG），存放在变量`onie_local_parts`（UBI（​​Unsorted Block Images​​）是 Linux 专为 ​​NAND Flash​​ 设计的文件系统管理层，位于 ​​MTD（Memory Technology Device）​​ 之上）。
          1. `for p in /sys/class/ubi/ubi?/ubi?_?`
          2. `ubiname=$(cat $p/name)`
          3. `mount -t ubifs ubi:$ubiname $mp`
       4. `sd_dhcp6`: 未实现
-      5. `sd_dhcp4`: 包括http, tftp, dhcp, pxe, dns等服务器地址和配置
+      5. `sd_dhcp4`: 包括http, tftp, dhcp, pxe, dns等服务器地址和配置，存放到变量`onie_disco`
          1. `udhcpc $(udhcpc_args) -t 2 -T 2 -n  -O 7 -O 43 -O 54 -O 66 -O 67 -O 72 -O 114 -O 125  -i $intf -s /lib/onie/udhcp4_sd`: 在所有网络接口上依次尝试 DHCP 请求，以获取 IP 和配置，包括DNS服务器(7), 厂商特定信息（如 PXE 配置）(43),DHCP 服务器标识(54),TFTP 服务器地址（用于网络启动）(66),启动文件名（如 onie-installer）(67),HTTP 代理(72),自定义选项（ONIE 扩展）(114),厂商识别码(125)
       6. `sd_mdns`: mDNS / DNS-SD，未实现
       7. `sd_fallback`: 未实现
-   4. `neigh_discovery`: 网络邻居发现,存放于到文件`onie_neigh_file`=/var/run/onie/onie_neigh_file.txt
+   4. `neigh_discovery`: 网络邻居发现,存放于到文件`onie_neigh_file`=/var/run/onie/onie_neigh_file.txt。后续将存放到`onie_parms_file`=/var/run/onie/onie_parms_file.txt
       1. `ip addr show dev $i | grep tentative`: 等待接口链路本地地址脱离不确定状态。 
       2. `ip -4 neigh show | awk '{print $1}' | tr '\n' ',' >> $onie_neigh_file`: 收集IPv4网络邻居
       3. `ip -6 neigh show | awk '{print "[" $1 "-" $3 "]"}' | tr '\n' ',' >> $onie_neigh_file`: 收集IPv6网络邻居
+      4. `cat onie_neigh_file`=: onie_neighs@@xxx,aaa,bbb##
    5. `rm -f /var/run/install.rc`: 强制删除之前的安装结果
    6. 构造exec_installer参数文件onie_parms_file=/var/run/onie/onie_parms_file.txt:
       1. `cat $onie_neigh_file > $onie_parms_file`: 添加邻居发现
@@ -313,19 +314,58 @@ Source: `/bin/exec_installer`
    1. `from_cli`=yes
    2. `tee_log_file`=/proc/$$/fd/1: 发送当前stdout输出到当前进程
    3. `onie_installer_parms`="$onie_cli_static_parms": `onie-self-update`携带的除 update image 本身的其他参数
-   4. `url_run "$onie_cli_static_url" && exit 0`: 执行通过URL更新
+   4. `url_run "$onie_cli_static_url" && exit 0`: 执行通过URL更新，过程参照上方8.4
    5. 安装失败则退出1，成功退出0
 10. `if [ -n "$onie_static_url" ]`: 尝试使用静态内核命令行参数的URL，来源于GRUB加载内核时指定
-   1. `url_run "$onie_static_url" && exit 0`: 成功则退出，不成功继续尝试其他方式
+   1. `url_run "$onie_static_url" && exit 0`: 成功则退出，不成功继续尝试其他方式，过程参照上方8.4
 11. `if [ -d "$onie_update_pending_dir" ]`: 查找待处理的固件更新，一般是`grub-arch`架构才有，该变量源于`grub-arch/sysroot-lib-onie/onie-blkdev-common`，若为discover程序，在加载`grub-arch/sysroot-lib-onie/discover-arch`时会加载。
    1. `firmware_update_run && exit 0`: 执行更新，成功则退出
+      1. `fw_rc`=1: image更新结果1，默认失败
+      2. `for image in $(ls $onie_update_pending_dir)`:
+         1. `url_run "$onie_update_pending_dir/$image" && fw_rc=0`: 成功则继续更新其他image
+         2. `url_run "$onie_update_pending_dir/$image" || (fw_rc=1 && break)`: 失败即立即停止
+      3. `if [ $fw_rc -eq 0 ]`: 
+         1. `[ -x /tmp/reboot-cmd ] && /tmp/reboot-cmd`: 使用供应商的重启脚本，可定制power-cycle!
+         2. `[ -x /tmp/reboot-cmd ] || (reboot && return 0)`: 软重启
+      4. `return 1`
 12. `if [ -n "$onie_local_parts" ]`: 尝试安装本地磁盘所有分区文件系统的discover查找的image
    1. `local_fs_run && exit 0`:  执行更新，成功则退出
-13. `if [ -n "$onie_disco_onie_url" ]`: 尝试安装其他额外发现的URL, 来源于本章节2.2.
-   1. `url_run "$onie_disco_onie_url" && exit 0`: 
+      1. `mp=$(mktemp -d)`
+      2. `while [ ${#onie_local_parts} -gt 0 ]`: 逐个执行安装(run_installer)，安装成功后将 reboot 或 /tmp/reboot-cmd
+         1. `p=${onie_local_parts%%,*}`
+         2. `mountopts="" && beginswith "ubi:" $p && mountopts="-t ubifs"`
+         3. `onie_local_parts=${onie_local_parts#*,}`
+         4. `mount $mountopts $p $mp > /dev/null 2>&1 && {...}`: 临时挂载
+            1. `for f in $(get_default_filenames)`
+               1. `if [ -r $mp/$f ]`: 
+                  1. `tmp_copy=$(mktemp -p /tmp)`: 创建临时目录
+                  2. `cp $mp/$f $tmp_copy`: 复制安装器/更新器到临时目录
+                  3. `sync ; sync`
+                  4. `umount $mp`: 取消挂载
+                  5. `ln -sf $tmp_copy $onie_installer`: 链接到 /var/tmp/installer 
+                  6. `run_installer "file:/$p/$f" && return 0`: 执行安装，安装成功后将 reboot 或 /tmp/reboot-cmd
+                  7. `rm -f $tmp_copy $onie_installer`
+                  8. `mount $mountopts $p $mp > /dev/null 2>&1` 取消临时挂载
+         5. `umount $p`
+      3. `rm -rf $mp`
+      4. `return 1`
+13. `if [ -n "$onie_disco_onie_url" ]`: 尝试安装其他额外发现的URL, 来源于本章节 2.2.(参照上方) 通过环境变量设置`onie_disco_onie_url`的值
+   1. `url_run "$onie_disco_onie_url" && exit 0`: 执行通过URL更新，过程参照上方8.4
 14. `if [ -n "$onie_disco_url" ]`: 尝试安装其他额外发现的URL, 暂无`onie_disco_url`的其他设值，可通过环境变量进行发现
-   1. `url_run "$onie_disco_url" && exit 0`
+   1. `url_run "$onie_disco_url" && exit 0`: 执行通过URL更新，过程参照上方8.4
 15. `http_download && exit 0`: 尝试使用 HTTP 发现方法去尝试URL
+   1. `http_servers`=$list:
+      - onie_server_name="onie-server"
+      - onie_disco_wwwsrv=""
+      - onie_disco_siaddr=""
+      - onie_disco_serverid=""
+      - onie_disco_tftpsiaddr=""
+      - onie_disco_tftp=""
+      - func $(get_onie_neighs): 将 onie_neighs 环境变量转为列表
+   2. `for server in $http_servers`
+      1. `nc -w 10 $server 80 -e /bin/true > /dev/null 2>&1 && {...}`: 检查http服务的端口是否开通，若开通执行下方命令
+         1. `for f in $(get_default_filenames); do url_run "http://$server/$f" && return 0 done`: 尝试获取所有相关的http文件链接，获取成功则开始安装
+   3. `[ -n "$onie_disco_bootfile" ] && url_run "$onie_disco_bootfile" quiet && return 0`: 尝试将引导文件用作统一资源定位符（URL）进行安装或更新，抑制警告信息
 16. `tftp_download && exit 0`: 尝试使用 TFTP 发现方法去尝试URL
 17. `waterfall && exit 0`: 尝试使用 HTTP/TFTP 瀑布式方法去尝试URL
 18. `exit 1`
