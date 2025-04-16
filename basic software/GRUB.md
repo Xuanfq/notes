@@ -572,6 +572,117 @@ menuentry 'CentOS Linux (3.10.0-327.el7.x86_64) 7 (Core)' --class centos --class
 grub2支持很多命令，有些命令只能在交互式命令行下使用，有些命令可用在配置文件中。在救援模式下，只有insmod、ls、set和unset命令可用。
 
 
+### help
+
+```sh
+help [pattern]
+```
+
+显示能匹配到pattern的所有命令的说明信息和usage信息
+
+
+### boot
+
+```sh
+boot
+```
+
+用于启动已加载的操作系统。只在交互式命令行下可用。其实在menuentry命令的结尾就隐含了boot命令。
+
+
+### set & unset
+
+```sh
+set [envvar=value]
+unset envvar
+```
+
+`set [envvar=value]` 设置环境变量envvar的值为value，如果不给定参数，则列出当前环境变量。
+
+`unset envvar` 释放环境变量envvar。
+
+
+### lsmod & insmod
+
+```sh
+lsmod
+insmod xxx.mod
+```
+
+`lsmod` 用于列出已加载的模块
+
+`insmod xxx.mod` 用于加载指定的模块
+
+注意，若要导入支持ext文件系统的模块时，只需导入ext2.mod即可，实际上也没有ext3和ext4对应的模块。
+
+
+### linux & linux16
+
+```sh
+linux kernel_file [kernel_args]      # 32bit
+linux16 kernel_file [kernel_args]    # 16bit
+```
+
+都表示装载指定的内核文件，并传递内核启动参数。
+
+- linux16表示以传统的16位启动协议启动内核，linux表示以32位启动协议启动内核，但linux命令比linux16有一些限制。但绝大多数时候，它们是可以通用的。
+- 在linux或linux16命令之后，必须紧跟着使用init或init16命令装载init ramdisk文件。
+
+
+- 一般为/boot分区下的vmlinuz-RELEASE_NUM文件，但在grub环境下，boot分区被当作root分区，即根分区，假如boot分区为第一块磁盘的第一个分区，则应该写成：
+   ```sh
+   linux (hd0,msdos1)/vmlinuz-XXX
+   ```
+   或
+   ```sh
+   set root='hd0,msdos1'
+   linux /vmlinuz-XXX
+   ```
+
+- 在grub阶段可以传递内核的启动参数，内核的参数包括3类：
+  - 编译内核时参数
+  - 启动时参数
+  - 运行时参数
+- 完整的启动参数列表见：http://redsymbol.net/linux-kernel-boot-parameters
+- 常用的启动参数：
+   ```sh
+   init=   ：指定Linux启动的第一个进程 init 的替代程序。
+   root=   ：指定根文件系统所在分区，在grub中，该选项必须给定。root=UUID=edb1bf15-9590-4195-aa11-6dac45c7f6f3 or root=/dev/sda2
+   ro,rw   ：启动时，根分区以只读还是可读写方式挂载。不指定时默认为ro。
+   initrd  ：指定 init ramdisk 的路径。在grub中因为使用了 initrd 或 initrd16 命令，所以不需要指定该启动参数。
+   rhgb    ：以图形界面方式启动系统。
+   quiet   ：以文本方式启动系统，且禁止输出大多数的log message。
+   net.ifnames=0：用于CentOS 7，禁止网络设备使用一致性命名方式。
+   biosdevname=0：用于CentOS 7，也是禁止网络设备采用一致性命名方式。
+                ：只有 net.ifnames 和 biosdevname 同时设置为 0 时，才能完全禁止一致性命名，得到 eth0-N 的设备名。
+   ```
+
+
+### initrd & initrd16
+
+```sh
+initrd filesystempath/ramdisk/initramfs
+```
+
+只能紧跟在linux或linux16命令之后使用，用于为即将启动的内核传递init ramdisk路径。
+
+同样，基于根分区，可以使用绝对路径，也可以使用相对路径。路径的表示方法和linux或linux16命令相同。
+
+i.e.
+```sh
+linux16 /vmlinuz-0-rescue-d13bce5e247540a5b5886f2bf8aabb35 root=UUID=b2a70faf-aea4-4d8e-8be8-c7109ac9c8b8 ro crashkernel=auto quiet
+
+initrd16 /initramfs-0-rescue-d13bce5e247540a5b5886f2bf8aabb35.img
+```
+
+
+
+
+
+
+
+
+
 
 
 
