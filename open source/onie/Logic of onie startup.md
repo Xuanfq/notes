@@ -259,7 +259,7 @@ Source: `/bin/exec_installer`
            - 687474703A2F2F6578616D706C652E636F6D: ASCII 编码的 "http://example.com"
       - `onie_disco_onie_url`: 解释 687474703A2F2F6578616D706C652E636F6D 为 http://example.com
 3. `rm -f $onie_installer`: 移除onie_installer="/var/tmp/installer" form `/lib/onie/functions`
-4. `[ -z "$onie_eth_addr" ] && onie_eth_addr="$(onie-sysinfo -e)"`: onie_eth_addr的值获取顺序如下
+4. `[ -z "$onie_eth_addr" ] && onie_eth_addr="$(onie-sysinfo -e)"`: MAC地址 onie_eth_addr 的值获取顺序如下
    1. is it set in the environment?  highest priority: /proc/cmdline(import_cmdline) or env name = `onie_eth_addr`
    2. platform function provided: function is `get_ethaddr_platform()`
    3. architecture function provided: function is `get_ethaddr_arch()` from `rootconf/grub-arch/sysroot-lib-onie/sysinfo-arch` in grub-arch
@@ -356,18 +356,55 @@ Source: `/bin/exec_installer`
 15. `http_download && exit 0`: 尝试使用 HTTP 发现方法去尝试URL
    1. `http_servers`=$list:
       - onie_server_name="onie-server"
-      - onie_disco_wwwsrv=""
-      - onie_disco_siaddr=""
-      - onie_disco_serverid=""
-      - onie_disco_tftpsiaddr=""
-      - onie_disco_tftp=""
-      - func $(get_onie_neighs): 将 onie_neighs 环境变量转为列表
+      - onie_disco_wwwsrv=""  # HTTP server IP only (DHCP opt 72)
+      - onie_disco_siaddr=""  # BOOTP next-server IP
+      - onie_disco_serverid=""   # DHCP server IP (DHCP opt 54)
+      - onie_disco_tftpsiaddr="" # TFTP server IP (DHCP opt 150)
+      - onie_disco_tftp="" # DHCP TFTP server name (DHCP opt 66)  # Requires DNS
+      - func $(get_onie_neighs): 将 onie_neighs 环境变量转为列表  # Add link local neighbors
    2. `for server in $http_servers`
       1. `nc -w 10 $server 80 -e /bin/true > /dev/null 2>&1 && {...}`: 检查http服务的端口是否开通，若开通执行下方命令
          1. `for f in $(get_default_filenames); do url_run "http://$server/$f" && return 0 done`: 尝试获取所有相关的http文件链接，获取成功则开始安装
    3. `[ -n "$onie_disco_bootfile" ] && url_run "$onie_disco_bootfile" quiet && return 0`: 尝试将引导文件用作统一资源定位符（URL）进行安装或更新，抑制警告信息
 16. `tftp_download && exit 0`: 尝试使用 TFTP 发现方法去尝试URL
+   1. `tftp_servers`=$list:
+      - onie_disco_siaddr=""  # BOOTP next-server IP
+      - onie_disco_serverid=""   # DHCP server IP (DHCP opt 54)
+      - onie_disco_tftpsiaddr="" # TFTP server IP (DHCP opt 150)
+      - onie_disco_tftp="" # DHCP TFTP server name (DHCP opt 66)  # Requires DNS
+   2. `tftp_bootfiles`=$list: Busybox 为 BOOTP 的启动文件设置“boot_file”，并为 DHCP 选项 67 设置“bootfile”（无下划线）。 
+      - onie_disco_bootfile=""
+      - onie_disco_boot_file=""
+   3. `for server in $tftp_servers; do for f in $tftp_bootfiles {...}`: 
+      1. `url_run "tftp://$server/$f" && return 0`: 尝试所有相关的tftp文件链接进行安装/更新
 17. `waterfall && exit 0`: 尝试使用 HTTP/TFTP 瀑布式方法去尝试URL
+   1. `wf_paths`=$list
+      - 基于MAC(1个): `[ -n "$onie_eth_addr" ]`: 
+        - `wf_paths="$(echo $onie_eth_addr | sed -e 's/:/-/g')/$onie_default_filename"`: 
+          - MAC/${filename_prefix}-${onie_platform} = AA-BB-CC-DD-EE-FF/onie-updater-cel_xxx | AA-BB-CC-DD-EE-FF/onie-installer-cel_xxx
+      - 基于16进制IPv4(8个): `[ -n "$onie_disco_ip" ]`: 
+        - `wf_ip=$(printf %02X%02X%02X%02X $(echo $onie_disco_ip | sed -e 's/\./ /g'))`: 192 168 10 200 -> C0A80AC8
+        - `for len in seq(1 8); do wf_paths="$wf_paths $(echo $wf_ip | head -c $len)/$onie_default_filename"`
+          - C0A80AC8/${filename_prefix}-${onie_platform} = C0A80AC8/onie-updater-cel_xxx | C0A80AC8/onie-installer-cel_xxx
+          - C0A80AC/${filename_prefix}-${onie_platform} = C0A80AC/onie-updater-cel_xxx | C0A80AC/onie-installer-cel_xxx
+          - C0A80A/${filename_prefix}-${onie_platform} = C0A80A/onie-updater-cel_xxx | C0A80A/onie-installer-cel_xxx
+          - ...
+          - C/${filename_prefix}-${onie_platform} = C/onie-updater-cel_xxx | C/onie-installer-cel_xxx
+      - 基于服务器根目录($(get_default_filenames)=6个): 
+          - `onie-updater/installer-$onie_platform`
+          - `onie-updater/installer-$onie_arch-$onie_machine`=onie-updater-x86_64-$onie_platform
+          - `onie-updater/installer-$onie_machine`=onie-updater-cls_xxx
+          - `onie-updater/installer-${onie_arch}-$onie_switch_asic`=onie-updater-x86_64-bcm
+          - `onie-updater/installer-$onie_switch_asic`=onie-updater-bcm
+          - `onie-updater/installer`
+   2. `tftp_servers`=$list
+      - onie_server_name="onie-server"
+      - onie_disco_siaddr=""  # BOOTP next-server IP
+      - onie_disco_tftpsiaddr="" # TFTP server IP (DHCP opt 150)
+      - onie_disco_tftp="" # DHCP TFTP server name (DHCP opt 66)  # Requires DNS
+   3. `for s in $tftp_servers; do for p in $wf_paths; do`:
+      1. `url_run "tftp://$s/$p" && return 0`: 尝试 TFTP URL 安装
+      2. `[ "$tftp_timeout" = "yes" ] && break`: 超时则停止 TFTP waterfall
 18. `exit 1`
 
 
