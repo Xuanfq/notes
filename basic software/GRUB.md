@@ -374,6 +374,38 @@ shell> grub2-mkconfig -o /boot/grub2/grub.cfg
 ```
 
 
+### 手写grub.cfg
+
+```cfg
+# 设置一些全局环境变量
+set default=0
+set fallback=1
+set timeout=3
+
+# 将可能使用到的模块一次性装载完
+# 支持msdos的模块
+insmod part_msdos
+# 支持各种文件系统的模块
+insmod exfat
+insmod ext2
+insmod xfs
+insmod fat
+insmod iso9660
+
+# 定义菜单
+menuentry 'CentOS 7' --unrestricted {
+        search --no-floppy --fs-uuid --set=root 367d6a77-033b-4037-bbcb-416705ead095
+        linux16 /vmlinuz-3.10.0-327.el7.x86_64 root=UUID=b2a70faf-aea4-4d8e-8be8-c7109ac9c8b8 ro biosdevname=0 net.ifnames=0 quiet
+        initrd16 /initramfs-3.10.0-327.el7.x86_64.img
+}
+menuentry 'CentOS 6' --unrestricted {
+        search --no-floppy --fs-uuid --set=root f5d8939c-4a04-4f47-a1bc-1b8cbabc4d32
+        linux16 /vmlinuz-2.6.32-504.el6.x86_64 root=UUID=edb1bf15-9590-4195-aa11-6dac45c7f6f3 ro quiet
+        initrd16 /initramfs-2.6.32-504.el6.x86_64.img
+}
+```
+
+
 ### 通过/etc/default/grub文件生成grub.cfg
 
 grub2-mkconfig是根据/etc/default/grub文件来创建配置文件的。该文件中定义的是grub的全局宏，修改内置的宏可以快速生成grub配置文件。实际上在/etc/grub.d/目录下还有一些grub配置脚本，这些shell脚本读取一些脚本配置文件(如/etc/default/grub)，根据指定的逻辑生成grub配置文件：
@@ -473,7 +505,7 @@ GRUB_CMDLINE_LINUX="crashkernel=ro root=/dev/sda3 biosdevname=0 net.ifnames=0 rh
 ```sh
 menuentry 'CentOS Linux (3.10.0-327.el7.x86_64) 7 (Core)' --class centos --class gnu-linux --class gnu --class os --unrestricted $menuentry_id_option 'gnulinux-3.10.0-327.el7.x86_64-advanced-b2a70faf-aea4-4d8e-8be8-c7109ac9c8b8' {
 
-        ......
+        #......
 
         linux16 /vmlinuz-3.10.0-327.el7.x86_64 root=UUID=b2a70faf-aea4-4d8e-8be8-c7109ac9c8b8 ro crashkernel=auto biosdevname=0 net.ifnames=0 quiet LANG=en_US.UTF-8
 
@@ -602,7 +634,7 @@ unset envvar
 `unset envvar` 释放环境变量envvar。
 
 
-### lsmod & insmod
+### lsmod & insmod & rmmod
 
 ```sh
 lsmod
@@ -676,6 +708,299 @@ initrd16 /initramfs-0-rescue-d13bce5e247540a5b5886f2bf8aabb35.img
 ```
 
 
+### search
+
+```sh
+search [--file|--label|--fs-uuid] [--set [var]] [--no-floppy] [--hint args] name
+```
+
+通过文件`[--file]`、卷标`[--label]`、文件系统UUID`[--fs-uuid]`来搜索设备。
+
+如果使用了`[--set [var]]`选项，则会将第一个找到的设备设置为环境变量`var`的值，默认的变量`var`为`root`。
+
+可使用`--no-floppy`选项来禁止搜索软盘，因为软盘速度非常慢，已经被淘汰了。
+
+可指定`--hint=XXX`选项来优先选择满足提示条件的设备，若指定了多个`hint`条件，则优先匹配第一个`hint`，然后匹配第二个，依次类推。
+
+**i.e.**
+下方if语句中的第一个search中搜索uuid为"367d6a77-033b-4037-bbcb-416705ead095"的设备，但使用了多个hint选项，表示先匹配bios平台下/boot分区为(hd0,msdos1)的设备，之后还指定了几个hint，但因为search使用的是uuid搜索方式，所以这些hint选项是多余的，因为单磁盘上分区的uuid是唯一的：
+```sh
+if [ x$feature_platform_search_hint = xy ]; then
+
+  search --no-floppy --fs-uuid --set=root --hint-bios=hd0,msdos1 --hint-efi=hd0,msdos1 --hint-baremetal=ahci0,msdos1 --hint='hd0,msdos1'  367d6a77-033b-4037-bbcb-416705ead095
+
+else
+
+  search --no-floppy --fs-uuid --set=root 367d6a77-033b-4037-bbcb-416705ead095
+
+fi
+
+linux16 /vmlinuz-3.10.0-327.el7.x86_64 root=UUID=b2a70faf-aea4-4d8e-8be8-c7109ac9c8b8 ro crashkernel=auto quiet LANG=en_US.UTF-8
+
+initrd16 /initramfs-3.10.0-327.el7.x86_64.img
+```
+
+
+**i.e.**
+如果某启动设备上有两个boot分区(如多系统共存时)，分别是(hd0,msdos1)和(hd0,msdos5)，如果此时不使用uuid搜索，而是使用label方式搜索。则此时将会选中(hd0,msdos5)这个boot分区，若不使用hint，将选中(hd0,msdos1)这个boot分区：
+```sh
+search --no-floppy --fs-label=boot --set=root --hint=hd0,msdos5
+```
+
+- 常见的搜索方法：
+  - UUID:
+  - Lable: `search --no-floppy --label --set=root ONL-BOOT`, `search --no-floppy --label --set=root ONIE-BOOT`
+
+
+### true & false
+
+直接返回true或false布尔值。
+
+
+### test expression & [ expression ]
+
+计算`expression`的结果是否为真，为真时返回`0`，否则返回`非0`，主要用于`if`、`while`或`until`结构中。
+
+|表达式|含义|
+|--|--|
+|`string1 == string2`|`string1`与`string2`相同|
+|`string1 != string2`|`string1`与`string2`不相同|
+|`string1 < string2`|`string1`在字母顺序上小于`string2`|
+|`string1 <= string2`|`string1`在字母顺序上小于等于`string2`|
+|`string1 > string2`|`string1`在字母顺序上大于`string2`|
+|`string1 >= string2`|`string1`在字母顺序上大于等于`string2`|
+|`integer1 -eq integer2`|`integer1`等于`integer2`|
+|`integer1 -ge integer2`|`integer1`大于或等于`integer2`|
+|`integer1 -gt integer2`|`integer1`大于`integer2`|
+|`integer1 -le integer2`|`integer1`小于或等于`integer2`|
+|`integer1 -lt integer2`|`integer1`小于`integer2`|
+|`integer1 -ne integer2`|`integer1`不等于`integer2`|
+|`prefixinteger1 -pgt prefixinteger2`|剔除非数字字符串`prefix`部分之后，`integer1`大于`integer2`|
+|`prefixinteger1 -plt prefixinteger2`|剔除非数字字符串`prefix`部分之后，`integer1`小于`integer2`|
+|`file1 -nt file2`|`file1`的修改时间比`file2`新|
+|`file1 -ot file2`|`file1`的修改时间比`file2`旧|
+|`-d file`|`file`存在且是目录|
+|`-e file`|`file`存在|
+|`-f file`|`file`存在并且不是一个目录|
+|`-s file`|`file`存在并且文件占用空间大于零|
+|`-n string`|`string`的长度大于零|
+|`string`|`string`的长度大于零，等价于`-n string`|
+|`-z string`|`string`的长度等于零|
+|`( expression )`|将`expression`作为一个整体|
+|`! expression`|非(NOT)|
+|`expression1 -a expression2`|与(AND)，也可以使用`expression1 expression2`，但不推荐|
+|`expression1 -o expression2`|或(OR)|
+
+
+### cat
+
+```sh
+cat path/to/file
+```
+
+读取文件内容
+
+
+### clear
+
+清屏
+
+
+### configfile
+
+```sh
+configfile $grub_cfg_file
+```
+
+立即加载一个指定的文件作为`grub`的配置文件。但注意，导入的文件中的环境变量不在当前生效。
+
+在`grub.cfg`丢失时，该命令将排上用场。
+
+
+### echo
+
+```sh
+echo [-n] [-e] string
+```
+
+- 输出字符串 `string`
+
+- `-n`和`-e`用法同shell中echo。
+
+- 如果要引用变量，使用`${var}` 或 `$var`的方式。
+
+
+### ls
+
+```sh
+ls [args]
+```
+
+- 如果不给定任何参数，则列出`grub`可见的设备。
+   ```sh
+   grub> ls                                                                                                                                                                                     
+   (hd0) (hd0,gpt6) (hd0,gpt5) (hd0,gpt4) (hd0,gpt3) (hd0,gpt2) (hd0,gpt1)                                                                                                                      
+   grub> 
+   ```
+
+- 如果给定的参数是一个分区，则显示该分区的文件系统信息。
+   ```sh
+   grub> ls (hd0,gpt6)                                                                                                                                                                          
+   (hd0,gpt6): Filesystem is ext2.                                                                                                                                                              
+   grub>  
+   ```
+
+- 如果给定的参数是一个绝对路径表示的目录，则显示该目录下的所有文件。
+   ```sh
+   grub> ls (hd0,gpt6)/                                                                                                                                                                         
+   ./ ../ lost+found/ bin/ boot/ dev/ etc/ home/ lib/ lib64/ media/ mnt/ opt/                                                                                                                   
+   proc/ root/ run/ sbin/ srv/ sys/ tmp/ usr/ var/                                                                                                                                              
+   grub>  
+   ```
+
+
+### probe
+
+```sh
+probe [--set var] --partmap|--fs|--fs-uuid|--label device
+```
+
+探测分区或磁盘的属性信息。如果未指定`--set`，则显示指定设备对应的信息。如果指定了`--set`，则将对应信息的值赋给变量`var`。
+
+`--partmap`：显示是`gpt`还是`mbr`格式的磁盘。
+
+`--fs`：显示分区的文件系统。
+
+`--fs-uuid`：显示分区的uuid值。
+
+`--label`：显示分区的label值。
+
+
+### save_env & list_env & load_env
+
+- `save_env`: 将环境变量保存到环境变量块中，保存在与grub.cfg同级的grubenv文件中
+- `list_env`: 列出当前的环境变量块中的变量
+- `load_env`: 加载由save_env保存在grubenv的变量
+
+i.e.
+```sh
+grub> a=1
+grub> save_env a
+grub> list_env
+boot_config_default=TkVUREVWPW1hMQpCT09UTU9ERT1JTlNUQUxMRUQKU1dJPWltYWdlczo6bGF0ZXN0Cg==                                                                     saved_entry=0                                                                                                                                                a=1                                                                                                                                                          
+grub> 
+``` 
+
+
+### loopback
+
+```sh
+loopback [-d] device file
+```
+
+将`file`映射为回环设备。使用`-d`选项则是删除映射。
+
+
+i.e.
+
+```sh
+loopback loop0 /path/to/image
+ls (loop0)/
+```
+
+
+### normal & normal_exit
+
+进入和退出normal模式，normal是相对于救援模式而言的，只要不是在救援模式下，就是在normal模式下。
+
+救援模式下，只能使用非常少的命令，而normal模式下则可以使用非常多的命令。
+
+
+### password & password_pbkdf2
+
+```sh
+password user clear-password
+password_pbkdf2 user hashed-password
+```
+
+- `password user clear-password`: 使用明文密码定义一个名为`user`的用户。不建议使用此命令。
+
+- `password_pbkdf2 user hashed-password`: 使用哈希加密后的密码定义一个名为`user`的用户，加密的密码通过`grub-mkpasswd-pbkdf2`工具生成。建议使用该命令。
+
+
+
+## 内置变量
+
+
+### chosen
+
+当开机时选中某个菜单项启动时，该菜单的title将被赋值给chosen变量。该变量一般只用于引用，而不用于修改。
+
+
+### cmdpath
+
+`grub2`加载的`core.img`的目录路径，是绝对路径，即包括了设备名的路径，如`(hd0,gpt1)/boot/grub2/`。该变量值不应该修改。
+
+
+### default
+
+指定默认的菜单项，一般其后都会跟随`timeout`变量。
+
+`default`指定默认菜单时，可使用菜单的`title`，也可以使用菜单的`id`，或者数值顺序，当使用数值顺序指定`default`时，从`0`开始计算。
+
+
+### timeout
+
+设置菜单等待超时时间，设置为`0`时将直接启动默认菜单项而不显示菜单，设置为`-1`时将永久等待手动选择。
+
+
+### fallback
+
+当默认菜单项启动失败，则使用该变量指定的菜单项启动，指定方式同`default`，可使用数值(从`0`开始计算)、`title`或`id`指定。
+
+
+### grub_platform
+
+指定该平台是`pc`还是`efi`，`pc`表示的是传统的`bios`平台，`efi`表示`uefi`。
+
+该变量不应该被修改，而应该被引用，例如用于if判断语句中。
+
+
+### prefix
+
+在`grub`启动的时候，`grub`自动将`/boot/grub`目录的绝对路径赋值给该变量，使得以后可以直接从该变量所代表的目录下加载各文件或模块。
+
+例如，可能自动设置为：
+
+```
+set prefix = (hd0,gpt1)/boot/grub/
+```
+
+所以可以使用`$prefix/grubN.cfg`来引用`/boot/grub/grubN.cfg`文件。
+
+该变量不应该修改，且若手动设置，则必须设置正确，否则牵一发而动全身。
+
+
+### root
+
+该变量指定根设备的名称，使得后续使用从`/`开始的相对路径引用文件时将从该`root`变量指定的路径开始。一般该变量是grub启动的时候由grub根据`prefix`变量设置而来的。
+
+例如`prefix=(hd0,gpt1)/boot/grub`，则`root=(hd0,gpt1)`，后续就可以使用相对路径/vmlinuz-XXX表示(hd0,gpt1)/vmlinuz-XXX文件。
+
+注意：在Linux中，从根"/"开始的路径表示绝对路径，如/etc/fstab。但grub中，从"/"开始的表示相对路径，其相对的基准是root变量设置的值，而使用`(dev_name)/`开始的路径才表示**绝对路径**。
+
+一般root变量都表示`/boot`所在的分区，但这不是绝对的，如果设置为根文件系统所在分区，如root=(hd0,gpt2)，则后续可以使用/etc/fstab来引用"(hd0,gpt2)/etc/fstab"文件。
+
+该变量在grub中一般不用修改，但若修改则必须指定正确。
+
+另外，root变量还应该于linux或linux16命令所指定的内核启动参数"root="区分开来，内核启动参数中的"root="的意义是固定的，其指定的是根文件系统所在分区。例如：
+```sh
+set root='hd0,msdos1'
+linux16 /vmlinuz-3.10.0-327.el7.x86_64 root=UUID=b2a70faf-aea4-4d8e-8be8-c7109ac9c8b8 ro crashkernel=auto quiet LANG=en_US.UTF-8
+initrd16 /initramfs-3.10.0-327.el7.x86_64.img
+```
+
+一般情况下，/boot都会单独分区，所以root变量指定的根设备和root启动参数所指定的根分区不是同一个分区，除非/boot不是单独的分区，而是在根分区下的一个目录。
 
 
 
