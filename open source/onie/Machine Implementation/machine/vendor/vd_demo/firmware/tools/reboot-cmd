@@ -1,0 +1,14 @@
+#!/bin/sh
+
+cp tools/*.ko /bin
+insmod /bin/*.ko
+
+sync; sync
+sleep 3
+
+umount /boot/efi/
+umount /mnt/onie/
+
+# Power Cycle the system
+echo 0xaa 0xbb > /path/to/cpld_reg
+
