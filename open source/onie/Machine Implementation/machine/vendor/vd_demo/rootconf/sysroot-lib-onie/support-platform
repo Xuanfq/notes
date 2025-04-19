@@ -1,0 +1,5 @@
+# Use this function to put more information to onie-support.
+support_platform()
+{
+    echo $(history) > $save_dir/platform.txt
+}

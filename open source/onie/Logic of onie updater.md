@@ -164,8 +164,8 @@ ONIE_SYSROOT_TOOLS_LIST = \
 ```
 
 **onie-mk-tools.sh**工具文件内容来源于两个位置：
-- CPU架构无关的工具来自ONIE安装程序镜像的目录: sysroot(SYSROOTDIR), /rootconf/$rootfs_arch/*
-- CPU架构相关的工具来自ONIE仓库中特定架构的目录: tools_dir(ONIE_TOOLS_DIR), /tools/$rootfs_arch/*
+- CPU架构无关的工具来自ONIE安装程序镜像的目录(ONIE_SYSROOT_TOOLS_LIST): sysroot(SYSROOTDIR), /rootconf/$rootfs_arch/*
+- CPU架构相关的工具来自ONIE仓库中特定架构的目录(ONIE_TOOLS_DIR): tools_dir(ONIE_TOOLS_DIR), /tools/$rootfs_arch/*
 
 主要制作过程：
 - cpu无关,sysroot: 

@@ -764,7 +764,7 @@ endif
 include filenames...
 ```
 
-文件名可以包含 shell 文件名模式。行首允许并忽略多余的空格，但不允许使用制表符。例如，如果你有 3 个 `.mk' 文件，分别是 `a.mk'、`b.mk' 和 `c.mk'，以及 $(bar) 那么它会扩展为 bish bash，如:
+文件名可以包含 shell 文件名模式。行首允许并忽略多余的空格，但不允许使用制表符。例如，如果你有 3 个 `.mk` 文件，分别是 `a.mk`、`b.mk` 和 `c.mk`，以及 $(bar) 那么它会扩展为 bish bash，如:
 
 ```makefile
 include foo *.mk $(bar)
@@ -772,6 +772,14 @@ include foo *.mk $(bar)
 include foo a.mk b.mk c.mk bish bash
 ```
 
+### include 和 -include
+
+|行为/特性|include local.make|-include local.make|
+|--|--|--|
+|文件(local.make)缺失处理|最终报错终止编译|静默忽略，继续编译|
+|适用文件类型|必须存在的核心配置|可选或动态生成的文件|
+|错误信息输出|显示警告及最终致命错误|无错误提示|
+|兼容性|所有Make版本|GNU Make特有（sinclude更通用）| 
 
 
 
