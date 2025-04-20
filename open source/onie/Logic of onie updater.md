@@ -1,4 +1,4 @@
-# Logic of onie-updater
+# Logic of onie updater
 
 ## 更新包制作和安装逻辑
 
@@ -164,8 +164,14 @@ ONIE_SYSROOT_TOOLS_LIST = \
 ```
 
 **onie-mk-tools.sh**工具文件内容来源于两个位置：
-- CPU架构无关的工具来自ONIE安装程序镜像的目录(ONIE_SYSROOT_TOOLS_LIST): sysroot(SYSROOTDIR), /rootconf/$rootfs_arch/*
+- CPU架构无关的工具来自ONIE安装程序镜像的目录(ONIE_SYSROOT_TOOLS_LIST): sysroot(SYSROOTDIR), /rootconf/$rootfs_arch/* + /machine/rootconf/*
+  - `/rootconf/$rootfs_arch/sysroot-lib-onie`
+  - `/machine/$vendor/$machine/rootconf/sysroot-lib-onie`
+  - `/rootconf/$rootfs_arch/sysroot-bin/onie-boot-mode` or overwrite with `/machine/$vendor/$machine/rootconf/sysroot-bin/onie-boot-mode`
+  - `/rootconf/$rootfs_arch/sysroot-bin/onie-nos-mode` or overwrite with `/machine/$vendor/$machine/rootconf/sysroot-bin/onie-nos-mode`
+  - `/rootconf/$rootfs_arch/sysroot-bin/onie-fwpkg` or overwrite with `/machine/$vendor/$machine/rootconf/sysroot-bin/onie-fwpkg`
 - CPU架构相关的工具来自ONIE仓库中特定架构的目录(ONIE_TOOLS_DIR): tools_dir(ONIE_TOOLS_DIR), /tools/$rootfs_arch/*
+  - `/tools/grub-arch/bin/onie-version`
 
 主要制作过程：
 - cpu无关,sysroot: 
