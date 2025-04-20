@@ -1,9 +1,10 @@
-# Logic of onie updater
+# Logic of onie images
 
-## 更新包制作和安装逻辑
+onie image 包括 onie-updater 和 onie-recovery.iso
 
-### 安装包/更新包制作过程
+## 制作和安装逻辑
 
+### 更新包制作过程
 
 #### 制作原理
 
@@ -45,7 +46,7 @@ GRUB_TIMEOUT ?= 5
 ```
 
 
-#### 安装包/更新包文件内容
+#### 文件内容
 
 ```sh
 installer/
@@ -141,6 +142,192 @@ Notice:
 - onieroot/installer/charch_body.sh:
   - ONIE-UPDATER-COOKIE的存在意味着是ONIE Update Installer，否则是NOS!
   - %%VAR%% 形式的字符串在构造过程中被替换，即使用该文件是应替换%%VAR%%成对应的值！如%%IMAGE_SHA1%%
+
+
+
+### ISO制作过程
+
+#### 制作原理
+
+
+
+#### 制作命令
+
+images.make
+
+```sh
+CONSOLE_SPEED=$(CONSOLE_SPEED) \                               # 
+CONSOLE_DEV=$(CONSOLE_DEV) \                                   # 
+CONSOLE_PORT=$(CONSOLE_PORT) \                                 # 
+GRUB_DEFAULT_ENTRY=$(GRUB_DEFAULT_ENTRY) \                     # 
+UEFI_ENABLE=$(UEFI_ENABLE) \                                   # 
+EXTRA_CMDLINE_LINUX="$(EXTRA_CMDLINE_LINUX)" \                 # 
+SERIAL_CONSOLE_ENABLE=$(SERIAL_CONSOLE_ENABLE) \               # 
+SECURE_BOOT_ENABLE=$(SECURE_BOOT_ENABLE) \                     # 
+SB_SHIM=$(SHIM_SECURE_BOOT_IMAGE) \                            # 
+ONIE_VENDOR_SECRET_KEY_PEM=$(ONIE_VENDOR_SECRET_KEY_PEM) \     # 
+ONIE_VENDOR_CERT_PEM=$(ONIE_VENDOR_CERT_PEM) \                 # 
+onie-mk-iso.sh \ 
+      $(ARCH) \                        # x86_64
+      $(UPDATER_VMLINUZ) \             # $(MBUILDDIR)/onie.vmlinuz
+		$(RECOVERY_INITRD) \             # $(MBUILDDIR)/recovery/$(ARCH)-$(MACHINE_PREFIX).initrd
+      $(RECOVERY_DIR) \                # $(MBUILDDIR)/recovery
+		$(MACHINE_CONF) \                # $(MBUILDDIR)/machine-build.conf
+      $(RECOVERY_CONF_DIR) \           # $(PROJECTDIR)/build-config/recovery = build-config/recovery
+		$(GRUB_TARGET_LIB_I386_DIR) \    # $(BUILDDIR)/user/$(XTOOLS_VERSION)/grub/install/grub-i386-pc/usr/lib/grub/i386-pc
+      $(GRUB_HOST_BIN_I386_DIR) \      # $(BUILDDIR)/user/$(XTOOLS_VERSION)/grub-host/i386-pc-install/usr/bin
+		$(GRUB_TARGET_LIB_UEFI_DIR) \    # $(BUILDDIR)/user/$(XTOOLS_VERSION)/grub/install/grub-$(ARCH)-efi/usr/lib/grub/$(ARCH)-efi
+      $(GRUB_HOST_BIN_UEFI_DIR) \      # $(BUILDDIR)/user/$(XTOOLS_VERSION)/grub-host/x86_64-efi-install/usr/bin
+		$(FIRMWARE_TYPE) \               # auto | uefi | bios | coreboot, [ $UEFI_ENABLE = "yes" ] && FIRMWARE_TYPE ?= auto, else FIRMWARE_TYPE ?= bios
+      $(RECOVERY_ISO_IMAGE)            # $(IMAGEDIR)/onie-recovery-$(ARCH)-$(MACHINE_PREFIX).iso
+```
+
+
+#### 文件内容
+
+
+
+
+#### 制作过程
+
+onie-mk-iso.sh
+
+1. 传入参数准备
+   1. `ARCH`=x86_64
+   2. `RECOVERY_KERNEL`=            $(MBUILDDIR)/onie.vmlinuz
+   3. `RECOVERY_INITRD`=            $(MBUILDDIR)/recovery/$(ARCH)-$(MACHINE_PREFIX).initrd
+   4. `RECOVERY_DIR`=               $(MBUILDDIR)/recovery
+   5. `MACHINE_CONF`=               $(MBUILDDIR)/machine-build.conf
+   6. `RECOVERY_CONF_DIR`=          $(PROJECTDIR)/build-config/recovery
+   7. `GRUB_TARGET_LIB_I386_DIR`=   $(BUILDDIR)/user/$(XTOOLS_VERSION)/grub/install/grub-i386-pc/usr/lib/grub/i386-pc
+   8. `GRUB_HOST_BIN_I386_DIR`=     $(BUILDDIR)/user/$(XTOOLS_VERSION)/grub-host/i386-pc-install/usr/bin
+   9. `GRUB_TARGET_LIB_UEFI_DIR`=   $(BUILDDIR)/user/$(XTOOLS_VERSION)/grub/install/grub-$(ARCH)-efi/usr/lib/grub/$(ARCH)-efi
+   10. `GRUB_HOST_BIN_UEFI_DIR`=    $(BUILDDIR)/user/$(XTOOLS_VERSION)/grub-host/x86_64-efi-install/usr/bin
+   11. `FIRMWARE_TYPE`=             auto | bios
+   12. `RECOVERY_ISO_IMAGE`=        $(IMAGEDIR)/onie-recovery-$(ARCH)-$(MACHINE_PREFIX).iso
+2. 校验参数和环境变量
+3. 确保制作使用的工具链可用:
+   1. `XORRISO`=`$(which xorriso)`
+   2. `MKDOSFS`=`[ -e /sbin/mkdosfs ] && MKDOSFS="/sbin/mkdosfs" || MKDOSFS=$(which mkdosfs); echo -n $MKDOSFS`
+   3. `MCOPY`=`$(which mcopy)`
+4. 其他变量和文件存放位置准备:
+   - `EFI_INFIX`=aa64 | x64
+   - `RECOVERY_ISO_SYSROOT`="$RECOVERY_DIR/iso-sysroot"=                            $(MBUILDDIR)/recovery/iso-sysroot
+   - `RECOVERY_CORE_IMG`="$RECOVERY_DIR/core.img"=                                  $(MBUILDDIR)/recovery/core.img
+   - `RECOVERY_EFI_DIR`="$RECOVERY_DIR/EFI"=                                        $(MBUILDDIR)/recovery/EFI
+   - `RECOVERY_EFI_BOOT_DIR`="$RECOVERY_EFI_DIR/BOOT"       =                       $(MBUILDDIR)/recovery/EFI/BOOT
+   - `RECOVERY_EFI_BOOTX86_IMG`="$RECOVERY_EFI_BOOT_DIR/boot${EFI_INFIX}.efi"=      $(MBUILDDIR)/recovery/EFI/BOOT/boot${EFI_INFIX}.efi
+   - `RECOVERY_GRUBX86_IMG`="$RECOVERY_DIR/grub${EFI_INFIX}.efi"=                   $(MBUILDDIR)/recovery/grub${EFI_INFIX}.efi
+   - `RECOVERY_EFI_GRUBX86_IMG`="$RECOVERY_EFI_BOOT_DIR/grub${EFI_INFIX}.efi"=      $(MBUILDDIR)/recovery/EFI/BOOT/grub${EFI_INFIX}.efi
+   - `RECOVERY_ELTORITO_IMG`="$RECOVERY_ISO_SYSROOT/boot/eltorito.img"=             $(MBUILDDIR)/recovery/iso-sysroot/boot/eltorito.img
+   - `RECOVERY_EMBEDDED_IMG`="$RECOVERY_DIR/embedded.img" =                         $(MBUILDDIR)/recovery/embedded.img
+   - `RECOVERY_UEFI_IMG`="$RECOVERY_ISO_SYSROOT/boot/efi.img"=                      $(MBUILDDIR)/recovery/iso-sysroot/boot/efi.img
+   - `RECOVERY_XORRISO_OPTIONS`="$RECOVERY_DIR/xorriso-options.cfg"=                $(MBUILDDIR)/recovery/xorriso-options.cfg
+5. 清除构建并恢复到为构建ISO之前的状态:
+   1. `rm -rf $RECOVERY_ISO_SYSROOT $RECOVERY_ISO_IMAGE`: 删除目录`$(MBUILDDIR)/recovery/iso-sysroot`和`ISO`
+   2. `mkdir -p $RECOVERY_ISO_SYSROOT`: 创建目录`$(MBUILDDIR)/recovery/iso-sysroot`
+6. 添加内核和文件系统到ISO文件系统目录:
+   1. `cp $RECOVERY_KERNEL $RECOVERY_ISO_SYSROOT/vmlinuz`
+   2. `cp $RECOVERY_INITRD $RECOVERY_ISO_SYSROOT/initrd.xz`
+7. 配置GRUB:
+   1. `EXTRA_CMDLINE_LINUX=$(echo $EXTRA_CMDLINE_LINUX | sed -e 's/[\/&]/\\\&/g')`: 处理内核参数的扩展参数的转义字符
+   2. `mkdir -p $RECOVERY_ISO_SYSROOT/boot/grub`: 创建GRUB存放目录
+   3. 创建GRUB配置文件`grub.cfg`:
+      ```sh
+      sed -e "s/<CONSOLE_SPEED>/$CONSOLE_SPEED/g"           \
+      -e "s/<CONSOLE_DEV>/$CONSOLE_DEV/g"               \
+      -e "s/<GRUB_DEFAULT_ENTRY>/$GRUB_DEFAULT_ENTRY/g" \
+      -e "s/<CONSOLE_PORT>/$CONSOLE_PORT/g"             \
+      -e "s/<EXTRA_CMDLINE_LINUX>/$EXTRA_CMDLINE_LINUX/" \
+      -e "s/<SERIAL_CONSOLE_ENABLE>/$SERIAL_CONSOLE_ENABLE/g" \
+      "$MACHINE_CONF" $RECOVERY_CONF_DIR/grub-iso.cfg   \
+      > $RECOVERY_ISO_SYSROOT/boot/grub/grub.cfg
+      ```
+   4. 非 UEFI 下 (传统/Legacy BIOS) (`[ "$FIRMWARE_TYPE" != "uefi" ]`):
+      1. 用 i386-pc 架构的 GRUB 模块填充 .ISO 系统根目录 (`$RECOVERY_ISO_SYSROOT`):
+         1. `mkdir -p $RECOVERY_ISO_SYSROOT/boot/grub/i386-pc`
+         2. `(cd $GRUB_TARGET_LIB_I386_DIR && cp *mod *lst $RECOVERY_ISO_SYSROOT/boot/grub/i386-pc)`
+      2. 生成传统 BIOS 的 eltorito 格式的 GRUB 镜像:
+         ```sh
+         $GRUB_HOST_BIN_I386_DIR/grub-mkimage \
+         --format=i386-pc \
+         --directory=$GRUB_TARGET_LIB_I386_DIR \
+         --prefix=/boot/grub \
+         --output=$RECOVERY_CORE_IMG \
+         part_msdos part_gpt iso9660 biosdisk
+         cat $GRUB_TARGET_LIB_I386_DIR/cdboot.img $RECOVERY_CORE_IMG > $RECOVERY_ELTORITO_IMG  # 合并 cdboot.img 和 core.img 成 $RECOVERY_ISO_SYSROOT/boot/eltorito.img
+         ```
+      3. 生成传统 BIOS 的主引导记录（MBR）格式的 GRUB 镜像: 
+         1. `cat $GRUB_TARGET_LIB_I386_DIR/boot.img $RECOVERY_CORE_IMG > $RECOVERY_EMBEDDED_IMG`: 合并 boot.img 和 core.img 成 $RECOVERY_ISO_SYSROOT/../embedded.img
+   5. 适配 UEFI (`[ "$UEFI_ENABLE" = "yes" ]`):
+      1. 准备好要构建到 GRUB 镜像中的模块列表: `GRUB_MODULES`=...
+      2. 生成 UEFI 格式的 GRUB image:
+         ```sh
+         mkdir -p $RECOVERY_EFI_BOOT_DIR                    # $RECOVERY_ISO_SYSROOT/../EFI/BOOT
+         $GRUB_HOST_BIN_UEFI_DIR/grub-mkimage \ 
+            --format=${ARCH}-efi \ 
+            --directory=$GRUB_TARGET_LIB_UEFI_DIR \         # $(BUILDDIR)/user/$(XTOOLS_VERSION)/grub/install/grub-$(ARCH)-efi/usr/lib/grub/$(ARCH)-efi
+            --prefix=/boot/grub \ 
+            --config=$RECOVERY_CONF_DIR/grub-uefi.cfg \     # $(PROJECTDIR)/build-config/recovery/grub-uefi.cfg
+            --output=$RECOVERY_GRUBX86_IMG \                # $RECOVERY_ISO_SYSROOT/../grub${EFI_INFIX}.efi
+            $GRUB_MODULES
+         ```
+      3. 将 UEFI 引导加载程序镜像复制到 ESP 临时目录 RECOVERY_EFI_BOOT_DIR 中 ($RECOVERY_ISO_SYSROOT/../EFI/BOOT/):
+         1. `if [ "$SECURE_BOOT_ENABLE" = "yes" ]`:
+            1. sign: `sbsign --key $ONIE_VENDOR_SECRET_KEY_PEM --cert $ONIE_VENDOR_CERT_PEM  --output $RECOVERY_EFI_GRUBX86_IMG $RECOVERY_GRUBX86_IMG`  # -> $RECOVERY_ISO_SYSROOT/../EFI/BOOT/grub${EFI_INFIX}.efi
+            2. 将 shim 复制到指定位置作为加载程序: `cp $SB_SHIM $RECOVERY_EFI_BOOTX86_IMG`  # -> $RECOVERY_ISO_SYSROOT/../EFI/BOOT/boot${EFI_INFIX}.efi
+         2. `else`直接移动: `mv $RECOVERY_GRUBX86_IMG $RECOVERY_EFI_BOOTX86_IMG`  # -> $RECOVERY_ISO_SYSROOT/../EFI/BOOT/boot${EFI_INFIX}.efi
+      4. 创建ESP(EFI system partition)分区镜像，并将 ESP 临时目录的内容复制到其中 (对于 UEFI，GRUB 引导加载程序镜像被嵌入到 UEFI ESP （ESP，采用 fat16 格式 ）磁盘分区镜像中):
+         1. 计算EFI引导目录大小​​: `EFI_BOOT_SIZE_BYTES=$(du --bytes $RECOVERY_EFI_BOOT_DIR | awk '{ print $1 }')`
+         2. 计算映像所需的扇区数: `BOOTX86_IMG_SECTORS=$(( ( ( $EFI_BOOT_SIZE_BYTES / 512 ) + 31 ) / 32 ))`，扇区数加上31后除以32，确保mcopy（后续命令）所需的32扇区对齐（向上取整）
+         3. 加上文件系统开销的扇区: `BOOTX86_IMG_SECTORS=$(( ( $BOOTX86_IMG_SECTORS + 2 ) * 32 ))`，增加2个32扇区的块（共64扇区）以容纳FAT文件系统开销（如FAT表、根目录等）
+         4. 创建空白映像文件: `dd if=/dev/zero of=$RECOVERY_UEFI_IMG bs=512 count=$BOOTX86_IMG_SECTORS`
+         5. 格式化为FAT文件系统: `$MKDOSFS $RECOVERY_UEFI_IMG`
+         6. 复制EFI引导文件到映像​: `$MCOPY -s -i $RECOVERY_UEFI_IMG $RECOVERY_EFI_DIR '::/'`:
+            - 使用mcopy（来自mtools）将 $RECOVERY_EFI_DIR 下的文件递归（-s）复制到映像的根目录（::/）
+            - -i: 指定目标映像文件
+      5. RECOVERY_UEFI_IMG -> $RECOVERY_ISO_SYSROOT/boot/efi.img
+8. 将传统 BIOS 和 UEFI 的 GRUB 镜像合并到一个 ISO 文件中:
+   1. xorriso打包ISO的引导配置，告诉 xorriso 如何设置 ISO 的引导逻辑 ($RECOVERY_ISO_SYSROOT/../xorriso-options.cfg):
+      - $FIRMWARE_TYPE=uefi: `cp ${RECOVERY_CONF_DIR}/xorriso-options-uefi.cfg ${RECOVERY_XORRISO_OPTIONS}`
+      - $FIRMWARE_TYPE=auto: 合并`xorriso-options-uefi.cfg`和`xorriso-options-bios.cfg`
+         ```sh
+         rm -f ${RECOVERY_XORRISO_OPTIONS} && touch ${RECOVERY_XORRISO_OPTIONS}
+         git merge-file -p --union ${RECOVERY_CONF_DIR}/xorriso-options-bios.cfg \
+                  ${RECOVERY_XORRISO_OPTIONS} \
+                  ${RECOVERY_CONF_DIR}/xorriso-options-uefi.cfg \
+                  > ${RECOVERY_XORRISO_OPTIONS}
+         ```
+      - $FIRMWARE_TYPE=其他: `cp ${RECOVERY_CONF_DIR}/xorriso-options-bios.cfg ${RECOVERY_XORRISO_OPTIONS}`
+9. 制作镜像:
+   ```sh
+   cd $RECOVERY_DIR && $XORRISO -outdev $RECOVERY_ISO_IMAGE \  # 目标：$(IMAGEDIR)/onie-recovery-$(ARCH)-$(MACHINE_PREFIX).iso
+   -map $RECOVERY_ISO_SYSROOT / \                              # 将 $RECOVERY_ISO_SYSROOT 的内容复制到 ISO 的根目录
+   -options_from_file $RECOVERY_XORRISO_OPTIONS                # 告诉 xorriso 如何设置 ISO 的引导逻辑
+   ```
+10. 兼容 UEFI : 向 ISO 镜像中添加一个 MS-DOS 分区表，其中包含一条针对 EFI 镜像的分区表项，这样它看起来就像一个磁盘镜像。
+    1.  为了为 efi.img（ESP）分区创建 MS-DOS 分区表项，我们需要确定光盘中 /boot/efi.img 的 iso9660 扇区（每个扇区 2048 字节），并将其转换为硬盘扇区（每个扇区 512 字节）
+        1.  计算 ISO 中的 `$RECOVERY_UEFI_IMG` 的 offset 和 size
+            ```sh
+            # start
+            # The output of the xorriso find command looks like:
+            # Report layout: xt , Startlba ,   Blocks , Filesize , ISO image path
+            # File data lba:  0 ,      132 ,       80 ,   163840 , '/boot/efi.img'
+            EFI_IMG_START_BLOCK=$($XORRISO -indev $RECOVERY_ISO_IMAGE \
+               -find /boot/efi.img -name efi.img -exec report_lba -- 2> /dev/null | \
+               grep efi.img | awk '{ print $6 }')
+            EFI_IMG_START_SECTOR=$(( $EFI_IMG_START_BLOCK * 2048 / 512 ))
+
+            # Determine image size in sectors
+            EFI_IMG_SIZE_BYTES=$(stat -c '%s' $RECOVERY_UEFI_IMG)
+            EFI_IMG_SIZE_SECTORS=$(( $EFI_IMG_SIZE_BYTES / 512 ))
+            ```
+    2.  然后我们创建一个类型为 “0xEF” 的可引导 MS-DOS 分区，UEFI 固件会将其识别为一个 UEFI 可引导镜像
+        ```sh
+        $(dirname $0)/mk-part-table.py $RECOVERY_ISO_IMAGE $EFI_IMG_START_SECTOR $EFI_IMG_SIZE_SECTORS
+        ```
+
+
 
 
 
