@@ -185,7 +185,22 @@ onie-mk-iso.sh \
 
 #### 文件内容
 
-
+- boot/
+  - grub/
+    - i386-pc/
+      - *mod
+      - *lst
+    - grub.cfg
+  - efi.img             # UEFI
+  - eltorito.img
+- initrd.xz
+  - ...
+  - lib/
+    - ...
+    - onie
+      - ...
+      - onie-updater    # -> $(IMAGEDIR)/onie-updater-$(ARCH)-$(MACHINE_PREFIX)
+- vmlinuz
 
 
 #### 制作过程
@@ -466,18 +481,44 @@ tools/
    1. 制作成uboot 多文件 .itb image (arm,onie-mk-itb.sh, need $(IMAGEDIR)/$(MACHINE_PREFIX).dtb) -> $(IMAGEDIR)/$(MACHINE_PREFIX).itb | $(MBUILDDIR)/onie.itb
    2. 制作成uboot image-bin (arm,onie-mk-bin.sh) -> $(IMAGEDIR)/onie-$(MACHINE_PREFIX).bin
    3. 制作成image-updater (onie-mk-installer.sh) -> $(IMAGEDIR)/onie-updater-$(ARCH)-$(MACHINE_PREFIX)
-   4. 制作成recovery-initrd (make-sysroot.sh, 带image-updater的onie.initrd) -> $(MBUILDDIR)/recovery/initrd.cpio | $(MBUILDDIR)/recovery/$(ARCH)-$(MACHINE_PREFIX).initrd
+   4. 制作成recovery-initrd (make-sysroot.sh, 带image-updater(/lib/onie/onie-updater)的onie.initrd) -> $(MBUILDDIR)/recovery/initrd.cpio | $(MBUILDDIR)/recovery/$(ARCH)-$(MACHINE_PREFIX).initrd
        - `cp -a $(SYSROOTDIR) $(RECOVERY_SYSROOT)` RECOVERY_SYSROOT=$(MBUILDDIR)/recovery
        - `cp $(UPDATER_IMAGE) $(RECOVERY_SYSROOT)/lib/onie/onie-updater`
    5. 制作成recovery-iso (onie-mk-iso.sh, need recovery-initrd及其相关内容)
 
 
 
+### 安装包安装过程
+
+```cfg
+menuentry "ONIE: Rescue" --class gnu-linux --class onie {
+  echo    "ONIE: Rescue Mode ..."
+  onie_entry_start
+  linux   /vmlinuz $ONIE_CMDLINE_LINUX boot_reason=rescue
+  initrd  /initrd.xz
+  onie_entry_end
+}
+
+menuentry "ONIE: Embed ONIE" --class gnu-linux --class onie {
+  echo    "ONIE: Embedding ONIE ..."
+  onie_entry_start
+  linux   /vmlinuz $ONIE_CMDLINE_LINUX boot_reason=embed install_url=file:///lib/onie/onie-updater
+  initrd  /initrd.xz
+  onie_entry_end
+}
+```
+
+1. 引导进入`Embed`模式, 通过内核参数传参到/proc/cmdline
+2. Discover通过`/lib/onie/functions`中的函数`import_cmdline`导入静态链接`onie_install_url`
+3. Discover进行 服务发现 和 网络邻居发现 查找 `磁盘分区更新包` 和 `HTTP/TFTP/FTP..服务器IP`
+   1. Discover通过`sd_static`服务发现找到`onie_install_url`，存放到`onie_static_url`
+4. 执行安装器函数`exec_installer`进行`更新包`的更新
 
 
-### 安装/更新过程
 
-1. 运行安装包（`sharch_body.sh`），创建临时目录`/tmp/tmp.xxx/`
+### 更新包更新过程
+
+1. 运行更新包（`sharch_body.sh`），创建临时目录`/tmp/tmp.xxx/`
 2. `sharch_body.sh`将安装包`exit_marker`后的内容解压到/tmp/tmp.xxx/目录下，即/tmp/tmp.xxx/installer/
    - 包括onie-update.tar.xz
    - 暂时不解压onie-tools.tar.xz，看后续重新创建onie-boot分区时再解压

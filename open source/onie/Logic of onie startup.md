@@ -202,7 +202,7 @@ Source: `/bin/discover`
    1. `/etc/init.d/networking.sh discover`: 仅配置IP
    2. `/etc/init.d/syslogd.sh discover`: 开启日志守护进程
    3. `service_discovery`: 服务发现，查找可供安装程序使用的 URL（一个或多个）
-      1. `sd_static  && return`: 如果通用引导加载程序（u-boot）传递给我们的是静态网址（onie_install_url），那么就使用该网址。 存放到变量`onie_static_url`
+      1. `sd_static  && return`: 如果通用引导加载程序（u-boot or embed-mode）传递给我们的是静态网址（onie_install_url），那么就使用该网址。 存放到变量`onie_static_url`
       2. `sd_localfs`: 查找本地文件系统，只查找文件系统根目录（跳过arch指定的分区如EFI和-DIAG），存放在变量`onie_local_parts`
       3. `sd_localubifs`: 查找本地UBI文件系统，只查找文件系统根目录（跳过arch指定的分区如EFI和-DIAG），存放在变量`onie_local_parts`（UBI（​​Unsorted Block Images​​）是 Linux 专为 ​​NAND Flash​​ 设计的文件系统管理层，位于 ​​MTD（Memory Technology Device）​​ 之上）。
          1. `for p in /sys/class/ubi/ubi?/ubi?_?`
@@ -219,13 +219,13 @@ Source: `/bin/discover`
       3. `ip -6 neigh show | awk '{print "[" $1 "-" $3 "]"}' | tr '\n' ',' >> $onie_neigh_file`: 收集IPv6网络邻居
       4. `cat onie_neigh_file`=: onie_neighs@@xxx,aaa,bbb##
    5. `rm -f /var/run/install.rc`: 强制删除之前的安装结果
-   6. 构造exec_installer参数文件onie_parms_file=/var/run/onie/onie_parms_file.txt:
+   6. 构造`exec_installer`参数文件`onie_parms_file`=/var/run/onie/onie_parms_file.txt:
       1. `cat $onie_neigh_file > $onie_parms_file`: 添加邻居发现
       2. `echo "$onie_disco" >>  $onie_parms_file`: 添加服务发现
       3. `sed -e 's/@@/ = /g' -e 's/##/\n/g' $onie_parms_file | logger -t discover -p ${syslog_onie}.info`: 修改`name1@@val1##name2@@val2##..nameX@@valX##`格式为 `key = value \n key1 = value1`并输出到日志，syslog_onie="local0"
-      4. `exec_installer $onie_parms_file 2>&1 | tee $tee_log_file | logger -t onie-exec -p ${syslog_onie}.info`: 执行安装并输出结果到控制台和系统日志，参照下文 ### exec_installer
-   7. `[ -r /var/run/install.rc ] && [ "$(cat /var/run/install.rc)" = "0" ] && exit 0`: 若安装成功则退出Discover程序
-   8. 等待20s, 避免自身程序的网络发现成为其他服务器的DoS攻击
+   7. `exec_installer $onie_parms_file 2>&1 | tee $tee_log_file | logger -t onie-exec -p ${syslog_onie}.info`: 执行安装并输出结果到控制台和系统日志，参照下文 ### exec_installer
+   8. `[ -r /var/run/install.rc ] && [ "$(cat /var/run/install.rc)" = "0" ] && exit 0`: 若安装成功则退出Discover程序
+   9. 等待20s, 避免自身程序的网络发现成为其他服务器的DoS攻击
 
 
 
