@@ -46,9 +46,47 @@
 
 ## installer/
 
-### installer/install-platform
+### installer/install-platform [Option]
+
+文件`install-platform`将被添加到安装/更新包里，与文件`install.sh`同级，用于添加/覆盖现有的安装脚本函数，在`install.sh`处被调用/加载。
+
+其脚本内容将被添加到现有的安装程序功能(函数)中或覆盖现有的安装程序功能(函数)。
+
+若其实现需要额外的其他脚本或程序，可在`machine.make`中通过`UPDATER_IMAGE_PARTS_PLATFORM += path/to/file`的方式实现。
+i.e. `UPDATER_IMAGE_PARTS_PLATFORM = $(MACHINEDIR)/rootconf/sysroot-lib-onie/test-install-sharing`
 
 
+**`install.sh`主要执行链**：
+
+1. `. ./machine-build.conf`
+2. `. ./update-type`
+3. `[ "$update_type" = "onie" ] && . ./install-arch`
+  1. `. ./installer.conf`
+  2. `. ./machine-build.conf`
+  3. `[ -r /etc/machine.conf ] && . /etc/machine.conf`
+  4. 定义函数:
+    - `parse_arg_arch`
+    - ...
+    - `install_image`
+4. `. ./install-platform`
+5. `[ -r /etc/machine.conf ] && . /etc/machine.conf`
+6. `true ${onie_machine_rev=0}`
+7. `true ${onie_config_version=0}`
+8. `onie_build_machine=${onie_build_machine:-$onie_machine}`
+9. `xz -d -c onie-update.tar.xz | tar -xf -`
+10. 定义函数：`check_machine_image`, `update_syseeprom`, `set_default_passwd`
+11. `[ -r ./install-platform ] && . ./install-platform` <- 可在此覆写函数实现 部分 或 全部 的安装逻辑
+12. `[ $(check_machine_image) = "yes" ] && [ "$force" = "no" ] && exit 1`
+13. `install_image "$@"`
+
+Refer: `/installer/installer.sh`
+
+
+**用途举例**：
+
+- 重写函数`update_syseeprom`实现`0x29 ONIE Version`修改时`打开`或`关闭`eeprom写保护，需注意供应商对该字段的定义是否仅仅是出厂的版本（是否允许修改）
+- 重写函数`set_default_passwd`配合`daemon`进程实现根据`安全启动开启状态`设置默认或无密码，需在开启安全启动模式下安装。
+- 重写函数`check_machine_image`检查`image`自定义部分(i.e. UPDATER_IMAGE_PARTS_PLATFORM)是否完整
 
 
 
@@ -268,4 +306,150 @@ Refer: `rootconf/default/bin/onie-sysinfo`
 **用途举例**：
 
 - 自定义SN/PN/MAC读取，优先级等
+
+
+
+## installer.conf [*]
+
+实现grub-arch架构安装脚本的`install_device_platform`函数，用于`install-arch`获取安装的目标磁盘设备。
+
+实现grub-arch架构安装脚本的`pre_install_hook`和`post_install_hook`钩子函数，用于`install-arch`执行安装时的前置准备和后置收尾工作。
+
+
+**`install-arch`主要相关执行链**：
+
+1. `. ./installer.conf`
+2. `. ./machine-build.conf`
+3. `[ -r /etc/machine.conf ] && . /etc/machine.conf`
+4. 定义函数:
+    - `parse_arg_arch`
+    - ...
+    - `install_image`:
+      1. `init_onie_install`
+      2. `[ -n "$pre_install_hook" ] && eval $pre_install_hook || exit 1`
+      3. ...
+      4. `[ -n "$post_install_hook" ] && eval $post_install_hook || exit 1`
+      5. `update_syseeprom`
+      6. `[ "$image_secure_boot_ext" = "yes" ]  && [ "$install_firmware" = "uefi" ] && set_default_passwd`
+
+Refer: `installer/grub-arch/install-arch`
+
+
+**用途举例**：
+
+- ONIE GRUB 升级: 通过`pre_install_hook`前置钩子函数解压`onie.initrd`文件系统，并把文件系统的执行工具链挂载(拷贝)到现成的文件系统，即使用新的updater的工具链进行安装。
+
+
+
+## machine-security.make [Option]
+
+配置影响安全的编译设置/变量，需在`machine.make`导入：`MACHINE_SECURITY_MAKEFILE ?= $(MACHINEDIR)/machine-security.make`
+
+
+**MAKE说明**：
+
+- 
+
+
+**主要相关执行链**：
+
+1. /
+
+Refer: `/`
+
+
+**用途举例**：
+
+- /
+
+
+
+## machine.make [*]
+
+配置`MACHINE`编译设置和需求，可自行扩展编译需求(`include xxx.make`)。在`Makefile`处导入(`include`)
+
+
+**MAKE说明**：
+
+- `ONIE_ARCH ?= x86_64`
+- `VENDOR_REV ?= 0`
+- `MACHINE_REV = 0`
+- `SWITCH_ASIC_VENDOR = bcm`
+- `VENDOR_VERSION = .3.0.0`
+- `VENDOR_ID = 12244`: Vendor ID -- IANA Private Enterprise Number, Ref: http://www.iana.org/assignments/enterprise-numbers
+- `I2CTOOLS_ENABLE = yes`
+- `I2CTOOLS_SYSEEPROM = no`
+- `UEFI_ENABLE = yes`
+- `IPMITOOL_ENABLE = yes`
+- `FIRMWARE_UPDATE_ENABLE = yes`: 是否编译`firmware-update`
+- `SKIP_ETHMGMT_MACS = yes`: 是否修改由其他程序所设置的以太网管理媒体访问控制（MAC）地址，若为no，`S30networking.sh`将自动根据`$(onie-sysinfo -e)`的MAC基地址设置所有网卡的MAC
+- `SECURE_BOOT_ENABLE = no`
+- `SECURE_BOOT_EXT = no`: ifeq ($(SECURE_GRUB),yes)
+- `SECURE_GRUB = no`
+- `MACHINE_SECURITY_MAKEFILE ?= $(MACHINEDIR)/machine-security.make`
+- `CONSOLE_SPEED = 115200 `
+- `CONSOLE_DEV = 0`
+- `EXTRA_CMDLINE_LINUX ?= "quiet nomodeset"`
+- `UPDATER_IMAGE_PARTS_PLATFORM = $(MACHINEDIR)/rootconf/sysroot-lib-onie/test-install-sharing`
+- `LINUX_VERSION           = 4.9`
+- `LINUX_MINOR_VERSION     = 95 `
+- 
+
+
+**Makefile主要相关执行链**：
+
+1. `-include local.make`: 允许用户尽早覆盖任何使用 `?=` 定义的变量。 
+2. ...
+3. `include $(MACHINEDIR)/machine.make`
+4. ...
+5. `include $(ARCHDIR)/$(ONIE_ARCH).make`
+6. ...
+7. `include make/kernel-download.make`
+8. ...
+9. `include make/crosstool-ng.make`
+10. `ifneq ($(XTOOLS_LIBC),glibc) include make/uclibc-download.make`
+11. `include make/xtools.make`
+12. `include make/sysroot.make`
+13. `ifeq ($(GNU_EFI_ENABLE),yes) include make/gnu-efi.make`
+14. `include make/kernel.make`
+15. `ifeq ($(UBOOT_ENABLE),yes) include make/u-boot.make`
+16. `include make/compiler.make`
+17. `include make/busybox.make`
+18. ...
+19. `all: $(KERNEL) $(UBOOT) $(SYSROOT) $(IMAGE)`
+20. ...
+
+Refer: `build-config/Makefile`
+
+
+**用途举例**：
+
+- /
+
+
+
+
+## post-process.make [Option]
+
+允许可选择地定义镜像后处理指令。这个 Makefile 片段可以定义用于使 `$(MACHINE_IMAGE_COMPLETE_STAMP)` 保持最新状态的规则，下面的最终目标 `$(IMAGE_COMPLETE_STAMP)` 会引用该规则。 即完成最终目标`$(IMAGE_COMPLETE_STAMP)`后会执行`MACHINE_IMAGE_COMPLETE_STAMP`规则。
+
+可用于恢复编译后的代码。
+
+
+**MAKE说明**：
+
+- 
+
+
+**主要相关执行链**：
+
+1. /
+
+Refer: `/`
+
+
+**用途举例**：
+
+- 可用于恢复编译后的代码。
+
 

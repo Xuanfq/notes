@@ -115,7 +115,7 @@ ifeq ($(SECURE_BOOT_EXT),yes)
 	SECURE_BOOT_ENABLE = yes
 endif
 
-include $(MACHINEDIR)/rootconf/sysroot_machine.make
+include $(MACHINEDIR)/rootconf/sysroot-machine.make
 #-------------------------------------------------------------------------------
 #
 # Local Variables:
