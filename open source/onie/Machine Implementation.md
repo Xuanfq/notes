@@ -17,6 +17,9 @@
       - fw-version.make                             # 实现指定固件升级版本`FW_VERSION = VD-Demo-1.0.0`
     - installer/
       - install-platform                              # 实现：安全启动密码`set_default_passwd`，Ref: `installer/install.sh` & `installer/grub-arch/install-arch`
+    - kernel/
+      - config                  # 实现内核配置项的补充或覆盖
+      - serial                  # 实现自定义补丁和补丁顺序
     - rootconf/                 # -> / 文件系统配置，优先级低到高(逐步覆盖): build/sysroot/ -> rootconf/$arch/ -> machinename/rootconf
       - sysroot-bin/            # -> /bin/
       - sysroot-etc/            # -> /etc/
@@ -41,6 +44,100 @@
     - mk-vm.sh                  # 非实现相关：在KVM虚拟机上安装ONIE的附件，KVM虚拟机制作和启动
     - post-process.make         # 允许机器可以选择地定义镜像后处理指令。定义用于使 $(MACHINE_IMAGE_COMPLETE_STAMP) 保持最新状态的规则。Ref: `images.make`
     - README.secureboot         # 非实现相关：安全启动相关文档
+
+
+
+## firmware/ [Option]
+
+可以通过`machine.make`设置`FIRMWARE_UPDATE_ENABLE = yes/no`来决定是否编译固件更新包(onie-firmware-$(ARCH)-$(MACHINE_PREFIX))`firmware-update`。若无firmware实现，可设为`no`来防止通过常规命令`make MACHINEDIR=../machine/vendor/ MACHINE=xxx firmware-update`来编译固件更新包。
+
+但无论如何，在制作固件更新包时整个firmware目录都会被打包！
+
+
+### firmware/fw-install.sh [*]
+
+实现固件(BMC/BIOS/CPLD/FPGA/SSD/...)升级逻辑。被`/installer/firmware-update/install`中函数`install_image`调用。
+
+在`fw-install.sh`中需要时自定义`AC/DC Power cycle`逻辑时，可制作Power Cycle逻辑脚本`reboot-cmd`并将其拷贝到`/tmp/`目录下，更新完成后自动执行该脚本。
+
+若是在`onie-updater`和`onie-firmware.bin`同时升级时(通过`onie-fwpkg add`添加`onie-updater|firmware`)。将在最后都更新完成后才执行`reboot-cmd`。需注意`reboot-cmd`时磁盘同步和数据保存(sync;sync)，取消挂载磁盘以同步文件系统元数据等。
+
+
+**`install`主要执行链**：
+
+1. 定义函数:
+   1. install_image():
+      1. `[ -x "./firmware/fw-install.sh" ] || { exit 1 }`
+      2. `cd firmware && ./fw-install.sh "$@"`
+      3. `[ $? -ne 0 ] && return 1`
+      4. `return 0`
+   2. parse_arg_arch():
+      1. `return 0`
+
+Refer: `installer/firmware-update/install`
+
+
+**用途举例**：
+
+- 实现固件(BMC/BIOS/CPLD/FPGA/SSD/...)升级逻辑 和 自定义升级完成后的重启方法`reboot-cmd`
+
+
+
+### firmware/fw-version.make [*]
+
+实现指定固件升级版本`FW_VERSION = VD-Demo-1.0.0` 和 扩展firmware编译规则。被`firmware-update.make`导入。
+
+**`firmware-update.make`主要执行链**：
+
+1. 准备相关变量和参数:
+   1. FIRMWARE_DIR		= $(MBUILDDIR)/firmware
+   2. FIRMWARE_CONF		= $(FIRMWARE_DIR)/machine-build.conf
+   3. FIRMWARE_UPDATE_BASE	= onie-firmware-$(PLATFORM).bin
+   4. FIRMWARE_UPDATE_IMAGE	= $(IMAGEDIR)/$(FIRMWARE_UPDATE_BASE)
+   5. FIRMWARE_UPDATE_COMPLETE_STAMP	= $(STAMPDIR)/firmware-update-complete
+   6. MACHINE_FW_DIR		= $(MACHINEDIR)/firmware
+   7. MACHINE_FW_INSTALLER	= $(MACHINE_FW_DIR)/fw-install.sh
+   8. MACHINE_FW_VERSION	= $(MACHINE_FW_DIR)/fw-version.make
+2. include $(MACHINE_FW_VERSION): 导入/加载 固件版本
+3. 定义固件更新包制作规则: firmware-update-complete
+   ```makefile
+    PHONY += firmware-update-complete
+    firmware-update-complete: $(FIRMWARE_UPDATE_COMPLETE_STAMP)
+    $(FIRMWARE_UPDATE_COMPLETE_STAMP): $(IMAGE_UPDATER_SHARCH) $(MACHINE_FW_INSTALLER) $(SCRIPTDIR)/onie-mk-installer.sh
+      $(Q) mkdir -p $(FIRMWARE_DIR)
+      $(Q) rm -f $(FIRMWARE_CONF)
+      $(Q) echo "onie_version=$(FW_VERSION)" >> $(FIRMWARE_CONF)
+      $(Q) echo "onie_vendor_id=$(VENDOR_ID)" >> $(FIRMWARE_CONF)
+      $(Q) echo "onie_build_machine=$(ONIE_BUILD_MACHINE)" >> $(FIRMWARE_CONF)
+      $(Q) echo "onie_machine_rev=$(MACHINE_REV)" >> $(FIRMWARE_CONF)
+      $(Q) echo "onie_arch=$(ARCH)" >> $(FIRMWARE_CONF)
+      $(Q) echo "onie_config_version=$(ONIE_CONFIG_VERSION)" >> $(FIRMWARE_CONF)
+      $(Q) echo "onie_build_date=\"$$(date -Imin)\"" >> $(FIRMWARE_CONF)
+      $(Q) echo "==== Create firmware update $(PLATFORM) self-extracting archive ===="
+      $(Q) rm -f $(FIRMWARE_UPDATE_IMAGE)
+      $(Q) $(SCRIPTDIR)/onie-mk-installer.sh firmware $(ROOTFS_ARCH) $(MACHINEDIR) \
+        $(FIRMWARE_CONF) $(INSTALLER_DIR) $(FIRMWARE_UPDATE_IMAGE)
+      $(Q) touch $@
+    
+    PHONY += firmware-update
+    firmware-update: $(FIRMWARE_UPDATE_COMPLETE_STAMP)
+    $(Q) echo "=== Finished making firmware update package $(FIRMWARE_UPDATE_BASE) ==="
+   ```
+4. 定义固件更新包清除规则: firmware-update-clean
+   ```makefile
+    MACHINE_CLEAN += firmware-update-clean
+    firmware-update-clean:
+      $(Q) rm -f $(FIRMWARE_UPDATE_COMPLETE_STAMP) $(FIRMWARE_UPDATE_IMAGE)
+      $(Q) rm -rf $(FIRMWARE_DIR) $(FIRMWARE_UPDATE_IMAGE)
+      $(Q) echo "=== Finished making $@ for $(PLATFORM)" 
+   ```
+
+Refer: `build-config/make/firmware-update.make`
+
+
+**用途举例**：
+
+- 指定固件升级版本`FW_VERSION = VD-Demo-1.0.0`
 
 
 
@@ -87,6 +184,80 @@ Refer: `/installer/installer.sh`
 - 重写函数`update_syseeprom`实现`0x29 ONIE Version`修改时`打开`或`关闭`eeprom写保护，需注意供应商对该字段的定义是否仅仅是出厂的版本（是否允许修改）
 - 重写函数`set_default_passwd`配合`daemon`进程实现根据`安全启动开启状态`设置默认或无密码，需在开启安全启动模式下安装。
 - 重写函数`check_machine_image`检查`image`自定义部分(i.e. UPDATER_IMAGE_PARTS_PLATFORM)是否完整
+
+
+
+## kernel [*]
+
+Make: `kernel.make`
+
+
+**`kernel.make`主要执行链**：
+
+1. 准备变量参数:
+  - LINUX_CONFIG 		?= conf/kernel/$(LINUX_RELEASE)/linux.$(ONIE_ARCH).config
+  - KERNELDIR   		= $(MBUILDDIR)/kernel
+  - LINUXDIR   		= $(KERNELDIR)/linux
+  - KERNEL_SRCPATCHDIR	= $(PATCHDIR)/kernel/$(LINUX_RELEASE)
+  - MACHINE_KERNEL_PATCHDIR	?= $(MACHINEDIR)/kernel
+  - KERNEL_PATCHDIR		= $(KERNELDIR)/patch
+  - KERNEL_SOURCE_STAMP	= $(STAMPDIR)/kernel-source
+  - KERNEL_PATCH_STAMP	= $(STAMPDIR)/kernel-patch
+  - KERNEL_BUILD_STAMP	= $(STAMPDIR)/kernel-build
+  - KERNEL_DTB_INSTALL_STAMP = $(STAMPDIR)/kernel-dtb-install
+  - KERNEL_VMLINUZ_INSTALL_STAMP = $(STAMPDIR)/kernel-vmlinuz-install
+  - KERNEL_INSTALL_STAMP	= $(STAMPDIR)/kernel-install
+  - KERNEL_STAMP		= $(KERNEL_SOURCE_STAMP) $(KERNEL_PATCH_STAMP) $(KERNEL_BUILD_STAMP) $(KERNEL_INSTALL_STAMP)
+  - KERNEL			= $(KERNEL_STAMP)
+  - KERNEL_VMLINUZ		= $(IMAGEDIR)/$(MACHINE_PREFIX).vmlinuz
+  - KERNEL_VMLINUZ_SIG  = $(KERNEL_VMLINUZ).sig
+  - UPDATER_VMLINUZ		= $(MBUILDDIR)/onie.vmlinuz
+  - UPDATER_VMLINUZ_SIG = $(UPDATER_VMLINUZ).sig
+  - LINUX_BOOTDIR   = $(LINUXDIR)/arch/$(KERNEL_ARCH)/boot
+2. 规则定义： `kernel: $(KERNEL_STAMP)`
+   1. `kernel: $(KERNEL_STAMP)`
+   2. ...ToBeContinue...
+
+
+Refer: `/build-config/make/kernel.make`
+
+
+### kernel/config [*]
+
+实现`内核配置项`的`补充`或`覆盖`，被`kernel.make`引用。
+
+
+**`kernel.make`主要执行链**：
+
+见上方。
+
+Refer: `/build-config/make/kernel.make`
+
+
+**用途举例**：
+
+- 自定义`enable`模块/功能
+
+
+
+### kernel/serial [*]
+
+实现`自定义补丁`和`补丁顺序`指定，被`kernel.make`引用。
+
+一行一个补丁文件，可通过`#`在行尾添加注释，需要在最后留一行空白行！
+
+
+**`kernel.make`主要执行链**：
+
+见上方。
+
+Refer: `/build-config/make/kernel.make`
+
+
+**用途举例**：
+
+- 自定义内核修改补丁
+- 自定义补丁及其顺序
 
 
 
