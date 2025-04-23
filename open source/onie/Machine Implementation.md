@@ -215,7 +215,22 @@ Make: `kernel.make`
   - UPDATER_VMLINUZ_SIG = $(UPDATER_VMLINUZ).sig
   - LINUX_BOOTDIR   = $(LINUXDIR)/arch/$(KERNEL_ARCH)/boot
 2. 规则定义： `kernel: $(KERNEL_STAMP)`
-   1. `kernel: $(KERNEL_STAMP)`
+   1. `kernel: $(KERNEL_STAMP)`: 
+      1. kernel-source: 
+         1. tree
+            ```makefile
+            mkdir -pv $(TREEDIRS)  # STAMPDIR=$(MBUILDDIR)/stamp STAGE_SYSROOT=?[Null!!!] INITRAMFSDIR=$(MBUILDDIR)/initramfs
+            ```
+            不设值: STAGE_SYSROOT=?
+         3. $(DOWNLOADDIR)/kernel-$(LINUX_VERSION).$(LINUX_MINOR_VERSION)-download
+            ```makefile
+            $(SCRIPTDIR)/fetch-package $(DOWNLOADDIR) $(UPSTREAMDIR) \  # 
+            $(LINUX_TARBALL) \      # linux-$(LINUX_RELEASE).tar.xz=linux-$(LINUX_VERSION).$(LINUX_MINOR_VERSION).tar.xz
+             $(LINUX_TARBALL_URLS)  # += $(ONIE_MIRROR) https://www.kernel.org/pub/linux/kernel/v$(LINUX_MAJOR_VERSION).x
+            ```
+      2. kernel-patch:
+      3. kernel-build:
+      4. kernel-install
    2. ...ToBeContinue...
 
 
