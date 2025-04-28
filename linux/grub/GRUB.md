@@ -927,6 +927,7 @@ password_pbkdf2 user hashed-password
 
 - `password_pbkdf2 user hashed-password`: 使用哈希加密后的密码定义一个名为`user`的用户，加密的密码通过`grub-mkpasswd-pbkdf2`工具生成。建议使用该命令。
 
+> Notice: 应在菜单处设置，而非`grub> `下。
 
 
 ## 内置变量
