@@ -47,6 +47,14 @@
 
 
 
+## ../kernel/ [Option]
+
+即 `$MACHINEROOT/kernel`，供应商所有通用内核补丁所在的目录。
+
+在被机器内核补丁序列`$(MACHINEDIR)/kernel/serial`引用时，才会被添加到内核补丁目录`$(KERNELDIR)/patch`并被应用。
+
+
+
 ## firmware/ [Option]
 
 可以通过`machine.make`设置`FIRMWARE_UPDATE_ENABLE = yes/no`来决定是否编译固件更新包(onie-firmware-$(ARCH)-$(MACHINE_PREFIX))`firmware-update`。若无firmware实现，可设为`no`来防止通过常规命令`make MACHINEDIR=../machine/vendor/ MACHINE=xxx firmware-update`来编译固件更新包。
@@ -215,20 +223,52 @@ Make: `kernel.make`
   - UPDATER_VMLINUZ_SIG = $(UPDATER_VMLINUZ).sig
   - LINUX_BOOTDIR   = $(LINUXDIR)/arch/$(KERNEL_ARCH)/boot
 2. 规则定义： `kernel: $(KERNEL_STAMP)`
-   1. `kernel: $(KERNEL_STAMP)`: 
-      1. kernel-source: 
+   1. `kernel: $(KERNEL_STAMP)`: 依赖于`kernel-source`, `kernel-patch`, `kernel-build`, `kernel-install`
+      1. kernel-source: 依赖于`tree`, `kernel-download`
          1. tree
+            1. $(BUILDDIR)/stamp-project
+              - mkdir -pv $(PROJECTDIRS):
+                - mkdir -pv $(BUILDDIR) $(IMAGEDIR) $(DOWNLOADDIR)
+                  - BUILDDIR	=  $(abspath ../build)
+                  - IMAGEDIR	=  $(BUILDDIR)/images
+                  - DOWNLOADDIR	?= $(BUILDDIR)/download
             ```makefile
             mkdir -pv $(TREEDIRS)  # STAMPDIR=$(MBUILDDIR)/stamp STAGE_SYSROOT=?[Null!!!] INITRAMFSDIR=$(MBUILDDIR)/initramfs
             ```
             不设值: STAGE_SYSROOT=?
-         3. $(DOWNLOADDIR)/kernel-$(LINUX_VERSION).$(LINUX_MINOR_VERSION)-download
-            ```makefile
-            $(SCRIPTDIR)/fetch-package $(DOWNLOADDIR) $(UPSTREAMDIR) \  # 
-            $(LINUX_TARBALL) \      # linux-$(LINUX_RELEASE).tar.xz=linux-$(LINUX_VERSION).$(LINUX_MINOR_VERSION).tar.xz
-             $(LINUX_TARBALL_URLS)  # += $(ONIE_MIRROR) https://www.kernel.org/pub/linux/kernel/v$(LINUX_MAJOR_VERSION).x
+         2. kernel-download (in `kernel-download.make`):
+            1. $(DOWNLOADDIR)/kernel-$(LINUX_VERSION).$(LINUX_MINOR_VERSION)-download
+              下载内核源码
+              ```makefile
+              $(SCRIPTDIR)/fetch-package $(DOWNLOADDIR) $(UPSTREAMDIR) \  # UPSTREAMDIR=$(abspath ../upstream)=onieroot/upstream/
+              $(LINUX_TARBALL) \      # linux-$(LINUX_RELEASE).tar.xz=linux-$(LINUX_VERSION).$(LINUX_MINOR_VERSION).tar.xz
+              $(LINUX_TARBALL_URLS)  # += $(ONIE_MIRROR) https://www.kernel.org/pub/linux/kernel/v$(LINUX_MAJOR_VERSION).x
+              touch $@ (touch $(DOWNLOADDIR)/kernel-$(LINUX_VERSION).$(LINUX_MINOR_VERSION)-download)
+              ```
+         kernel-source主要工作: 解压内核源码
+          ```
+           	$(Q) rm -f $@ && eval $(PROFILE_STAMP)
+            $(Q) echo "==== Extracting Linux ===="
+            $(Q) $(SCRIPTDIR)/extract-package $(KERNELDIR) $(DOWNLOADDIR)/$(LINUX_TARBALL)
+            $(Q) cd $(KERNELDIR) && ln -s linux-$(LINUX_RELEASE) linux
+            $(Q) touch $@
+          ```
+      2. kernel-patch: [依赖于$(KERNEL_SRCPATCHDIR)/* $(MACHINE_KERNEL_PATCHDIR)/* $(KERNEL_SOURCE_STAMP)]
+         主要工作：
+         1. 需要machine实现series，打内核补丁：`[ -r $(MACHINE_KERNEL_PATCHDIR)/series ] || exit 1`
+         2. `mkdir -p $(KERNEL_PATCHDIR)`: $(MBUILDDIR)/kernel/patch
+         3. 拷贝内核公共补丁和series到目标路径：`cp $(KERNEL_SRCPATCHDIR)/* $(KERNEL_PATCHDIR)`
+         4. 将机器需求的内核补丁序列series追加到公共补丁序列series：`cat $(MACHINE_KERNEL_PATCHDIR)/series >> $(KERNEL_PATCHDIR)/series`
+            1. MACHINE_KERNEL_PATCHDIR=machine/vendor/machinename/kernel
+         5. 拷贝machine专用内核补丁到目标路径，并应用补丁：
             ```
-      2. kernel-patch:
+            $(Q) $(SCRIPTDIR)/cp-machine-patches $(KERNEL_PATCHDIR) \  # 输出目录，即拷贝内核补丁到该目录下
+              $(MACHINE_KERNEL_PATCHDIR)/series	\  # 机器内核补丁序列
+              $(MACHINE_KERNEL_PATCHDIR) \  # 机器内核补丁目录
+              $(MACHINEROOT)/kernel  # 供应商通用内核补丁目录
+            $(Q) $(SCRIPTDIR)/apply-patch-series $(KERNEL_PATCHDIR)/series $(LINUXDIR)
+            $(Q) touch $@
+            ```
       3. kernel-build:
       4. kernel-install
    2. ...ToBeContinue...
@@ -260,6 +300,10 @@ Refer: `/build-config/make/kernel.make`
 实现`自定义补丁`和`补丁顺序`指定，被`kernel.make`引用。
 
 一行一个补丁文件，可通过`#`在行尾添加注释，需要在最后留一行空白行！
+
+补丁文件可以在：
+- `MACHINEROOT=machine/$vendor/kernel`：供应商通用内核补丁目录
+- `series`所在目录，即`machine/vendor/$machinename/kernel`目录，即machine专用内核补丁目录
 
 
 **`kernel.make`主要执行链**：
