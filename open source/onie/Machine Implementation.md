@@ -4,7 +4,17 @@
 
 
 - machine/vendor/
+  - kernel/                     # 供应商自定义的内核补丁文件，需在machinename/kernel/series中引用
+    - xxx.patch
+  - busybox/                    # 供应商自定义的通用的busybox补丁文件，需在machinename/busybox/patch/series中引用
+    - xxx.patch
   - machinename
+    - busybox/
+      - conf/
+        - config                # `busybox`配置文件，仅覆盖`build-config/conf/busybox.config`存在的配置项
+      - patches/
+        - xxx.patch             # `busybox`补丁，不能与`vendor/busybox/xxx.patch`命名相同
+        - series                # `busybox`补丁引用文件，实现自定义补丁和补丁顺序
     - firmware/                 # 固件升级包，将直接被拷贝并打包成 onie-firmware-$(PLATFORM).bin -> firmware-update.make
       - bios/                   # 非必要
       - bmc/                    # 非必要
@@ -18,8 +28,9 @@
     - installer/
       - install-platform                              # 实现：安全启动密码`set_default_passwd`，Ref: `installer/install.sh` & `installer/grub-arch/install-arch`
     - kernel/
+      - xxx.patch               # 实现内核补丁详细内容，不能与`vendor/kernel/xxx.patch`命名相同
       - config                  # 实现内核配置项的补充或覆盖
-      - serial                  # 实现自定义补丁和补丁顺序
+      - series                  # 实现自定义补丁和补丁顺序
     - rootconf/                 # -> / 文件系统配置，优先级低到高(逐步覆盖): build/sysroot/ -> rootconf/$arch/ -> machinename/rootconf
       - sysroot-bin/            # -> /bin/
       - sysroot-etc/            # -> /etc/
@@ -47,11 +58,192 @@
 
 
 
+## ../busybox/ [Option]
+
+即 `$MACHINEROOT/busybox`，供应商所有通用busybox补丁所在的目录。
+
+在被机器内核补丁序列`$(MACHINEDIR)/kernel/serial`引用时，才会被添加到busybox补丁目录`$(MBUILDDIR)/busybox/patch`并被应用。
+
+
+
 ## ../kernel/ [Option]
 
 即 `$MACHINEROOT/kernel`，供应商所有通用内核补丁所在的目录。
 
-在被机器内核补丁序列`$(MACHINEDIR)/kernel/serial`引用时，才会被添加到内核补丁目录`$(KERNELDIR)/patch`并被应用。
+在被机器内核补丁序列`$(MACHINEDIR)/kernel/serial`引用时，才会被添加到内核补丁目录`$(MBUILDDIR)/kernel/patch`并被应用。
+
+
+
+## busybox/ [Option]
+
+### busybox/conf/config [Option]
+
+实现`busybox配置项`的`覆盖`，被`busybox.make`引用。
+
+默认的配置项在`conf/busybox.config`中。
+
+
+**`busybox.make`主要执行链**：
+
+见下方Reference。
+
+Refer: `/build-config/make/busybox.make`
+
+
+**用途举例**：
+
+- 自定义`enable`模块/功能
+
+
+
+### busybox/patches/ [Option]
+
+#### busybox/patches/series [*]
+
+实现`busybox`的`自定义补丁`和`补丁顺序`指定，被`busybox.make`引用。
+
+[*]若`busybox/patches/`目录存在，则`series`文件必须存在。
+
+一行一个补丁文件，可通过`#`在行尾添加注释，需要在最后留一行空白行！
+
+补丁文件可以在：
+- `MACHINEROOT=machine/$vendor/busybox`：供应商通用busybox补丁目录
+- `series`所在目录，即`machine/vendor/$machinename/busybox/patches/`目录，即machine专用内核补丁目录
+
+
+**`busybox.make`主要执行链**：
+
+见下方Reference。
+
+Refer: `/build-config/make/busybox.make`
+
+
+**用途举例**：
+
+- 自定义busybox修改补丁
+- 自定义补丁及其顺序
+
+
+
+### Reference: busybox.make
+
+Make: `busybox.make`
+
+
+**`kernel.make`主要执行链**：
+
+1. 准备变量参数:
+   - BUSYBOX_VERSION		= 1.25.1
+   - BUSYBOX_TARBALL		= busybox-$(BUSYBOX_VERSION).tar.bz2
+   - BUSYBOX_TARBALL_URLS	+= $(ONIE_MIRROR) https://www.busybox.net/downloads
+   - BUSYBOX_BUILD_DIR	= $(MBUILDDIR)/busybox
+   - BUSYBOX_DIR		= $(BUSYBOX_BUILD_DIR)/busybox-$(BUSYBOX_VERSION)
+   - BUSYBOX_CONFIG		?= conf/busybox.config
+   - 
+   - BUSYBOX_SRCPATCHDIR	= $(PATCHDIR)/busybox
+   - BUSYBOX_PATCHDIR	= $(BUSYBOX_BUILD_DIR)/patch
+   - MACHINE_BUSYBOX_DIR	?= $(MACHINEDIR)/busybox
+   - MACHINE_BUSYBOX_CONFDIR	?= $(MACHINE_BUSYBOX_DIR)/conf
+   - BUSYBOX_DOWNLOAD_STAMP	= $(DOWNLOADDIR)/busybox-$(BUSYBOX_VERSION)-download
+   - BUSYBOX_SOURCE_STAMP	= $(STAMPDIR)/busybox-source
+   - BUSYBOX_PATCH_STAMP	= $(STAMPDIR)/busybox-patch
+   - BUSYBOX_BUILD_STAMP	= $(STAMPDIR)/busybox-build
+   - BUSYBOX_INSTALL_STAMP	= $(STAMPDIR)/busybox-install
+   - BUSYBOX_STAMP = $(BUSYBOX_SOURCE_STAMP) $(BUSYBOX_PATCH_STAMP) $(BUSYBOX_BUILD_STAMP) $(BUSYBOX_INSTALL_STAMP)
+   - MACHINE_BUSYBOX_PATCHDIR = "$(MACHINE_BUSYBOX_DIR)/patches" | "" : 不存在时为空
+   - MACHINE_BUSYBOX_PATCHDIR_FILES = "$(MACHINE_BUSYBOX_PATCHDIR)/*" | "" : 不存在时为空
+   - MACHINE_BUSYBOX_CONFIG_FILE = "$(MACHINE_BUSYBOX_CONFDIR)/config" | "" : 不存在时为空
+2. 规则定义：
+   1. busybox: 依赖于`busybox-source`，`busybox-patch`，`busybox-build`，`busybox-install`
+      1. busybox-source: 依赖于$(TREE_STAMP) | $(BUSYBOX_DOWNLOAD_STAMP)
+         1. BUSYBOX_DOWNLOAD_STAMP=$(DOWNLOADDIR)/busybox-$(BUSYBOX_VERSION)-download
+            下载busybox源码包: 
+            ```
+            $(SCRIPTDIR)/fetch-package $(DOWNLOADDIR) $(UPSTREAMDIR) $(BUSYBOX_TARBALL) $(BUSYBOX_TARBALL_URLS)
+            ```
+         busybox-source主要工作：
+            解压busybox源码包: `$(SCRIPTDIR)/extract-package $(BUSYBOX_BUILD_DIR) $(DOWNLOADDIR)/$(BUSYBOX_TARBALL)`, 实际是`cd $(BUSYBOX_BUILD_DIR); tar xf $(DOWNLOADDIR)/$(BUSYBOX_TARBALL)`
+      2. busybox-patch: 依赖于$(BUSYBOX_SRCPATCHDIR)/* $(MACHINE_BUSYBOX_PATCHDIR_FILES) $(BUSYBOX_SOURCE_STAMP)
+         ```
+         	$(Q) rm -f $@ && eval $(PROFILE_STAMP)
+          $(Q) echo "==== Patching Busybox ===="
+          $(Q) mkdir -p $(BUSYBOX_PATCHDIR)
+          $(Q) cp $(BUSYBOX_SRCPATCHDIR)/* $(BUSYBOX_PATCHDIR)  # 复制通用补丁和series(onieroot/patch/busybox/*)到busybox补丁目录
+          ifneq ($(MACHINE_BUSYBOX_PATCHDIR),)  # 若存在机器补丁目录，需要提供series文件
+            $(Q) [ -r $(MACHINE_BUSYBOX_PATCHDIR)/series ] || \
+              (echo "Unable to find machine dependent busybox patch series: $(MACHINE_BUSYBOX_PATCHDIR)/series" && \
+              exit 1)
+            $(Q) cat $(MACHINE_BUSYBOX_PATCHDIR)/series >> $(BUSYBOX_PATCHDIR)/series  # 将机器补丁目录的series追加到busybox补丁目录的series
+            $(Q) $(SCRIPTDIR)/cp-machine-patches $(BUSYBOX_PATCHDIR) $(MACHINE_BUSYBOX_PATCHDIR)/series	\
+              $(MACHINE_BUSYBOX_PATCHDIR) $(MACHINEROOT)/busybox  # 将机器定义的有效的补丁文件复制到待使用的补丁目录BUSYBOX_PATCHDIR下
+          endif
+          $(Q) $(SCRIPTDIR)/apply-patch-series $(BUSYBOX_PATCHDIR)/series $(BUSYBOX_DIR)  # 应用补丁
+          $(Q) touch $@
+         ```
+      3. busybox-build: 依赖于$(BUSYBOX_DIR)/.config $(BUSYBOX_NEW_FILES) | $(DEV_SYSROOT_INIT_STAMP)
+         1. $(BUSYBOX_DIR)/.config: 依赖于$(BUSYBOX_CONFIG) $(MACHINE_BUSYBOX_CONFIG_FILE) $(BUSYBOX_PATCH_STAMP)
+            替换`$(BUSYBOX_DIR)/.config`中的配置项。
+            ```
+            $(BUSYBOX_DIR)/.config: $(BUSYBOX_CONFIG) $(MACHINE_BUSYBOX_CONFIG_FILE) $(BUSYBOX_PATCH_STAMP)
+            	$(Q) echo "==== Copying $(BUSYBOX_CONFIG) to $(BUSYBOX_DIR)/.config ===="
+              $(Q) cp -v $< $@
+            ifeq ($(EXT3_4_ENABLE),yes)
+              $(Q) sed -i \
+                -e '/\bCONFIG_CHATTR\b/c\# CONFIG_CHATTR is not set' \
+                -e '/\bCONFIG_LSATTR\b/c\# CONFIG_LSATTR is not set' \
+                -e '/\bCONFIG_FSCK\b/c\# CONFIG_FSCK is not set' \
+                -e '/\bCONFIG_TUNE2FS\b/c\# CONFIG_TUNE2FS is not set' \
+                -e '/\bCONFIG_MKFS_EXT2\b/c\# CONFIG_MKFS_EXT2 is not set' $@
+            endif
+            ifeq ($(DOSFSTOOLS_ENABLE),yes)
+              $(Q) sed -i \
+                -e '/\bCONFIG_MKFS_VFAT\b/c\# CONFIG_MKFS_VFAT is not set' $@
+            endif
+            ifeq ($(I2CTOOLS_ENABLE),yes)
+              $(Q) sed -i \
+                -e '/\bCONFIG_I2CGET\b/cCONFIG_I2CGET=y' \
+                -e '/\bCONFIG_I2CSET\b/cCONFIG_I2CSET=y' \
+                -e '/\bCONFIG_I2CDUMP\b/cCONFIG_I2CDUMP=y' \
+                -e '/\bCONFIG_I2CDETECT\b/cCONFIG_I2CDETECT=y' $@
+            endif
+              $(Q) $(SCRIPTDIR)/apply-config-patch $@ $(MACHINE_BUSYBOX_CONFIG_FILE)  # 仅替换！
+            ```
+         busybox-build主要工作：编译busybox
+         ```
+         	$(Q) rm -f $@ && eval $(PROFILE_STAMP)
+          $(Q) echo "====  Building busybox-$(BUSYBOX_VERSION) ===="
+          $(Q) PATH='$(CROSSBIN):$(PATH)'				\
+              $(MAKE) -C $(BUSYBOX_DIR)				\
+            CONFIG_SYSROOT=$(DEV_SYSROOT)			\ 		# $(BUILDDIR)/user/$(XTOOLS_VERSION)/dev-sysroot, sysroot.make
+            CONFIG_EXTRA_CFLAGS="$(ONIE_CFLAGS)"		\  # -Os --sysroot=$(DEV_SYSROOT)
+            CONFIG_EXTRA_LDFLAGS="$(ONIE_LDFLAGS)"		\  # --sysroot=$(DEV_SYSROOT)
+            CONFIG_PREFIX=$(SYSROOTDIR)			\  # $(MBUILDDIR)/sysroot
+            CROSS_COMPILE=$(CROSSPREFIX) V=$(V)  # in arch/xxx.make
+          $(Q) touch $@
+         ```
+      4. busybox-install: 依赖于$(SYSROOT_INIT_STAMP) $(BUSYBOX_BUILD_STAMP)
+         安装busybox到sysroot
+         ```
+         	$(Q) rm -f $@ && eval $(PROFILE_STAMP)
+          $(Q) echo "==== Installing busybox in $(SYSROOTDIR) ===="
+          $(Q) PATH='$(CROSSBIN):$(PATH)'			\
+            $(MAKE) -C $(BUSYBOX_DIR)			\
+            CONFIG_SYSROOT=$(DEV_SYSROOT)			\
+            CONFIG_EXTRA_CFLAGS="$(ONIE_CFLAGS)"		\
+            CONFIG_EXTRA_LDFLAGS="$(ONIE_LDFLAGS)"		\
+            CONFIG_PREFIX=$(SYSROOTDIR)			\
+            CROSS_COMPILE=$(CROSSPREFIX)			\
+            install
+          $(Q) chmod 4755 $(SYSROOTDIR)/bin/busybox
+          $(Q) touch $@
+         ```
+   2. busybox-config: $(BUSYBOX_DIR)/.config
+      手动配置busybox
+      ```
+      PATH='$(CROSSBIN):$(PATH)' \
+        $(MAKE) -C $(BUSYBOX_DIR) CROSS_COMPILE=$(CROSSPREFIX) menuconfig
+      ``` 
+
 
 
 
@@ -197,33 +389,81 @@ Refer: `/installer/installer.sh`
 
 ## kernel [*]
 
+### kernel/config [*]
+
+实现`内核配置项`的`补充`或`覆盖`，被`kernel.make`引用。
+
+可能要根据是否开启`secure boot`来修改或选择配置项。
+默认的配置项在`conf/kernel/$(LINUX_RELEASE)/linux.$(ONIE_ARCH).config`中，默认不会给驱动模块签名。
+
+
+**`kernel.make`主要执行链**：
+
+见下方Reference。
+
+Refer: `/build-config/make/kernel.make`
+
+
+**用途举例**：
+
+- 自定义`enable`模块/功能
+
+
+
+### kernel/serial [*]
+
+实现`自定义补丁`和`补丁顺序`指定，被`kernel.make`引用。
+
+一行一个补丁文件，可通过`#`在行尾添加注释，需要在最后留一行空白行！
+
+补丁文件可以在：
+- `MACHINEROOT=machine/$vendor/kernel`：供应商通用内核补丁目录
+- `series`所在目录，即`machine/vendor/$machinename/kernel`目录，即machine专用内核补丁目录
+
+
+**`kernel.make`主要执行链**：
+
+见下方Reference。
+
+Refer: `/build-config/make/kernel.make`
+
+
+**用途举例**：
+
+- 自定义内核修改补丁
+- 自定义补丁及其顺序
+
+
+
+### Reference: kernel.make
+
 Make: `kernel.make`
 
 
 **`kernel.make`主要执行链**：
 
 1. 准备变量参数:
-  - LINUX_CONFIG 		?= conf/kernel/$(LINUX_RELEASE)/linux.$(ONIE_ARCH).config
-  - KERNELDIR   		= $(MBUILDDIR)/kernel
-  - LINUXDIR   		= $(KERNELDIR)/linux
-  - KERNEL_SRCPATCHDIR	= $(PATCHDIR)/kernel/$(LINUX_RELEASE)
-  - MACHINE_KERNEL_PATCHDIR	?= $(MACHINEDIR)/kernel
-  - KERNEL_PATCHDIR		= $(KERNELDIR)/patch
-  - KERNEL_SOURCE_STAMP	= $(STAMPDIR)/kernel-source
-  - KERNEL_PATCH_STAMP	= $(STAMPDIR)/kernel-patch
-  - KERNEL_BUILD_STAMP	= $(STAMPDIR)/kernel-build
-  - KERNEL_DTB_INSTALL_STAMP = $(STAMPDIR)/kernel-dtb-install
-  - KERNEL_VMLINUZ_INSTALL_STAMP = $(STAMPDIR)/kernel-vmlinuz-install
-  - KERNEL_INSTALL_STAMP	= $(STAMPDIR)/kernel-install
-  - KERNEL_STAMP		= $(KERNEL_SOURCE_STAMP) $(KERNEL_PATCH_STAMP) $(KERNEL_BUILD_STAMP) $(KERNEL_INSTALL_STAMP)
-  - KERNEL			= $(KERNEL_STAMP)
-  - KERNEL_VMLINUZ		= $(IMAGEDIR)/$(MACHINE_PREFIX).vmlinuz
-  - KERNEL_VMLINUZ_SIG  = $(KERNEL_VMLINUZ).sig
-  - UPDATER_VMLINUZ		= $(MBUILDDIR)/onie.vmlinuz
-  - UPDATER_VMLINUZ_SIG = $(UPDATER_VMLINUZ).sig
-  - LINUX_BOOTDIR   = $(LINUXDIR)/arch/$(KERNEL_ARCH)/boot
-2. 规则定义： `kernel: $(KERNEL_STAMP)`
-   1. `kernel: $(KERNEL_STAMP)`: 依赖于`kernel-source`, `kernel-patch`, `kernel-build`, `kernel-install`
+   - LINUX_CONFIG 		?= conf/kernel/$(LINUX_RELEASE)/linux.$(ONIE_ARCH).config
+   - KERNELDIR   		= $(MBUILDDIR)/kernel
+   - LINUXDIR   		= $(KERNELDIR)/linux
+   - KERNEL_SRCPATCHDIR	= $(PATCHDIR)/kernel/$(LINUX_RELEASE)
+   - MACHINE_KERNEL_PATCHDIR	?= $(MACHINEDIR)/kernel
+   - KERNEL_PATCHDIR		= $(KERNELDIR)/patch
+   - KERNEL_SOURCE_STAMP	= $(STAMPDIR)/kernel-source
+   - KERNEL_PATCH_STAMP	= $(STAMPDIR)/kernel-patch
+   - KERNEL_BUILD_STAMP	= $(STAMPDIR)/kernel-build
+   - KERNEL_DTB_INSTALL_STAMP = $(STAMPDIR)/kernel-dtb-install
+   - KERNEL_VMLINUZ_INSTALL_STAMP = $(STAMPDIR)/kernel-vmlinuz-install
+   - KERNEL_INSTALL_STAMP	= $(STAMPDIR)/kernel-install
+   - KERNEL_STAMP		= $(KERNEL_SOURCE_STAMP) $(KERNEL_PATCH_STAMP) $(KERNEL_BUILD_STAMP) $(KERNEL_INSTALL_STAMP)
+   - KERNEL			= $(KERNEL_STAMP)
+   - KERNEL_VMLINUZ		= $(IMAGEDIR)/$(MACHINE_PREFIX).vmlinuz
+   - KERNEL_VMLINUZ_SIG  = $(KERNEL_VMLINUZ).sig
+   - UPDATER_VMLINUZ		= $(MBUILDDIR)/onie.vmlinuz
+   - UPDATER_VMLINUZ_SIG = $(UPDATER_VMLINUZ).sig
+   - LINUX_BOOTDIR   = $(LINUXDIR)/arch/$(KERNEL_ARCH)/boot
+2. 规则定义：
+   1. kernel: 依赖于`kernel-source`, `kernel-patch`, `kernel-build`, `kernel-install`
       1. kernel-source: 依赖于`tree`, `kernel-download`
          1. tree
             1. $(BUILDDIR)/stamp-project
@@ -269,54 +509,89 @@ Make: `kernel.make`
             $(Q) $(SCRIPTDIR)/apply-patch-series $(KERNEL_PATCHDIR)/series $(LINUXDIR)
             $(Q) touch $@
             ```
-      3. kernel-build:
-      4. kernel-install
-   2. ...ToBeContinue...
+      3. kernel-build: 依赖于$(KERNEL_SOURCE_STAMP) $(LINUX_NEW_FILES) $(LINUXDIR)/.config | $(XTOOLS_BUILD_STAMP)，即XTOOLS_BUILD_STAMP可选
+         1. $(LINUXDIR)/.config: 依赖于$(LINUX_CONFIG=conf/kernel/$(LINUX_RELEASE)/linux.$(ONIE_ARCH).config) $(KERNEL_PATCH_STAMP)
+            主要工作：
+            1. 拷贝公共内核配置到内核源码目录配置`$(LINUXDIR)/.config`中: `cp -v $< $@`
+            2. 将机器专用内核配置追加(若存在则覆盖)到源码内核配置：
+              ```
+              #	$(Q) cat $(MACHINE_KERNEL_PATCHDIR)/config >> $(LINUXDIR)/.config  # 弃用！！！
+              $(LINUXDIR)/scripts/kconfig/merge_config.sh -r -m -O  $(LINUXDIR) $(LINUXDIR)/.config $(MACHINE_KERNEL_PATCHDIR)/config
+              ```
+         主要工作：
+          ```
+          $(Q) rm -f $@ && eval $(PROFILE_STAMP)
+          $(Q) echo "==== Building cross linux ===="
+          $(Q) PATH='$(CROSSBIN):$(PATH)'		\  # 交叉编译工具链接
+            $(MAKE) -C $(LINUXDIR)		\  # 内核源码交叉编译
+            ARCH=$(KERNEL_ARCH)		\
+            CROSS_COMPILE=$(CROSSPREFIX)	\
+            MODULE_SIG_KEY_SRCPREFIX=$(ONIE_MODULE_SIG_KEY_SRCPREFIX)/ \
+            V=$(V) 				\  # 详细编译信息级别
+            all  # 编译内核
+          $(Q) touch $@
+          ```
+      4. kernel-install: 依赖于$(KERNEL_INSTALL_DEPS) $(KERNEL_BUILD_STAMP)
+         1. $(KERNEL_INSTALL_DEPS): 依赖于kernel-vmlinuz-install kernel-dtb-install[arm/powerpc]
+            1. kernel-vmlinuz-install: 依赖于$(KERNEL_BUILD_STAMP)
+              安装到`$(IMAGEDIR)/$(MACHINE_PREFIX).vmlinuz`,并创建符号链接`$(MBUILDDIR)/onie.vmlinuz`。
+              同时安全启动、安全grub时链接到`$(MBUILDDIR)/onie.vmlinuz.sig`,`$(MBUILDDIR)/onie.vmlinuz.unsigned`。
+              ```
+              kernel-vmlinuz-install: $(KERNEL_VMLINUZ_INSTALL_STAMP)
+              ifeq ($(SECURE_BOOT_ENABLE),yes)
+              $(KERNEL_VMLINUZ_INSTALL_STAMP): $(SBSIGNTOOL_INSTALL_STAMP) $(KERNEL_BUILD_STAMP)  # SBSIGNTOOL_INSTALL_STAMP为空，主要是sbsign工具需要
+              else
+              $(KERNEL_VMLINUZ_INSTALL_STAMP): $(KERNEL_BUILD_STAMP)
+              endif
+                $(Q) rm -f $@ && eval $(PROFILE_STAMP)
+                $(Q) echo "==== Copy vmlinuz to $(IMAGEDIR) ===="
+                $(Q) cp -vf $(KERNEL_IMAGE_FILE) $(KERNEL_VMLINUZ)  # $(MACHINE_PREFIX).vmlinuz
+              ifeq ($(SECURE_BOOT_ENABLE),yes)
+                $(Q) echo "====  Signing kernel secure boot image ===="
+                $(Q) cp -vf $(KERNEL_VMLINUZ) $(KERNEL_VMLINUZ).unsigned  # $(MACHINE_PREFIX).vmlinuz.unsigned
+                $(Q) sbsign --key $(ONIE_VENDOR_SECRET_KEY_PEM) \  # ONIE_VENDOR_SECRET_KEY_PEM=$(SIGNING_KEY_DIRECTORY)/ONIE/efi-keys/ONIE-shim-key-secret-key.pem????
+                  --cert $(ONIE_VENDOR_CERT_PEM) \  # ONIE_VENDOR_CERT_PEM=$(ONIE_VENDOR_CERT_PEM)
+                  --output $(KERNEL_VMLINUZ) $(KERNEL_VMLINUZ).unsigned
+              endif
+              ifeq ($(SECURE_GRUB),yes)
+              # Create detached gpg signatures for GRUB to validate files with.
+                $(Q) echo "==== GPG sign vmlinuz ===="
+                $(Q) fakeroot -- $(SCRIPTDIR)/gpg-sign.sh $(GPG_SIGN_SECRING) ${KERNEL_VMLINUZ}  # GPG_SIGN_SECRING=$(SIGNING_KEY_DIRECTORY)/ONIE/gpg-keys/ONIE-secret.asc????
+                $(Q) ln -sf $(KERNEL_VMLINUZ_SIG) $(UPDATER_VMLINUZ_SIG)  # UPDATER_VMLINUZ_SIG=$(MBUILDDIR)/onie.vmlinuz.sig
+              endif
+                $(Q) ln -sf $(KERNEL_VMLINUZ) $(UPDATER_VMLINUZ)  # UPDATER_VMLINUZ=$(MBUILDDIR)/onie.vmlinuz
+                $(Q) touch $@
+              ```
+            2. kernel-dtb-install[arm/powerpc]: 依赖于$(KERNEL_BUILD_STAMP)
+              主要工作：Building device tree blob for $(PLATFORM)
+              ```
+              kernel-dtb-install: $(KERNEL_DTB_INSTALL_STAMP)
+              $(KERNEL_DTB_INSTALL_STAMP): $(KERNEL_BUILD_STAMP)
+              $(Q) rm -f $@ && eval $(PROFILE_STAMP)
+              $(Q) echo "==== Building device tree blob for $(PLATFORM) ===="
+              $(Q) PATH='$(CROSSBIN):$(PATH)'		\
+                  $(MAKE) -C $(LINUXDIR)		\
+                ARCH=$(KERNEL_ARCH)		\
+                CROSS_COMPILE=$(CROSSPREFIX)	\
+                V=$(V) 				\
+                $(KERNEL_DTB)
+              $(Q) echo "==== Copy device tree blob to $(IMAGEDIR) ===="
+              $(Q) cp -vf $(LINUX_BOOTDIR)/$(KERNEL_DTB_PATH) $(IMAGEDIR)/$(MACHINE_PREFIX).dtb
+	            $(Q) touch $@
+              ```
+   2. kernel-old-defconfig: 依赖于$(LINUXDIR)/.config
+      ```
+      # set all defaults, non-interactive
+      $(Q) $(MAKE) -C $(LINUXDIR) ARCH=$(KERNEL_ARCH) olddefconfig
+      ```
+   3. kernel-config: 依赖于$(LINUXDIR)/.config
+      ```
+      # User can browse for options
+      $(Q) $(MAKE) -C $(LINUXDIR) ARCH=$(KERNEL_ARCH) menuconfig
+      ```
 
 
 Refer: `/build-config/make/kernel.make`
-
-
-### kernel/config [*]
-
-实现`内核配置项`的`补充`或`覆盖`，被`kernel.make`引用。
-
-
-**`kernel.make`主要执行链**：
-
-见上方。
-
-Refer: `/build-config/make/kernel.make`
-
-
-**用途举例**：
-
-- 自定义`enable`模块/功能
-
-
-
-### kernel/serial [*]
-
-实现`自定义补丁`和`补丁顺序`指定，被`kernel.make`引用。
-
-一行一个补丁文件，可通过`#`在行尾添加注释，需要在最后留一行空白行！
-
-补丁文件可以在：
-- `MACHINEROOT=machine/$vendor/kernel`：供应商通用内核补丁目录
-- `series`所在目录，即`machine/vendor/$machinename/kernel`目录，即machine专用内核补丁目录
-
-
-**`kernel.make`主要执行链**：
-
-见上方。
-
-Refer: `/build-config/make/kernel.make`
-
-
-**用途举例**：
-
-- 自定义内核修改补丁
-- 自定义补丁及其顺序
 
 
 
