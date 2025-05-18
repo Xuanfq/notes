@@ -4,10 +4,14 @@
 
 
 - machine/vendor/
-  - kernel/                     # 供应商自定义的内核补丁文件，需在machinename/kernel/series中引用
+  - kernel/                     # 供应商自定义的内核补丁文件，需在`machinename/kernel/series`中引用才生效
     - xxx.patch
-  - busybox/                    # 供应商自定义的通用的busybox补丁文件，需在machinename/busybox/patch/series中引用
+  - busybox/                    # 供应商自定义的通用的busybox补丁文件，需在`machinename/busybox/patch/series`中引用才生效
     - xxx.patch
+  - i2ctools/
+    - xxx.patch                 # 供应商自定义的i2ctools(onie-syseeprom)补丁文件，需在`machinename/i2ctools/series`中引用才生效
+  - u-boot/
+    - xxx.patch                 # 供应商自定义的uboot补丁文件，需在`machinename/u-boot/series`中引用才生效
   - machinename
     - busybox/
       - conf/
@@ -25,8 +29,11 @@
         - reboot-cmd                                # 更新完成后实现`AC/DC Power cycle`的脚本，需在`fw-install.sh`中需要时拷贝到`/tmp/`目录下
       - fw-install.sh                               # onie-firmware升级时执行的脚本
       - fw-version.make                             # 实现指定固件升级版本`FW_VERSION = VD-Demo-1.0.0`
+    - i2ctools/
+      - xxx.patch               # 实现i2ctools(onie-syseeprom)补丁详细内容，不能与`vendor/i2ctools/xxx.patch`命名相同
+      - series                  # 实现自定义补丁和补丁顺序
     - installer/
-      - install-platform                              # 实现：安全启动密码`set_default_passwd`，Ref: `installer/install.sh` & `installer/grub-arch/install-arch`
+      - install-platform        # 实现：安全启动密码`set_default_passwd`，Ref: `installer/install.sh` & `installer/grub-arch/install-arch`
     - kernel/
       - xxx.patch               # 实现内核补丁详细内容，不能与`vendor/kernel/xxx.patch`命名相同
       - config                  # 实现内核配置项的补充或覆盖
@@ -47,6 +54,9 @@
         - sysinfo-platform                          # 实现：`get_serial_num_platform`, `get_part_num_platform`, `get_ethaddr_platform`
       - sysroot-rcS/            # -> /etc/rcS.d/    # 开机时执行的daemon或脚本，如`S12open-system`
       - sysroot-rcK/            # -> /etc/rc0.d/ & /etc/rc6.d/    # 关机/重启时执行的脚本，如`K25discover.sh`
+    - u-boot/
+      - xxx.patch               # 实现uboot补丁详细内容，不能与`vendor/u-boot/xxx.patch`命名相同
+      - series                  # 实现自定义补丁和补丁顺序
     - INSTALL                   # 非实现相关：在KVM虚拟机上安装ONIE的README
     - install.ipxe              # 非实现相关：在KVM虚拟机上安装ONIE的附件，通过ipxe安装
     - installer.conf            # 安装配置，可实现: `install_device_platform`, `pre_install_hook`, `post_install_hook`
@@ -71,6 +81,22 @@
 即 `$MACHINEROOT/kernel`，供应商所有通用内核补丁所在的目录。
 
 在被机器内核补丁序列`$(MACHINEDIR)/kernel/serial`引用时，才会被添加到内核补丁目录`$(MBUILDDIR)/kernel/patch`并被应用。
+
+
+
+## ../i2ctools/ [Option]
+
+即 `$MACHINEROOT/i2ctools`，供应商所有通用i2ctools(onie-syseeprom)补丁所在的目录。
+
+在被机器内核补丁序列`$(MACHINEDIR)/i2ctools/serial`引用时，才会被添加到内核补丁目录`$(MBUILDDIR)/i2c-tools/patch`并被应用。
+
+
+
+## ../u-boot/ [Option]
+
+即 `$MACHINEROOT/u-boot`，供应商所有通用uboot补丁所在的目录。
+
+在被机器内核补丁序列`$(MACHINEDIR)/u-boot/serial`引用时，才会被添加到uboot补丁目录`$(MBUILDDIR)/u-boot/patch`并被应用。
 
 
 
@@ -108,7 +134,7 @@ Refer: `/build-config/make/busybox.make`
 
 补丁文件可以在：
 - `MACHINEROOT=machine/$vendor/busybox`：供应商通用busybox补丁目录
-- `series`所在目录，即`machine/vendor/$machinename/busybox/patches/`目录，即machine专用内核补丁目录
+- `series`所在目录，即`machine/vendor/$machinename/busybox/patches/`目录，即machine专用补丁目录
 
 
 **`busybox.make`主要执行链**：
@@ -339,6 +365,32 @@ Refer: `build-config/make/firmware-update.make`
 
 - 指定固件升级版本`FW_VERSION = VD-Demo-1.0.0`
 
+
+
+## i2ctools/ [Option]
+
+### i2ctools/series [*]
+
+实现`i2ctools`和`onie-syseeprom`的`自定义补丁`和`补丁顺序`指定，被`i2ctools.make`导入。
+
+[*]若`i2ctools/`目录存在，则`series`文件必须存在。
+
+一行一个补丁文件，可通过`#`在行尾添加注释，需要在最后留一行空白行！
+
+补丁文件可以在：
+- `MACHINEROOT=machine/$vendor/i2ctools`：供应商通用busybox补丁目录
+- `series`所在目录，即`machine/vendor/$machinename/i2ctools/`目录，即machine专用补丁目录
+
+
+**`i2ctools.make`主要执行链**：
+
+- ...TBD...
+
+
+**用途举例**：
+
+- 自定义i2ctools/onie-syseeprom修改补丁
+- 自定义补丁及其顺序
 
 
 ## installer/
@@ -811,6 +863,30 @@ Refer: `rootconf/default/bin/onie-sysinfo`
 **用途举例**：
 
 - 自定义SN/PN/MAC读取，优先级等
+
+
+
+## u-boot/ [Arm][*]
+
+### u-boot/series [Arm][*]
+
+实现`u-boot`的`自定义补丁`和`补丁顺序`指定，被`u-boot.make`导入。
+
+一行一个补丁文件，可通过`#`在行尾添加注释，需要在最后留一行空白行！
+
+补丁文件可以在：
+- `MACHINEROOT=machine/$vendor/u-boot`：供应商通用busybox补丁目录
+- `series`所在目录，即`machine/vendor/$machinename/u-boot/`目录，即machine专用补丁目录
+
+
+**`u-boot.make`主要执行链**：
+
+- ...TBD...
+
+
+**用途举例**：
+
+- 自定义补丁及其顺序
 
 
 
