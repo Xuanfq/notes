@@ -584,7 +584,7 @@ menuentry "ONIE: Embed ONIE" --class gnu-linux --class onie {
          1. 预设`uefi_dir=uefi_esp_mnt="/boot/efi/"`, `boot_dev=onie_dev=/dev/sda2`, `boot_dir=onie_boot_mnt=/mnt/onie-boot/`
          2. 安装grub: `install_uefi_grub "$uefi_dir" "$boot_dev" "$boot_dir"`
             - `grub-install --target=${onie_arch}-efi --no-nvram --bootloader-id=onie --efi-directory="$uefi_dir" --boot-directory="$boot_dir" --recheck "$boot_dev"`
-         3. 若启用安全启动，安装shim grub：`install_uefi_shim_grub "$uefi_dir" "$boot_dev" "$boot_dir"`
+         3. 若启用安全启动，安装shim & grub：`install_uefi_shim_grub "$uefi_dir" "$boot_dev" "$boot_dir"`
             - ...
          4. 若为embed模式，创建onie的efi bios启动项：
             - `efibootmgr --quiet --create --label "ONIE: Open Network Install Environment" --disk $boot_dev --part $uefi_esp_part --loader /EFI/onie/${image_uefi_boot_loader}` image_uefi_boot_loader=grubx64.efi来自machine-build.conf
