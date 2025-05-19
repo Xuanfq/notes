@@ -290,7 +290,7 @@ onie-mk-iso.sh
       3. 将 UEFI 引导加载程序镜像复制到 ESP 临时目录 RECOVERY_EFI_BOOT_DIR 中 ($RECOVERY_ISO_SYSROOT/../EFI/BOOT/):
          1. `if [ "$SECURE_BOOT_ENABLE" = "yes" ]`:
             1. sign: `sbsign --key $ONIE_VENDOR_SECRET_KEY_PEM --cert $ONIE_VENDOR_CERT_PEM  --output $RECOVERY_EFI_GRUBX86_IMG $RECOVERY_GRUBX86_IMG`  # -> $RECOVERY_ISO_SYSROOT/../EFI/BOOT/grub${EFI_INFIX}.efi
-            2. 将 shim 复制到指定位置作为加载程序: `cp $SB_SHIM $RECOVERY_EFI_BOOTX86_IMG`  # -> $RECOVERY_ISO_SYSROOT/../EFI/BOOT/boot${EFI_INFIX}.efi
+            2. 将 shim 复制到指定位置作为加载程序: `cp $SB_SHIM $RECOVERY_EFI_BOOTX86_IMG`  # SB_SHIM=shim{EFI_ARCH}$EFI-> $RECOVERY_ISO_SYSROOT/../EFI/BOOT/boot${EFI_INFIX}.efi
          2. `else`直接移动: `mv $RECOVERY_GRUBX86_IMG $RECOVERY_EFI_BOOTX86_IMG`  # -> $RECOVERY_ISO_SYSROOT/../EFI/BOOT/boot${EFI_INFIX}.efi
       4. 创建ESP(EFI system partition)分区镜像，并将 ESP 临时目录的内容复制到其中 (对于 UEFI，GRUB 引导加载程序镜像被嵌入到 UEFI ESP （ESP，采用 fat16 格式 ）磁盘分区镜像中):
          1. 计算EFI引导目录大小​​: `EFI_BOOT_SIZE_BYTES=$(du --bytes $RECOVERY_EFI_BOOT_DIR | awk '{ print $1 }')`
