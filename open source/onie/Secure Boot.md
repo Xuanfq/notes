@@ -229,24 +229,66 @@ uid           [ unknown] SW (Software vendor certificate.) <software@onie.org>
 #### Keys用途
 
 - ONIE_VENDOR_SECRET_KEY_PEM ?= $(SIGNING_KEY_DIRECTORY)/ONIE/efi-keys/ONIE-shim-key-secret-key.pem
-  - 用 efi-sign.sh (sbsign) 给 grubx64.efi 签名的 私钥 (grub.make/efi-sign.sh | images.make/onie-mk-iso.sh)
+  - 用 efi-sign.sh (sbsign) 给 grubx64.efi 签名的 私钥 (grub.make/efi-sign.sh | images.make/onie-mk-iso.sh) (实际是仅 recovery image 有效)
   - 用 sbsign 给 KERNEL_VMLINUZ 签名的 私钥 (kernel.make/sbsign)
 - ONIE_VENDOR_CERT_DER ?= $(SIGNING_KEY_DIRECTORY)/ONIE/efi-keys/ONIE-shim-key-cert.der
-  - shim 编译时，作为 VENDOR_CERT_FILE 的值 被写入 shimx64.efi ， 作为 grubx64.efi 的签名证书/公钥
+  - shim 编译时，作为 VENDOR_CERT_FILE 的值 被写入 shimx64.efi ， 作为 grubx64.efi 的签名证书/公钥 (所以从shim验证grub成功)
 - ONIE_VENDOR_CERT_PEM ?= $(SIGNING_KEY_DIRECTORY)/ONIE/efi-keys/ONIE-shim-key-cert.pem
-  - 用 efi-sign.sh (sbsign) 给 grubx64.efi 签名的 私钥对应的公钥 (grub.make/efi-sign.sh | images.make/onie-mk-iso.sh)
+  - 用 efi-sign.sh (sbsign) 给 grubx64.efi 签名的 私钥对应的公钥 (grub.make/efi-sign.sh | images.make/onie-mk-iso.sh) (实际是仅 recovery image 有效)
   - 用 sbsign 给 KERNEL_VMLINUZ 签名的 私钥对应的公钥 (kernel.make/sbsign)
+
 - SHIM_SELF_SIGN_SECRET_KEY_PEM ?= $(SIGNING_KEY_DIRECTORY)/SW/efi-keys/SW-database-key-secret-key.pem
   - 用 efi-sign.sh (sbsign) 给 shim bin 的各个文件 (`shim$(EFI_ARCH).efi fb$(EFI_ARCH).efi mm$(EFI_ARCH).efi`) 自我签名的 私钥 (shim.make/efi-sign.sh)
 - SHIM_SELF_SIGN_PUBLIC_CERT_PEM ?= $(SIGNING_KEY_DIRECTORY)/SW/efi-keys/SW-database-key-cert.pem
   - 用 efi-sign.sh (sbsign) 给 shim bin 的各个文件 (`shim$(EFI_ARCH).efi fb$(EFI_ARCH).efi mm$(EFI_ARCH).efi`) 自我签名的 公钥 (shim.make/efi-sign.sh)
+
 - ONIE_MODULE_SIG_KEY_SRCPREFIX ?= $(SIGNING_KEY_DIRECTORY)/ONIE/efi-keys
   - 编译 kernel 时， 作为 MODULE_SIG_KEY_SRCPREFIX 的值， 给 kernel loadable modules 提供签名所需的 私钥公钥等。在开启安全启动时(在内核.config处enable)内核构建时会自动查找和签名 (kernel.make/`$(MAKE) -C $(LINUXDIR) all`)
+
 - SHIM_EMBED_DER ?= $(SIGNING_KEY_DIRECTORY)/ONIE/efi-keys/ONIE-shim-key-cert.der
   - 此处应放 NOS 的公钥，用于编译进 shimx64.efi ， shimx64.efi 将传递该公钥到 OS 层 (shim.make)
+
 - GPG_SIGN_PUBRING ?= $(SIGNING_KEY_DIRECTORY)/ONIE/gpg-keys/ONIE-pubring.kbx
   - GPG 签名 grub 模块时用的 公钥 (grub.make/mk-grub-efi-image)
 - GPG_SIGN_SECRING ?= $(SIGNING_KEY_DIRECTORY)/ONIE/gpg-keys/ONIE-secret.asc
   - GPG 签名 SYSROOT_CPIO_XZ 时用的 私钥 (images.make/gpg-sign.sh)
   - GPG 签名 KERNEL_VMLINUZ 时用的 私钥 (kernel.make/gpg-sign.sh)
   - GPG 签名 onie-updater 里的 grub 配置文件 grub_sb.cfg grub.cfg 时用的 私钥 (images.make/onie-mk-installer.sh/gpg-sign.sh)
+
+
+- Others
+  ```
+  # Keys that sign Grub
+  GRUB_SECRET_KEY ?= $(SIGNING_KEY_DIRECTORY)/ONIE/efi-keys/ONIE-shim-key-secret-key.pem
+  GRUB_PUBLIC_CERT ?= $(SIGNING_KEY_DIRECTORY)/ONIE/efi-keys/ONIE-shim-key-cert.pem
+
+  # Keys that sign the kernel
+  KERNEL_SECRET_KEY ?= $(SIGNING_KEY_DIRECTORY)/ONIE/efi-keys/ONIE-shim-key-secret-key.pem
+  KERNEL_PUBLIC_CERT ?= $(SIGNING_KEY_DIRECTORY)/ONIE/efi-keys/ONIE-shim-key-cert.pem
+
+  # Keys that sign grub in the recovery image
+  IMAGE_SECRET_KEY ?= $(SIGNING_KEY_DIRECTORY)/ONIE/efi-keys/ONIE-shim-key-secret-key.pem
+  IMAGE_PUBLIC_CERT ?= $(SIGNING_KEY_DIRECTORY)/ONIE/efi-keys/ONIE-shim-key-cert.pem
+
+  # UEFI keys
+
+  # Key Exchange Key database. Keys here can modify db/dbx entries
+  KEK_SOFTWARE_CERT ?= $(SIGNING_KEY_DIRECTORY)/SW/efi-keys/SW-key-exchange-key-cert.pem
+  KEK_HARDWARE_CERT ?= $(SIGNING_KEY_DIRECTORY)/HW/efi-keys/HW-key-exchange-key-cert.pem
+
+  # Key DataBase - keys here are available for shim/grub use too
+  DB_SOFTWARE_CERT ?= $(SIGNING_KEY_DIRECTORY)/SW/efi-keys/SW-database-key-cert.pem
+  DB_HARDWARE_CERT ?= $(SIGNING_KEY_DIRECTORY)/HW/efi-keys/HW-database-key-cert.pem
+
+  # Example of Support for an additional key in UEFI db. This could be a development key,
+  # or an additional NOS vendor key.  Uncomment to use.
+  #DB_EXTRA_CERT ?= $(SIGNING_KEY_DIRECTORY)/extra/key-exported-dev/dev-code-signing.pem
+
+  # Hardware manufacturer's keys
+  PLATFORM_CERT ?= $(SIGNING_KEY_DIRECTORY)/HW/efi-keys/HW-platform-key-cert.pem
+  PLATFORM_SECRET_KEY ?= $(SIGNING_KEY_DIRECTORY)/HW/efi-keys/HW-platform-key-secret-key.pem
+
+  # Copy this key to be available for the developer at BIOS setup time.
+  PK_BIOS_KEY ?= $(SIGNING_KEY_DIRECTORY)/HW/efi-keys/HW-platform-key-cert.der
+  ```
+
