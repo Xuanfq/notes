@@ -7,6 +7,7 @@ ROOT_PATH=$(cd `dirname $0`; cd ..; pwd)
 
 NOTE_PATH=
 DONOT_SKIP_BACKUP_REPLACEMENT=
+FORCE_DOWNLOAD_ALL_THE_LINKS=
 
 
 download_image_for_single_markdown() {
@@ -17,7 +18,7 @@ download_image_for_single_markdown() {
 
     DOWNLOAD_DIR="${MARKDOWN_FILE%.*}"
     DOWNLOAD_DIR_NAME="$(basename $DOWNLOAD_DIR)"
-    DOWNLOAD_DIR_NAME_NOSPACE=${DOWNLOAD_DIR_NAME/ /%20}
+    DOWNLOAD_DIR_NAME_NOSPACE=${DOWNLOAD_DIR_NAME/ /%20/g}
     DOWNLOAD_SOURCE_NOTES="$DOWNLOAD_DIR/.sourcenotes"
     BACKUP_MARKDOWN_FILE="$DOWNLOAD_DIR/$DOWNLOAD_DIR_NAME.md.orig"
 
@@ -57,6 +58,20 @@ download_image_for_single_markdown() {
         # only download image files
         if [[ $imageurl =~ \.(jpg|jpeg|png|gif|bmp|svg)$ ]]; then
             echo "Downloading $imagename From $imageurl ..."
+            wget -q --show-progress -O "$imagepath" "$imageurl"
+            if [ $? -eq 0 ]; then
+                echo "Successfully"
+                let count_image_success=$count_image_success+1
+                echo "$imagename $imageurl" >> "$DOWNLOAD_SOURCE_NOTES"
+                dict_replaced_images["$line"]=$(echo "$line" | sed "s|$imageurl|./$DOWNLOAD_DIR_NAME_NOSPACE/$imagename|g")
+            else
+                echo "Failed"
+                let count_image_fail=$count_image_fail+1
+            fi
+        elif [[ ! -z $FORCE_DOWNLOAD_ALL_THE_LINKS ]] && [[ $imageurl =~ ^https?:// ]]; then
+            imagename="$(echo $imageurl | md5sum | awk '{print $1}').png"
+            imagepath="$DOWNLOAD_DIR/$imagename"
+            echo "Force Downloading $imagename From $imageurl ..."
             wget -q --show-progress -O "$imagepath" "$imageurl"
             if [ $? -eq 0 ]; then
                 echo "Successfully"
@@ -109,6 +124,7 @@ download_image_for_single_markdown() {
     echo "Replacing image links in Markdown file..."
     for item in "${!dict_replaced_images[@]}"; do
         itemnew=${dict_replaced_images[$item]}
+        echo "Replacing $item with $itemnew"
         python3 -c "import sys;\
         fr=open(sys.argv[1]);\
         cxt=fr.read();\
@@ -148,10 +164,11 @@ download_image_for_markdown() {
 print_usage() {
     echo 
     echo "Usage: dlimages.sh -p <path>"
-    echo "  -p <path>    The path to the note directory/filepath."
     echo "  -a           Download all notes' third-lib images."
     echo "  -b           Do not skip backup and replacement if no image downloaded."
+    echo "  -f           Force download all the links."
     echo "  -h           Display this help message."
+    echo "  -p <path>    The path to the note directory/filepath."
     echo
     echo "Example: dlimages.sh -p /path/to/note.md"
     echo "         dlimages.sh -p /path/to/notedir"
@@ -160,11 +177,8 @@ print_usage() {
 }
 
 IFS=$'\n'
-while getopts "abhp:" opt; do
+while getopts "abfhp:" opt; do
     case $opt in
-        p)
-            NOTE_PATH=$OPTARG
-            ;;
         a)
             echo "Download all notes' third-lib images."
             NOTE_PATH=$ROOT_PATH
@@ -172,9 +186,15 @@ while getopts "abhp:" opt; do
         b)
             DONOT_SKIP_BACKUP_REPLACEMENT=1
             ;;
+        f)
+            FORCE_DOWNLOAD_ALL_THE_LINKS=1
+            ;;
         h)
             print_usage
             exit 0
+            ;;
+        p)
+            NOTE_PATH=$OPTARG
             ;;
         *)
             echo "Invalid option: -$OPTARG" >&2
