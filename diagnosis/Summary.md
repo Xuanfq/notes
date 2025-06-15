@@ -1,2 +1,88 @@
 # Summary
 
+- Firmware Update
+  - TPM
+    - TPMFactoryUpd
+    - TPMFactoryUpd.efi
+  - BMC *
+    - AMIBMC yafuflash
+    - AMIBMC socflash_x64
+  - CPLD *
+    - vmetool
+    - ispvm
+    - via AMIBMC yafuflash
+  - FPGA *
+    - spi interface: fpga_prog tool
+    - via AMIBMC yafuflash
+  - BIOS *
+    - afulnx_64
+    - AfuEfix64.efi
+    - via AMIBMC yafuflash
+  - SATA
+    - hdparm
+  - SES
+    - serial port: cmd "fw_update" then send in XMODEM
+    - in-band: insmod switchtec.ko; install sg3_utils tool; cmd "sg_ses_microcode xxx"
+  - Network Card
+    - X722/X710/X520/I210
+      - nvmupdate64e
+  - BBU(Backup Battery Unit)
+- EEPROM *
+  - TLV eeprom
+  - SMBIOS fru eeprom (May same with TLV)
+  - COMe eeprom
+  - System eeprom
+  - Switch Board eeprom
+  - BMC eeprom
+  - Fan control board eeprom
+  - Fan1/2/3/4 eeprom
+  - PSU1/PSU2 eeprom
+- MAC Addrss *
+  - X722/X710/X520/I210
+    - eeupdate64e
+- RTC(Real-Time Clock) Test *
+- Memory Test *
+  - SPD(EEPROM) Test
+- PCIe Test *
+- CPU Test *
+- Storage Test *
+- USB Test *
+- TPM Test
+- CPLD Test
+- FPGA Test
+- PHY(Ethernet) Test
+- System Info Test (Software/Firmware Versions Check)
+- I2C Test
+  - BMC I2C
+  - CPU I2C
+  - FPGA I2C
+- PSU Test
+- Fan Test
+- Led Test
+- Ethernet Test
+- OSFP/QSFP/SFP Test
+  - Signal Test
+  - Led Test
+  - EEPROM Test
+- Present(Plug/Unplug) Test
+- UART MUX Test (BMC/OS Serial Output Switch Test)
+- BMC SOL Test
+- Sensor Test
+- Power Control Test
+- Watchdog Test
+- Button Test
+- ECC/EDAC Test (ECC, Error Checking and Correction; EDAC, Error Detection and Correction)
+  - Memory ECC
+  - CPU Cache
+- GPIO Test
+- POE Test
+- Timing Card Test
+- HPMode/LPMode Test (High/Low Power Consumption Mode)
+- Stress Test
+  - PCIE
+  - DDR (Memory)
+  - SSD (Storage)
+  - CPU
+- Switch Chip Test
+  - Traffic Test
+  - PRBS Test
