@@ -215,24 +215,22 @@ enum kobj_ns_type {
 
 #### 模型和目录结构关系
 
-![Linux设备模型与目录映射](./设备模型-kset%20kobject%20ktype/81053ec69eb596556e8842c4517ca13f.png)
+![Linux设备模型与目录映射](https://mmbiz.qpic.cn/mmbiz_png/OtawKxIaP3icMRoCtnTpsQY1TgFcFdFLibjMJR0icXYibCbGEwBsov6ibmQqiaVc6whSuQH7EqfeCEiaIrkQy8EJVQvfQ/640?wx_fmt=png&tp=webp&wxfrom=5&wx_lazy=1)
 
 
 #### kobject & kset & kobj_type
 
-![kobject & kset & kobj_type](./设备模型-kset%20kobject%20ktype/d7c38ae835161a9666ce15154aa7b66c.png)
+![kobject & kset & kobj_type](https://mmbiz.qpic.cn/mmbiz_png/OtawKxIaP3icMRoCtnTpsQY1TgFcFdFLibo9oTBdP7dTcT58j6cpwA5Y5of4pEey08EIesvK97nLgUjdu3Mfu29A/640?wx_fmt=png&tp=webp&wxfrom=5&wx_lazy=1)
 
 
 #### kobject & kobj_type
 
-![kobject & kobj_type](./设备模型-kset%20kobject%20ktype/fbd2a449080451b612cb2a3275822af6.png)
-
-- 像release这些, 一般创建时都有设定默认值, 能在源码`lib/kobject.c`中找到
+![kobject & kobj_type](https://mmbiz.qpic.cn/mmbiz_png/OtawKxIaP3icMRoCtnTpsQY1TgFcFdFLibAD5qTkpkkuNu3lcicDJdq9nmTeS3m2Y6kiavurO9dib1cWS5xFPnO23Dw/640?wx_fmt=png&tp=webp&wxfrom=5&wx_lazy=1)
 
 
 #### 文件系统表现
 
-![文件系统表现](./设备模型-kset%20kobject%20ktype/b42bd4366d86712947eda621da37f770.png)
+![文件系统表现](https://mmbiz.qpic.cn/mmbiz_png/OtawKxIaP3icMRoCtnTpsQY1TgFcFdFLiblkHljU1CEn7LwzK6oDctdOEgIicgFJbLFEEgNExkUK7JTn0aoI99WHg/640?wx_fmt=png&tp=webp&wxfrom=5&wx_lazy=1)
 
 
 
