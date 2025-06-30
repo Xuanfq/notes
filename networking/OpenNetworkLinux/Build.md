@@ -589,9 +589,61 @@ aiden@Xuanfq:~/workspace/onl/build$
              +$(ONL_V_at) $(foreach d,$(DIRECTORIES),$(ONL_MAKE) -C $(d) $(MAKECMDGOALS) || exit 1;)
            ```
       1. 编译`rootfs`: `$(ONL_MAKE) -C builds/$arch/rootfs/ $(MAKECMDGOALS)` ---实际上--> `include $(ONL)/make/pkg.mk`
+         ```makefile
+          include $(ONL)/make/config.mk
+
+          # ...
+          pkgall:  # 使用第一个目标作为默认编译目标，编译所有架构
+	          $(ONL_V_GEN) $(ONLPM_ENVIRONMENT) $(ONLPM) $(ONLPM_OPTS) --build all --arches $(ARCHES)  # ONLPM_OPTS为空
+          
+          # ...
+         ```
          1. 
-      2. 编译`swi`: `$(ONL_MAKE) -C builds/$arch/swi/ $(MAKECMDGOALS)` ---实际上--> `include $(ONL)/make/pkg.mk`
-      3. 编译`installer`: `$(ONL_MAKE) -C builds/$arch/installer/ $(MAKECMDGOALS)` ---实际上--> `include $(ONL)/make/pkg.mk`
+      3. 编译`swi`: `$(ONL_MAKE) -C builds/$arch/swi/ $(MAKECMDGOALS)` ---实际上--> `include $(ONL)/make/pkg.mk`
+      4. 编译`installer`: `$(ONL_MAKE) -C builds/$arch/installer/ $(MAKECMDGOALS)` ---实际上--> `include $(ONL)/make/pkg.mk`
+
+
+
+
+
+#### onlpm包管理
+
+`onlpm`是`ONL Package Management`的缩写。`Package`实际上为`Debian Package`, 即`.deb`文件。
+
+`onlpm.py`包含了：
+- `debian`包脚本：
+  - postinst: `class OnlPackageAfterInstallScript`
+  - prerm: `class OnlPackageBeforeRemoveScript`
+  - postrm: `class OnlPackageAfterRemoveScript`
+- `debian`包构建器：`class OnlPackage`, 这个类从一个包规范(字典)构建一个单独的debian包
+    ```
+    # 包规范: [*]Option
+    name:         The name of the package
+    version:      The version of the package
+    arch:         The package architecture
+    copyright:    The copyright string or path to copyright file
+    changelog:    The changelog string or path to changelog file
+    maintainer:   The package maintainer address
+    summary:      The package summary description
+    *desc:        The package description (defaults to summary)
+    files:        A dict containing source/dst pairs.
+                      A src can be a file or a directory
+                      A dst can be a file or a directory
+                  A list containing src,dst pairs.
+    *depends:     List of package dependencies
+    *docs :       List of documentation files
+    ```
+- `debian`包分组构建器：`class OnlPackageGroup`, 是`OnlPackage`的控制器，具有通用的包设置、多个包声明和公共的构建步骤的`OnlPackage`都归于此分组。
+- `debian`包仓库管理器：`class OnlPackageRepoUnlocked`(非线程安全), `class OnlPackageRepo`(线程安全)。仓库位于`REPO/$debianname/*`。
+  - 安装package到仓库中。
+  - 在仓库中查找package。
+  - 从仓库中提取package。
+  - 提取package到本地缓存中，其文件内容可以被有依赖关系的其他包使用。
+- `debian`包管理器：`class OnlPackageManager`, 管理所有以上定义的。
+
+
+
+
 
 
 
