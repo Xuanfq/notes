@@ -643,6 +643,113 @@ aiden@Xuanfq:~/workspace/onl/build$
 
 
 
+主要运行过程：
+1. 设置仓库：`pm.set_repo(ops.repo, packagedir=ops.repo_package_dir)`
+   ops.repo = `os.environ.get('ONLPM_OPTION_REPO', None)` (setup.env: `"$ONL/REPO"`)
+   ops.repo_package_dir = `os.environ.get('ONLPM_OPTION_REPO_PACKAGE_DIR', 'packages')` (no env, use default `"packages"`)
+   1. 创建仓库管理器：`self.opr = OnlPackageRepo(root="$ONL/REPO", packagedir="packages")`
+      1. root = `os.path.join(root, g_dist_codename)`, g_dist_codename = $debianname, e.g. REPO/buster/
+      2. deb-package目录：self.repo = `os.path.join(root, packagedir)`, e.g. REPO/buster/packages/
+      3. deb-package解压后的缓存目录：self.extracts = `os.path.join(root, 'extracts')`, e.g. REPO/buster/extracts/
+2. 加载package目录：
+   ```python
+    for pdir in ops.packagedirs:
+      pm.load(basedir=pdir, usecache=not ops.no_pkg_cache, rebuildcache=ops.rebuild_pkg_cache, roCache=ops.ro_cache)
+   ```
+   ops.packagedirs = `os.environ['ONLPM_OPTION_PACKAGEDIRS'].split(':')` (setup.env: `"$ONL/packages:$ONL/builds"`)
+   ops.no_pkg_cache = `os.environ.get('ONLPM_OPTION_NO_PKG_CACHE', False)` (no env, use default `False`)
+   ops.rebuild_pkg_cache = `os.environ.get('ONLPM_OPTION_REBUILD_PKG_CACHE', False)` (no env, use default `False`)
+   ops.ro_cache = `False` (no setting, use default `False`)
+   1. 若`usecache=True` && `rebuildcache=False`, 加载缓存：`self.__load_cache(basedir, roCache)`
+   2. 若上述条件不成立或加载缓存失败，构建缓存：`self.__build_cache(basedir)`
+      1. 递归packagedir目录的所有文件，即 `$ONL/packages` **或** `$ONL/builds` (一次一个packagedir目录的缓存)。若文件为`[ 'PKG.yml', 'pkg.yml' ]`，且不存在`["PKG.yml.disabled", "pkg.yml.disabled"]`，检查并加载为`OnlPackageGroup`。
+         1. `pg = OnlPackageGroup()`
+         2. `pg.load(pkg=os.path.join(root, f))`, root=`$ONL/packages/...` **或** `$ONL/builds/...`, f=`pkg.yml`/`PKG.yml`
+            1. 加载默认package键值字典：`ddict = OnlPackage.package_defaults_get(pkg=pkg)`
+               1. 拷贝默认键值对：`ddict = klass.DEFAULTS.copy()`
+                  ```
+                  {
+                    'vendor' : 'Open Network Linux',
+                    'url' : 'http://opennetlinux.org',
+                    'license' : 'unknown',
+
+                    # Default Python Package Installation
+                    'PY_INSTALL' : '/usr/lib/python2.7/dist-packages',
+
+                    # Default Builder build directory name. Must match setup.env
+                    'BUILD_DIR' : 'BUILD/%s' % g_dist_codename,
+
+                    # Default Templates Location
+                    'ONL_TEMPLATES' : "%s/packages/base/any/templates" % os.getenv("ONL"),
+
+                    # Default Distribution
+                    'DISTS' : g_dist_codename,
+                  }
+                  ```
+               2. 从`根目录的下一层`到`pkg所在目录`，寻找以下文件之一并逐个覆盖（层次深的覆盖低的）(实际上没有以下文件)：
+                 - `[.]PKG_DEFAULTS` -- 一个生成包含默认Package键生成yaml的可执行文件/脚本。`yaml.load(subprocess.check_output(f, shell=True))`
+                 - `[.]PKG_DEFAULTS.yml` -- 一个包含默认Package键的onlyaml文件。`onlyaml.loadf(f)`
+            2. 加载pkg.yml、更新键值字典并填充变量: `pkg_data = onlyaml.loadf(pkg, ddict)`
+               1. 变量填充与键值字典覆盖顺序：
+                  1. `os.environ`
+                  2. `'__DIR__'=dirname(pkg.yml)`
+                  3. 默认package键值字典
+                  4. pkg.yml里的kv: `!include xxx key=value`，加载 `!include` 时填充
+                  5. pkg.yml里root键variables: 两次加载pkg.yml, 第一次加载variables并覆盖字典，第二次加载为最终数据
+                    ```yml
+                    # builds/any/swi/APKG.yml
+                    variables:
+                      !include $ONL/make/versions/version-onl.yml
+                    ```
+               2. !include 与 !script 解析器
+                  1. !include: `!include $ONL/builds/any/swi/APKG.yml ARCH=amd64 xx=xxx ..`
+                     1. filename, kv1, kv2, ... = $(!include后的字符串.strip()).split()
+                     2. 用键值字典填充filename里的变量
+                     3. k,v=kv.split("="), 更新到键值字典variables
+                     4. 递归加载yml文件: `return loadf(filename, variables)`
+                  2. !script: `!script  $ONL/tools/onl-init-pkgs.py ${INIT}`
+                     1. filename = $(!script后的字符串.strip())
+                     2. 用键值字典填充filename里的变量
+                     3. 运行filename文件将其输出结果重定向到临时yml文件tf.name：`os.system("%s > %s" % (directive, tf.name))`
+                     4. 递归加载临时yml文件: `return loadf(tf.name, variables)`
+            3. 对于加载后的pkg.yml数据`pkg_data`, 遍历`packages`并创建`OnlPackage`，若没有`packages`key，报错并跳过该pkg.yml的加载和使用。
+                ```python
+                self.packages = []
+                for p in pkg_data['packages']:
+                    self.packages.append(OnlPackage(p, os.path.dirname(pkg),
+                                                    pkg_data.get('common', None),
+                                                    ddict))  # OnlPackage的键值信息为pkg = p + pkg_data.get('common',{}) + ddict
+                ```
+            4. 记录pkg.yml信息：
+                ```python
+                self._pkg_info = pkg_data.copy()  # pkg_data backup
+                self._pkgs = pkg_data  # pkg_data
+                self._pkgs['__source'] = os.path.abspath(pkg)
+                self._pkgs['__directory'] = os.path.dirname(self._pkgs['__source'])
+                self._pkgs['__mtime'] = os.path.getmtime(pkg)  # modify time
+                ```
+         3. `pg.distcheck()`: 检查PackageGroup所设置的`debian发行版名称`(如buster)是否符合当前编译环境，没有设置`dist`则通过。
+            ```python 
+            def distcheck(self):
+              for p in self.packages:
+                  if p.pkg.get("dists", None):
+                      if g_dist_codename not in p.pkg['dists'].split(','):  # g_dist_codename是全局变量，从编译环境中获取的
+                          return False
+              return True
+            ```
+         4. `pg.buildercheck(builder_arches)`: 检查PackageGroup所设置的`arch`(如amd64)是否符合当前编译环境
+            builder_arches = [ 'all', 'amd64' ] + subprocess.check_output(['dpkg', '--print-foreign-architectures']).split()
+            ```python
+            def buildercheck(self, builder_arches):
+              for p in self.packages:
+                  if p.arch() not in builder_arches:  # p.arch() -> p.pkg['arch']
+                      return False
+              return True
+            ```
+         5. `self.package_groups.append(pg)`: 添加到management管理的`package_groups`里。
+         6. 若本循环层次上述步骤报错，则跳过该PackageGroup的加载。
+   3. 构建缓存后，若`usecache=True`，保存缓存：`self.__write_cache(basedir)`。
+      缓存文件为`packagedir`(即`$ONL/packages`或`$ONL/builds`)对应目录下的`'.PKGs.cache.%s' % g_dist_codename`文件。使用`pickle`来保存和加载。
 
 
 
