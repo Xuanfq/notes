@@ -645,21 +645,31 @@ aiden@Xuanfq:~/workspace/onl/build$
 
 主要运行过程：
 1. 设置仓库：`pm.set_repo(ops.repo, packagedir=ops.repo_package_dir)`
+   
    ops.repo = `os.environ.get('ONLPM_OPTION_REPO', None)` (setup.env: `"$ONL/REPO"`)
+   
    ops.repo_package_dir = `os.environ.get('ONLPM_OPTION_REPO_PACKAGE_DIR', 'packages')` (no env, use default `"packages"`)
+   
    1. 创建仓库管理器：`self.opr = OnlPackageRepo(root="$ONL/REPO", packagedir="packages")`
       1. root = `os.path.join(root, g_dist_codename)`, g_dist_codename = $debianname, e.g. REPO/buster/
       2. deb-package目录：self.repo = `os.path.join(root, packagedir)`, e.g. REPO/buster/packages/
       3. deb-package解压后的缓存目录：self.extracts = `os.path.join(root, 'extracts')`, e.g. REPO/buster/extracts/
+
 2. 加载package目录：
+   
    ```python
     for pdir in ops.packagedirs:
       pm.load(basedir=pdir, usecache=not ops.no_pkg_cache, rebuildcache=ops.rebuild_pkg_cache, roCache=ops.ro_cache)
    ```
+
    ops.packagedirs = `os.environ['ONLPM_OPTION_PACKAGEDIRS'].split(':')` (setup.env: `"$ONL/packages:$ONL/builds"`)
+   
    ops.no_pkg_cache = `os.environ.get('ONLPM_OPTION_NO_PKG_CACHE', False)` (no env, use default `False`)
+   
    ops.rebuild_pkg_cache = `os.environ.get('ONLPM_OPTION_REBUILD_PKG_CACHE', False)` (no env, use default `False`)
+   
    ops.ro_cache = `False` (no setting, use default `False`)
+   
    1. 若`usecache=True` && `rebuildcache=False`, 加载缓存：`self.__load_cache(basedir, roCache)`
    2. 若上述条件不成立或加载缓存失败，构建缓存：`self.__build_cache(basedir)`
       1. 递归packagedir目录的所有文件，即 `$ONL/packages` **或** `$ONL/builds` (一次一个packagedir目录的缓存)。若文件为`[ 'PKG.yml', 'pkg.yml' ]`，且不存在`["PKG.yml.disabled", "pkg.yml.disabled"]`，检查并加载为`OnlPackageGroup`。
@@ -750,6 +760,97 @@ aiden@Xuanfq:~/workspace/onl/build$
          6. 若本循环层次上述步骤报错，则跳过该PackageGroup的加载。
    3. 构建缓存后，若`usecache=True`，保存缓存：`self.__write_cache(basedir)`。
       缓存文件为`packagedir`(即`$ONL/packages`或`$ONL/builds`)对应目录下的`'.PKGs.cache.%s' % g_dist_codename`文件。使用`pickle`来保存和加载。
+3. 过滤 不被支持的架构的PackageGroup 以及 不在子目录范围内的PackageGroup：`pm.filter(subdir = ops.subdir, arches = ops.arches)`
+   
+   ops.subdir = os.getcwd()
+   
+   ops.arches = ['amd64', 'powerpc', 'armel', 'armhf', 'arm64', 'all']
+   
+   ```python
+    def filter(self, subdir=None, arches=None, substr=None):
+      for pg in self.package_groups:
+          if subdir and not pg.is_child(subdir):
+              pg.filtered = True                  # filtered = True 后，自动跳过 build
+          if not pg.archcheck(arches):
+              pg.filtered = True
+   ```
+4. 若设置了编译选项，对编译选项的一个或多个(PackageID/all)(pkg)参数进行逐个编译：`for p in ops.build: pm.build(p) if p in pm else raise OnlPackageMissingError(p)`, p为`PackageID`(name:arch)或`all`, 若p不匹配则抛出错误。`build(self, pkg=p, dir_=None, filtered=True, prereqs_only=False)`
+   1. 遍历所有存在/支持pkg的PackageGroup: `for pg in [pg for pg in self.package_groups if pkg in pg]`
+      1. 跳过被过滤的PackageGroup: `if filtered and pg.filtered: continue`
+      2. 若只处理先决条件prereqs_only为False，处理先决条件-子模块拉取/更新需求: `for sub in pg.prerequisite_submodules()`
+         
+         配置例子：
+         ```yml
+         prerequisites:
+          submodules:
+            - { root: "${ONL}", path : packages/base/any/initrds/buildroot/builds/buildroot-mirror, recursive: true }
+         ```
+         解析代码：
+         `def prerequisite_submodules(): return self._pkgs.get('prerequisites', {}).get('submodules', [])`
+         处理需求：
+         ```python
+          manager = submodules.OnlSubmoduleManager(root)
+          manager.require(path, depth=depth, recursive=recursive)  # 拉取和更新代码
+         ```
+
+         期间会校验参数，若参数不合法、或子模块处理过程中报错将自动停止。
+
+      3. 处理先决条件-packages需求: `for pr in pg.prerequisite_packages():`
+         
+         配置例子：
+         ```yml
+         prerequisites:
+           broken: true
+           packages: [ "onl-rootfs:$ARCH" ]  # or [ "onl-rootfs:$ARCH,onl-rootfs:arm64" ] or use -
+         ```
+         解析代码：
+         ```py
+         def prerequisite_packages(self):
+            rv = []
+            for e in list(onlu.sflatten(self._pkgs.get('prerequisites', {}).get('packages', []))):
+              rv += e.split(',')
+            return rv
+         ```
+         处理需求：build_missing=True, 缺失时主动对该package进行build。递归！
+         ```python
+         self.require(pr, build_missing=True)
+         ```
+      
+      4. 若只处理先决条件prereqs_only为False，构建package并添加到仓库（若仓库存在）（若仓库存在该package的版本则移除；若仓库中存在该package的解压目录，也移除该目录和文件）。
+         
+         ```py
+         if not prereqs_only:
+           # Build package
+           products = pg.build(dir_=dir_)
+           if self.opr:
+              # Add results to our repo
+              self.opr.add_packages(products)
+         ```
+
+         PackageGroup构建过程：`build(self, dir_=None)` (dir_: 软件包组的输出目录, 默认情况下为软件包组的父目录。)
+           - 不提供构建单个软件包的选项。这是因为假定组中定义的软件包是相互关联的，应该始终一起构建。
+           - 同时还假定组中的所有软件包具有共同的构建步骤。该构建步骤仅执行一次，然后所有软件包会根据软件包规范中定义的工件进行构建。
+           - 这可确保同一组中软件包的内容不会出现不匹配的情况，也不会不必要地多次调用构建步骤。
+           1. 开启全局锁：`with onlu.Lock(os.path.join(self._pkgs['__directory'], '.lock')):`
+           2. 全局锁下进行make编译：`self.gmake_locked(target="", operation='Build')`, target="" !
+              1. 检查是否允许编译，需满足：`self._pkgs.get('build', True) and not os.environ.get('NOBUILD', False)`
+                 1. `build`: 实际上没有设置该键值，默认为True
+                 2. `NOBUILD`: 在`pkg.mk`中，Target `pkg` 有此设置，设置为`NOBUILD=1`，设置为没有编译步骤而仅打包package。
+              2. 获取编译目录：
+                 1. `pkg.yml`所处的同级目录的`builds`目录: `os.path.join(self._pkgs['__directory'], 'builds')`
+                 2. `pkg.yml`所处的同级目录的`BUILDS`目录: `os.path.join(self._pkgs['__directory'], 'BUILDS')`
+              3. 遍历编译目录（若存在）进行逐项编译：`make -C /path/to/builds_or_BUILDS/ -j?`, with no target
+                 ```py
+                  MAKE = os.environ.get('MAKE', "make")
+                  V = " V=1 " if logger.level < logging.INFO else ""
+                  cmd = MAKE + V + ' -C ' + '/path/to/builds_or_BUILDS/' + " " + os.environ.get('ONLPM_MAKE_OPTIONS', "") + " " + os.environ.get('ONL_MAKE_PARALLEL', "") + " " + target
+                  onlu.execute(cmd, ex=OnlPackageError('%s failed.' % operation))
+                 ```
+
+
+
+
+
 
 
 
