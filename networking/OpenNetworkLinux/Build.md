@@ -579,6 +579,7 @@ aiden@Xuanfq:~/workspace/onl/build$
 2. `$(MAKE) -C builds/$arch`: -> `include $(ONL)/make/arch-build.mk`
    1. 定义需要make的子目录：`DIRECTORIES := rootfs swi installer`
    2. 对子目录逐个执行make(目标为命令行中的传入的目标)：`include $(ONL)/make/subdirs.mk`
+      
       `include $(ONL)/make/subdirs.mk`:
          1. 插入通用配置：`include $(ONL)/make/config.mk`
          2. 若没定义目录，列出目录：`ifndef DIRECTORIES DIRECTORIES := $(notdir $(wildcard $(CURDIR)/*))`
@@ -588,6 +589,7 @@ aiden@Xuanfq:~/workspace/onl/build$
            all $(MAKECMDGOALS):
              +$(ONL_V_at) $(foreach d,$(DIRECTORIES),$(ONL_MAKE) -C $(d) $(MAKECMDGOALS) || exit 1;)
            ```
+      
       1. 编译`rootfs`: `$(ONL_MAKE) -C builds/$arch/rootfs/ $(MAKECMDGOALS)` ---实际上--> `include $(ONL)/make/pkg.mk`
          ```makefile
           include $(ONL)/make/config.mk
@@ -831,8 +833,9 @@ aiden@Xuanfq:~/workspace/onl/build$
            - 不提供构建单个软件包的选项。这是因为假定组中定义的软件包是相互关联的，应该始终一起构建。
            - 同时还假定组中的所有软件包具有共同的构建步骤。该构建步骤仅执行一次，然后所有软件包会根据软件包规范中定义的工件进行构建。
            - 这可确保同一组中软件包的内容不会出现不匹配的情况，也不会不必要地多次调用构建步骤。
-           1. 开启全局锁：`with onlu.Lock(os.path.join(self._pkgs['__directory'], '.lock')):`
-           2. 全局锁下进行make编译：`self.gmake_locked(target="", operation='Build')`, target="" !
+           1. 定义debian包文件路径存放变量：`products = []`
+           2. 开启全局锁：`with onlu.Lock(os.path.join(self._pkgs['__directory'], '.lock')):`
+           3. 全局锁下进行make编译：`self.gmake_locked(target="", operation='Build')`, target="" !
               1. 检查是否允许编译，需满足：`self._pkgs.get('build', True) and not os.environ.get('NOBUILD', False)`
                  1. `build`: 实际上没有设置该键值，默认为True
                  2. `NOBUILD`: 在`pkg.mk`中，Target `pkg` 有此设置，设置为`NOBUILD=1`，设置为没有编译步骤而仅打包package。
@@ -846,6 +849,14 @@ aiden@Xuanfq:~/workspace/onl/build$
                   cmd = MAKE + V + ' -C ' + '/path/to/builds_or_BUILDS/' + " " + os.environ.get('ONLPM_MAKE_OPTIONS', "") + " " + os.environ.get('ONL_MAKE_PARALLEL', "") + " " + target
                   onlu.execute(cmd, ex=OnlPackageError('%s failed.' % operation))
                  ```
+           4. 全局锁下打包PackageGroup相关Package：遍历PackageGroup的所有Package(`pkg.yml`里配置的)对其执行`build()`进行构建debian包，构建完返回debian包路径。
+              ```py
+              for p in self.packages:
+                products.append(p.build(dir_=dir_))
+              ```
+
+              Package构建过程：`build(self, dir_=None)` (dir_: 软件包的输出目录, 若未指定，软件包文件将存放在其本地目录中。)
+
 
 
 
