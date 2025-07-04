@@ -856,6 +856,27 @@ aiden@Xuanfq:~/workspace/onl/build$
               ```
 
               Package构建过程：`build(self, dir_=None)` (dir_: 软件包的输出目录, 若未指定，软件包文件将存放在其本地目录中。)
+              1. 若package配置中存在`external`字段，意味着该package已经由外部编译且已编译完成，该字段的值即为package的路径，检查存在与否并返回路径，若不存在则抛出错误。
+              2. 若package配置中存在`files`字段，意味着该package需要这些文件，解析这些(源)文件及其(目标)安装目录并检查这些文件的存在性： `self._validate_files(key='files', required=True)`，更新其`self.pkg['files']`的值为`list[tuple[srcfile, destdir]]`
+                 ```py
+                  def _validate_files(self, key, required=True):
+                     """Validate the existence of the required input files for the current package."""
+                     self.pkg[key] = onlu.validate_src_dst_file_tuples(
+                        self.dir,      # pkg.yml所在的目录
+                        self.pkg[key], # self.pkg['files']
+                        dict(PKG=self.pkg['name'], PKG_INSTALL='/usr/share/onl/packages/%s/%s' % (self.pkg['arch'], self.pkg['name'])),
+                        OnlPackageError,
+                        required=required)
+                 ```
+                 - 解析数据：
+                   - 若`files`是`dict`, 则key为编译结果文件, value为目标安装目录
+                   - 若`files`是`list`, 若item为dict, 则key为编译结果文件, value为目标安装目录; 若item为list/tuple, 需长度为2, 则0为编译结果文件, 1为目标安装目录
+                 - 填充模板：
+                   - 通过模板填充缺失的`$PKG`和`$PKG_INSTALL`数据：`PKG=self.pkg['name'], PKG_INSTALL='/usr/share/onl/packages/%s/%s' % (self.pkg['arch'], self.pkg['name'])`
+                 - 若不符合解析规范或文件不存在，则抛出异常
+              3. 若package配置中存在`optional-files`字段，意味着该package可选择性地安装这些文件，存在则安装(即存入变量中)，不存在则跳过。过程同`files`字段,但`required=False`
+              4. 若参数中`dir_`为`None`, 使用默认的值`dir_ = self.dir`
+              5. 
 
 
 
