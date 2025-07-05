@@ -614,9 +614,9 @@ aiden@Xuanfq:~/workspace/onl/build$
 
 `onlpm.py`包含了：
 - `debian`包脚本：
-  - postinst: `class OnlPackageAfterInstallScript`
-  - prerm: `class OnlPackageBeforeRemoveScript`
-  - postrm: `class OnlPackageAfterRemoveScript`
+  - 系统服务启动脚本: `class OnlPackageAfterInstallScript`
+  - 系统服务关闭脚本: `class OnlPackageBeforeRemoveScript`
+  - 系统服务移除脚本: `class OnlPackageAfterRemoveScript`
 - `debian`包构建器：`class OnlPackage`, 这个类从一个包规范(字典)构建一个单独的debian包
     ```
     # 包规范: [*]Option
@@ -875,8 +875,77 @@ aiden@Xuanfq:~/workspace/onl/build$
                    - 通过模板填充缺失的`$PKG`和`$PKG_INSTALL`数据：`PKG=self.pkg['name'], PKG_INSTALL='/usr/share/onl/packages/%s/%s' % (self.pkg['arch'], self.pkg['name'])`
                  - 若不符合解析规范或文件不存在，则抛出异常
               3. 若package配置中存在`optional-files`字段，意味着该package可选择性地安装这些文件，存在则安装(即存入变量中)，不存在则跳过。过程同`files`字段,但`required=False`
-              4. 若参数中`dir_`为`None`, 使用默认的值`dir_ = self.dir`
-              5. 
+              4. 若参数中`dir_`为`None`, 使用默认的值`dir_ = self.dir`。
+              5. 创建临时工作目录`workdir`并在工作目录中创建`root`目录作为目标文件存放的根目录。
+              6. 遍历`files`并复制到`root`目录，若package设置了`symlinks`=True，则在拷贝目录时保留符号链接，否则复制链接目标。
+              7. 遍历`optional-files`并复制到`root`目录，若是链接这直接拷贝链接的目标。
+              8. 若package配置中存在`links`字段，其值的结构为`list[tuple[link, src]]`，遍历`links`在`root`中创建`link`链接到`src`文件。链接必须相对于最终文件系统为相对路径或绝对路径。(查阅源码并没有在pkg.yml里找到实际这样配置的)。
+              9. 在`root`目录创建(若不存在)文档存放目录 docpath=`os.path.join(root, "usr/share/doc/%(name)s" % self.pkg)`，遍历package中的`docs`文档目录检查是否存在，不存在则抛出异常 (没有拷贝到`root`文档存放目录下，这是否存在问题? 查阅源码并没有在pkg.yml里找到实际docs配置) 。
+                 ```py
+                  # FPM doesn't seem to have a doc option so we copy documentation files directly into place.
+                  for src in self.pkg.get('docs', []):
+                     if not os.path.exists(src):
+                        raise OnlPackageError("Documentation source file '%s' does not exist." % src)
+                        shutil.copy(src, docpath)  # !!!!!!!!!!!!!!!!!!!!!!!!!!!! never be excuted !!!
+                 ```
+              10. 拷贝或写入package配置中的`changelog`和`copyright`到`$workdir/changelog`或`$workdir/copyright`，若配置是存在的文件则拷贝，否则作为文本内容写入。
+              11. 使用所有必要的选项构造`fpm`命令并调用该命令进行debian包构建：
+                  1. 通用：`command = """fpm -p %(__workdir)s -f -C %(__root)s -s dir -t deb -n %(name)s -v %(version)s -a %(arch)s -m %(maintainer)s --description "%(description)s" --url "%(url)s" --license "%(license)s" --vendor "%(vendor)s" """ % self.pkg`
+                  2. 设定运行时依赖项`depends`: depends=list[str], str='name' or 'name > version', `for dep in self.pkg.get('depends', []): command = command + "-d %s " % dep`
+                  3. 设定构建时依赖项`build-depends`: build-depends=list[str], str='name' or 'name > version', `for dep in self.pkg.get('build-depends', []): command = command + "--deb-build-depends %s " % dep`
+                  4. 设定软件包提供的内容(通常为名称)`provides`: provides=list[str], `for provides in onlu.sflatten(self.pkg.get('provides', [])): command = command + "--provides %s " % provides`
+                  5. 设定与软件包冲突的其他软件包/版本`conflicts`: conflicts=list[str], `for conflicts in onlu.sflatten(self.pkg.get('conflicts', [])): command = command + "--conflicts %s " % conflicts`
+                  6. 设定与软件包所替代的其他软件包/版本`replaces`: replaces=list[str], `for replaces in onlu.sflatten(self.pkg.get('replaces', [])): command = command + "--replaces %s " % replaces`
+                  7. 设定虚拟包，一种不包含实际文件的特殊包，主要用于表示功能或服务`virtual`(查阅源码并没有在pkg.yml里找到实际virtual配置): 
+                     ```py
+                     if 'virtual' in self.pkg:
+                        command = command + "--provides %(v)s --conflicts %(v)s --replaces %(v)s " % dict(v=self.pkg['virtual'])
+                       
+                       # --provides %(v)s：声明这个包提供了虚拟包名称指定的功能
+                       # --conflicts %(v)s：声明这个包与同名的虚拟包冲突，防止同时安装多个提供相同虚拟包的实体包
+                       # --replaces %(v)s：声明这个包可以替换同名的虚拟包
+                     ```
+                     - 表示一组功能或能力，而不是具体的软件包
+                     - 作为多个提供相同功能的包的抽象
+                     - 简化依赖关系管理
+                     - 其他包可以依赖于虚拟包，而不需要关心具体是哪个平台的交换机实现。该功能使得软件包系统更加灵活，允许为不同的硬件平台或配置创建可互换的包，同时保持一致的依赖关系结构。
+                  8. 设定软件包的优先级类别`priority`(查阅源码并没有在pkg.yml里找到实际virtual配置): priority='required'|'important'|'standard'|'optional'|'extra', `if 'priority' in self.pkg: command = command + "--deb-priority %s " % self.pkg['priority']`
+                     - required：系统正常运行所必需的包
+                     - important：提供系统基本功能的重要包
+                     - standard：标准系统包含的包
+                     - optional：可选的、不与标准包冲突的包
+                     - extra：可能与其他高优先级包冲突的附加包
+                  9. 设定软件包的系统服务管理，用于自动创建和配置与系统服务相关的生命周期脚本，确保服务在包安装、移除过程中被正确处理 (`"init" in self.pkg`):
+                     1. 设定安装初始化脚本，即指定将要安装到 /etc/init.d/ 目录下的初始化脚本，这是传统的 SysV 初始化系统的服务脚本：`if 'init' in self.pkg and os.path.exists(self.pkg['init']): command = command + "--deb-init %s " % self.pkg['init']`
+                     2. 设定安装后脚本以在包安装后启动服务：`if self.pkg.get('init-after-install', True): command = command + "--after-install %s " % OnlPackageAfterInstallScript(self.pkg['init'], dir=workdir).name`
+                     3. 设定移除前脚本以在包移除前停止服务：`if self.pkg.get('init-before-remove', True): command = command + "--before-remove %s " % OnlPackageBeforeRemoveScript(self.pkg['init'], dir=workdir).name`
+                     4. 设定移除后脚本以在包完全移除后清理服务配置：`if self.pkg.get('init-after-remove', True): command = command + "--after-remove %s " % OnlPackageAfterRemoveScript(self.pkg['init'], dir=workdir).name`
+                  10. 设定软件包的安装、卸载、升级过程中执行特定钩子脚本，配置为`cmd:script_path`，cmd如下: 
+                      - 'before-install'
+                      - 'after-install'
+                      - 'before-upgrade'
+                      - 'after-upgrade'
+                      - 'before-remove'
+                      - 'after-remove'
+                      - 'deb-systemd': systemd script, systemd服务脚本, *.service
+                  11. 为软件包生成ASR文档`asr`(AIM_SYSLOG_REFERENCE)，存放位置为：`"usr/share/doc/%(name)s/asr.json" % self.pkg`:
+                      ```py
+                      if self.pkg.get('asr', False):
+                            with onlu.Profiler() as profiler:
+                               # Generate the ASR documentation for this package.
+                               sys.path.append("%s/sm/infra/tools" % os.getenv('ONL'))
+                               import asr
+                               asro = asr.AimSyslogReference()
+                               asro.extract(workdir)
+                               asro.format(os.path.join(docpath, asr.AimSyslogReference.ASR_NAME), 'json')
+                            profiler.log("ASR generation for %(name)s" % self.pkg)
+                      ```
+                      - ASR是项目git子模块`infra`的AIM模块。该模块为其他模块提供基本的原始结构。一般来说，每个功能模块都力求做到平台无关，并提供简洁、自包含且灵活的接口，同时尽可能减少对特定环境部署的假设。AIM 模块提供可移植性基础设施、通用良好实践定义以及贯穿代码的基本原语，用于解决常见问题，例如调试和输出虚拟化、配置和日志记录等。AIM 模块不依赖任何其他模块或任何外部软件包。
+                      - 待详细确认：若使用了AIM提供的日志记录功能（如onlp中packages/base/any/onlp/src/onlp/module/src/platform_manager.c），且配置了`asr: True`，将存在实际的供详细分析的`asr.json`日志文档。
+                  12. 执行`fpm`debian包构建命令，生成deb包。
+              12. 检查并拷贝deb包到dir_(OnlPackage().dir)目录下，即`builds`或`BUILDS`：查找工作目录`workdir`下的deb文件，判断是否只有一个文件，若不是则抛出异常，否则拷贝并移除整个工作目录`workdir`。
+              13. 返回deb软件包路径`os.path.join(dir_, os.path.basename($PackageName))`
+
 
 
 
