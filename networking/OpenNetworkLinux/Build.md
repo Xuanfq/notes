@@ -453,7 +453,7 @@ Notice: 通过`include $(ONL)/make/config.mk`导入配置，实际编译还是�
 
 ```makefile
 rebuild:
-	$(ONLPM) --rebuild-pkg-cache      # tools/onlpm.py --rebuild-pkg-cache
+	$(ONLPM) --rebuild-pkg-cache      # tools/onlpm.py --rebuild-pkg-cache  # 在加载package目录阶段进行清除和重构缓存
 ```
 
 #### make modclean
@@ -571,7 +571,7 @@ aiden@Xuanfq:~/workspace/onl/build$
    8. 生成版本信息并存放到make/versions/目录（若已生成则不会继续生成和保存）：`$(shell $(ONL)/tools/make-versions.py --import-file=$(ONL)/tools/onlvi --class-name=OnlVersionImplementation --output-dir $(ONL)/make/versions)`
    9. 导出子模块infra目录：`export SUBMODULE_INFRA := $(ONL)/sm/infra`
    10. 导出子模块bigcode目录：`export SUBMODULE_BIGCODE := $(ONL)/sm/bigcode`
-   11. `include make/templates.mk`: 配置查找文件、目录的makefile命令/函数
+   11. `include make/templates.mk`: 配置在package中查找文件、目录的makefile命令/函数，查找的时候会自动编译打包package，实际上调用的就是`onlpm.py`
       - 查找文件并赋值给变量：`onlpm_find_file $store_var $package $file_to_be_found`
       - 查找目录并赋值给变量：`onlpm_find_dir $store_var $package $dir_to_be_found`
       - 查找文件并赋值给变量和追加到变量：`onlpm_find_file_add $store_var $package $file_to_be_found $added_store_var`
@@ -600,9 +600,31 @@ aiden@Xuanfq:~/workspace/onl/build$
           
           # ...
          ```
-         1. 
-      3. 编译`swi`: `$(ONL_MAKE) -C builds/$arch/swi/ $(MAKECMDGOALS)` ---实际上--> `include $(ONL)/make/pkg.mk`
-      4. 编译`installer`: `$(ONL_MAKE) -C builds/$arch/installer/ $(MAKECMDGOALS)` ---实际上--> `include $(ONL)/make/pkg.mk`
+         PackageGroup构建过程中(见下方), 通过`make -C builds/amd64/rootfs/builds/ -j?`命令进行编译, Makefile `builds/amd64/rootfs/builds/Makefile`：
+         1. 导入配置: `include $(ONL)/make/config.amd64.mk`:
+            - 通用配置：`include $(ONL)/make/config.mk`
+            - 设置架构相关环境变量配置：
+              - export TOOLCHAIN := x86_64-linux-gnu
+              - export CROSS_COMPILER := $(TOOLCHAIN)-
+              - export ARCH := amd64
+              - export UARCH := AMD64
+              - export ARCH_BOOT := grub
+              - export __$(ARCH)__ := 1
+         2. 导出该架构下的平台列表到环境变量：`export PLATFORM_LIST=$(shell onlpm --list-platforms --arch amd64 --csv )`, onlpm其实是onlpm.py的脚本, 位于`tools/scripts/onlpm`。平台实现位于`packages/platforms/$vendor/$arm/$product/platform-config/r0/`通过PKG.yml导入`packages/base/any/templates/platform-config-platform.yml`的方式进行配置。
+         3. 设置根文件系统配置：`RFS_CONFIG := $(ONL)/builds/any/rootfs/$(ONL_DEBIAN_SUITE)/standard/standard.yml`
+         4. 导入根文件系统Makefile: `include $(ONL)/make/rfs.mk`
+            1. 工作目录：`RFS_WORKDIR := $(ONL_DEBIAN_SUITE)`
+            2. 文件系统文件临时存放目录：`RFS_DIR := $(RFS_WORKDIR)/rootfs-$(ARCH).d`
+            3. rootfs最终打包文件名：`RFS_CPIO := $(RFS_WORKDIR)/rootfs-$(ARCH).cpio.gz`
+            4. squashfs(压缩的只读文件系统)最终打包文件名：`RFS_SQUASH := $(RFS_WORKDIR)/rootfs-$(ARCH).sqsh`
+            5. 文件系统制作命令：`RFS_COMMAND := $(ONL)/tools/onlrfs.py --arch $(ARCH) --config $(RFS_CONFIG) --dir $(RFS_DIR) --cpio $(RFS_CPIO) --squash $(RFS_SQUASH)`
+            6. 当前文件系统目录里制作的清单文件路径：`RFS_MANIFEST := etc/onl/rootfs/manifest.json`
+            7. 本地文件系统的清单文件（从文件系统中拷贝）：`LOCAL_MANIFEST := $(RFS_WORKDIR)/manifest.json`
+            8. 执行默认make目标：`RFS: clean`
+               1. 执行文件系统制作命令onlrfs.py：`$(RFS_COMMAND)`
+               2. 拷贝/生成存放于本地的文件系统清单：`[ -f $(RFS_DIR)/$(RFS_MANIFEST) ] && sudo cp $(RFS_DIR)/$(RFS_MANIFEST) $(LOCAL_MANIFEST)`
+      2. 编译`swi`: `$(ONL_MAKE) -C builds/$arch/swi/ $(MAKECMDGOALS)` ---实际上--> `include $(ONL)/make/pkg.mk`
+      3. 编译`installer`: `$(ONL_MAKE) -C builds/$arch/installer/ $(MAKECMDGOALS)` ---实际上--> `include $(ONL)/make/pkg.mk`
 
 
 
@@ -762,6 +784,7 @@ aiden@Xuanfq:~/workspace/onl/build$
          6. 若本循环层次上述步骤报错，则跳过该PackageGroup的加载。
    3. 构建缓存后，若`usecache=True`，保存缓存：`self.__write_cache(basedir)`。
       缓存文件为`packagedir`(即`$ONL/packages`或`$ONL/builds`)对应目录下的`'.PKGs.cache.%s' % g_dist_codename`文件。使用`pickle`来保存和加载。
+      
 3. 过滤 不被支持的架构的PackageGroup 以及 不在子目录范围内的PackageGroup：`pm.filter(subdir = ops.subdir, arches = ops.arches)`
    
    ops.subdir = os.getcwd()
@@ -776,7 +799,8 @@ aiden@Xuanfq:~/workspace/onl/build$
           if not pg.archcheck(arches):
               pg.filtered = True
    ```
-4. 若设置了编译选项，对编译选项的一个或多个(PackageID/all)(pkg)参数进行逐个编译：`for p in ops.build: pm.build(p) if p in pm else raise OnlPackageMissingError(p)`, p为`PackageID`(name:arch)或`all`, 若p不匹配则抛出错误。`build(self, pkg=p, dir_=None, filtered=True, prereqs_only=False)`
+
+4. 若设置了编译选项`--build`，对编译选项的一个或多个(PackageID/all)(pkg)参数进行逐个编译：`for p in ops.build: pm.build(p) if p in pm else raise OnlPackageMissingError(p)`, p为`PackageID`(name:arch)或`all`, 若p不匹配则抛出错误。`build(self, pkg=p, dir_=None, filtered=True, prereqs_only=False)`
    1. 遍历所有存在/支持pkg的PackageGroup: `for pg in [pg for pg in self.package_groups if pkg in pg]`
       1. 跳过被过滤的PackageGroup: `if filtered and pg.filtered: continue`
       2. 若只处理先决条件prereqs_only为False，处理先决条件-子模块拉取/更新需求: `for sub in pg.prerequisite_submodules()`
@@ -946,7 +970,42 @@ aiden@Xuanfq:~/workspace/onl/build$
               12. 检查并拷贝deb包到dir_(OnlPackage().dir)目录下，即`builds`或`BUILDS`：查找工作目录`workdir`下的deb文件，判断是否只有一个文件，若不是则抛出异常，否则拷贝并移除整个工作目录`workdir`。
               13. 返回deb软件包路径`os.path.join(dir_, os.path.basename($PackageName))`
 
+5. 若设置了需求选项`--require`，对需求选项的一个或多个(PackageID/all)(pkg)参数进行逐个检查或编译：`for p in ops.require: pm.require(p, force=ops.force, build_missing=not ops.no_build_missing, skip_missing=ops.skip_missing, try_arches=ops.try_arches)`, p为`PackageID`(name:arch)或`all`, 若p不匹配则抛出错误且不配置ops.skip_missing则抛出错误, 若不配置ops.no_build_missing将在缺失时自动编译该package。通过onlpm命令行直接或间接调用的该功能的有：
+   1. `make/require-packages.mk`: (实际上没有被引用)
+   2. `--find-file`&`--find-dir`:
+      - `make/templates.mk` (在调用这些命令/函数时用到该功能: `onlpm_find_file`,`onlpm_find_dir`,`onlpm_find_file_add`,`onlpm_find_dir_add`)
+   3. `--link-file`&`--link-dir`:
+      - `make/swi.mk`
+   4. `--copy-file`:
+      - `packages/base/any/fit/loader/builds/Makefile`
+      - `packages/base/any/initrds/loader/builds/Makefile`
+      - `tools/onl-nos-create.py`
+   5. `--extract-dir`:
+      - `packages/base/any/initrds/loader/builds/Makefile`
+      - `tools/mkinstaller.py`
+      - `tools/onl-nos-create.py`
+      - `tools/onlrfs.py`
+   6. `--platform-manifest`:
+      -  `tools/mkinstaller.py`
 
+
+
+
+#### onlrfs根文件系统生成器
+
+`onlrfs.py`, 原意为`ONL Root Filesystem Generator`, 根文件系统生成器。
+
+`onlrfs.py`包含了：
+- 根文件系统系统管理器：`class OnlRfsSystemAdmin`
+  - 静态方法-生成8字符盐值：`gen_salt()`
+  - 静态方法-修改文件(权限)模式属性：`chmod(mode, file_)`, sudo chmod mode file_
+  - 静态方法-修改文件归属：`chown(file_, ownspec)`, sudo chown ownspec file_
+  - 删除用户：`userdel(self, username)`
+  - 添加用户组：`groupadd(self, group, gid=None, unique=True, system=False, force=False, password=None)`
+  - 添加用户：`useradd(self, username, uid=None, gid=None, password=None, shell='/bin/bash', home=None, groups=None, sudo=False, deleteFirst=True)`
+  - 设置用户密码：`user_password_set(self, username, password)`
+  - 设置用户shell：`user_shell_set(self, username, shell)`
+  - 禁用用户：`user_disable(self, username)`
 
 
 
