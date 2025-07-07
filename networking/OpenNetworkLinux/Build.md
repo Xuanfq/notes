@@ -667,7 +667,8 @@ aiden@Xuanfq:~/workspace/onl/build$
 
 
 
-主要运行过程：
+**主要运行过程**：
+
 1. 设置仓库：`pm.set_repo(ops.repo, packagedir=ops.repo_package_dir)`
    
    ops.repo = `os.environ.get('ONLPM_OPTION_REPO', None)` (setup.env: `"$ONL/REPO"`)
@@ -1007,8 +1008,60 @@ aiden@Xuanfq:~/workspace/onl/build$
   - 设置用户shell：`user_shell_set(self, username, shell)`
   - 禁用用户：`user_disable(self, username)`
 
+- multistrap工具配置生成器：`class OnlMultistrapConfig`, 配置位于`builds/any/rootfs/$debianname/standard/standard.yml`中的`Multistrap`。
+  
+  multistrap可以使用多个仓库引导用于构建Debian/Ubuntu系统。multistrap是一款工具，其功能与debootstrap基本相同，但采用了完全不同的方法，并且扩展了功能，以支持自动创建完整的、可引导的根文件系统。相关配置说明文档：https://www.huge-man-linux.net/man1/multistrap.html
+
+  - 生成临时配置文件：`generate_file(self, fname=None)`
+  - 获取debian包列表：`get_packages(self)`
+    - `builds/any/rootfs/$debianname/standard/standard.yml`中的`Packages`说明：
+      ```yml
+      Packages: &Packages
+         - !script  $ONL/tools/onl-init-pkgs.py ${INIT}  # 值为 `- sysvinit-core`(INIT=sysvinit) 或 `- systemd` & `- systemd-sysv`(INIT=systemd)
+         - !include $ONL/builds/any/rootfs/$ONL_DEBIAN_SUITE/common/all-base-packages.yml
+         - !include $ONL/builds/any/rootfs/$ONL_DEBIAN_SUITE/common/${ARCH}-base-packages.yml
+         - !include $ONL/builds/any/rootfs/$ONL_DEBIAN_SUITE/common/${ARCH}-onl-packages.yml
+         - !script  $ONL/tools/onl-platform-pkgs.py ${PLATFORM_LIST}  # 值为：`- onlp-%(platform)s` & `- onl-platform-config-%(platform)s`, 所有平台多需要的包
+      ```
+
+- 根文件系统上下文管理器：`class OnlRfsContext`
+  - 在进入和退出上下文时自动管理资源(`with OnlRfsContext(directory, resolvconf=True):`):
+    - 进入时在指定目录(directory)中挂载 dev 和 proc 文件系统，模拟系统运行环境
+    - 进入时备份并替换 resolv.conf 文件（用于 DNS 解析配置）(resolvconf=True)
+    - 退出时自动卸载文件系统并恢复 resolv.conf 的原始状态
+
+- 根文件系统编译器：`class OnlRfsBuilder`
 
 
+
+**主要运行过程**：
+
+1. 若设置了参数`--enable-root`，设置root密码为`--enable-root`的值；修改ssh登录`sshd_config`为允许root登录；修改配置文件的权限改为`644`。正常退出脚本。
+
+2. 根文件系统构建：
+   1. 根据传入的`arch`和`config`参数初始化OnlRfsBuilder实例：`x = OnlRfsBuilder(ops.config, ops.arch)`
+      1. 设置最新的配置文件键值字典，并在加载配置文件时传入：`self.kwargs`
+         ```py
+         DEFAULTS = dict(
+            DEBIAN_SUITE='wheezy',
+            DEBIAN_MIRROR='mirrors.kernel.org/debian/',
+            APT_CACHE='127.0.0.1:3142/'
+            )
+         self.kwargs['ARCH'] = arch
+         if arch == 'powerpc':
+            self.DEFAULTS['DEBIAN_MIRROR'] = 'archive.debian.org/debian/'
+         self.kwargs.update(self.DEFAULTS)
+         ```
+         若需使用其他的镜像源或配置，可修改*此处*或执行修改*standard.yml*
+      2. 加载配置文件到`self.config`，默认变量填充为`self.kwargs`。
+      3. 验证当前架构和编译环境是否匹配，并加载multistrap配置管理器`self.ms = OnlMultistrapConfig(self.config['Multistrap'])`。
+   2. 若没有传入参数`--no-multistrap`及环境变量`os.getenv('NO_MULTISTRAP')`为None或False，执行`multistrap`命令安装所需的debian包：`x.multistrap(ops.dir)` (参阅源码, 默认会执行该步骤)
+      1. 生成multistrap配置：`msconfig = self.ms.generate_file()`
+      2. 查看是否设置环境变量`ONLRFS_NO_PACKAGE_SCAN`，若有则进行本地package更新：`for r in self.ms.localrepos: if os.path.exists(os.path.join(r, 'Makefile')): onlu.execute("make -C %s" % r)`
+      3. 若临时文件系统根目录ops.dir已存在，删除：`onlu.execute("sudo rm -rf %s" % dir_, ex=OnlRfsError("Could not remove target directory."))`
+      4. 执行multistrap安装：`onlu.execute("sudo %s -d %s -f %s" % (self.MULTISTRAP, dir_, msconfig))`, MULTISTRAP='/usr/sbin/multistrap'
+      5. 若设置了multistrap debug环境变量`MULTISTRAP_DEBUG`，抛出错误以停止后续执行：`if os.getenv("MULTISTRAP_DEBUG"): raise OnlRfsError("Multistrap debug.")`
+   3. 
 
 
 
