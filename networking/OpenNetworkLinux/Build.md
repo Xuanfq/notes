@@ -1055,13 +1055,68 @@ aiden@Xuanfq:~/workspace/onl/build$
          若需使用其他的镜像源或配置，可修改*此处*或执行修改*standard.yml*
       2. 加载配置文件到`self.config`，默认变量填充为`self.kwargs`。
       3. 验证当前架构和编译环境是否匹配，并加载multistrap配置管理器`self.ms = OnlMultistrapConfig(self.config['Multistrap'])`。
-   2. 若没有传入参数`--no-multistrap`及环境变量`os.getenv('NO_MULTISTRAP')`为None或False，执行`multistrap`命令安装所需的debian包：`x.multistrap(ops.dir)` (参阅源码, 默认会执行该步骤)
+   2. 若没有传入参数`--no-multistrap`及环境变量`os.getenv('NO_MULTISTRAP')`为None或False，执行`multistrap`命令安装所需的debian包：`x.multistrap(dir_=ops.dir)` (参阅源码, 默认会执行该步骤)
       1. 生成multistrap配置：`msconfig = self.ms.generate_file()`
       2. 查看是否设置环境变量`ONLRFS_NO_PACKAGE_SCAN`，若有则进行本地package更新：`for r in self.ms.localrepos: if os.path.exists(os.path.join(r, 'Makefile')): onlu.execute("make -C %s" % r)`
       3. 若临时文件系统根目录ops.dir已存在，删除：`onlu.execute("sudo rm -rf %s" % dir_, ex=OnlRfsError("Could not remove target directory."))`
       4. 执行multistrap安装：`onlu.execute("sudo %s -d %s -f %s" % (self.MULTISTRAP, dir_, msconfig))`, MULTISTRAP='/usr/sbin/multistrap'
       5. 若设置了multistrap debug环境变量`MULTISTRAP_DEBUG`，抛出错误以停止后续执行：`if os.getenv("MULTISTRAP_DEBUG"): raise OnlRfsError("Multistrap debug.")`
-   3. 
+   3. 若没有传入参数`--no-configure`及环境变量`os.getenv('NO_DPKG_CONFIGURE')`为None或False，执行根文件系统的一系列配置：`x.configure(ops.dir)` (参阅源码, 默认会执行该步骤)
+      1. 若环境变量`os.getenv('NO_DPKG_CONFIGURE')`为None或False，配置`dpkg`: `with OnlRfsContext(dir_, resolvconf=False): self.dpkg_configure(dir_=dir_)`
+         1. 根据为不同架构的系统准备 QEMU 用户空间仿真环境，用于在非本地架构上运行二进制文件（跨架构执行）：
+            - powerpc: `sudo cp /usr/bin/qemu-ppc-static os.path.join(dir_, 'usr/bin')`
+            - armel/armhf: `sudo cp /usr/bin/qemu-arm-static os.path.join(dir_, 'usr/bin')`
+            - arm64: `sudo cp /usr/bin/qemu-aarch64-static os.path.join(dir_, 'usr/bin')`
+         2. 拷贝 Debian 包管理系统中用于安装后配置的脚本`tools/scripts/base-files.postinst`到`$dir_/var/lib/dpkg/info/base-files.postinst`
+         3. 在目标目录dir_下创建一个临时配置脚本 /tmp/configure.sh ，并为脚本设置可执行权限（0700，即 rwx------）：
+            ```py
+            script = os.path.join(dir_, "tmp/configure.sh")
+            with open(script, "w") as f:
+               os.chmod(script, 0700)
+               f.write("""#!/bin/bash -ex
+                  /bin/echo -e "#!/bin/sh\\nexit 101" >/usr/sbin/policy-rc.d
+                  chmod +x /usr/sbin/policy-rc.d
+                  export DEBIAN_FRONTEND=noninteractive
+                  export DEBCONF_NONINTERACTIVE_SEEN=true
+                  echo "127.0.0.1 localhost" >/etc/hosts
+                  touch /etc/fstab
+                  echo "localhost" >/etc/hostname
+                  if [ -f /var/lib/dpkg/info/dash.preinst ]; then
+                     /var/lib/dpkg/info/dash.preinst install
+                  fi
+                  if [ -f /usr/sbin/locale-gen ]; then
+                     echo "en_US.UTF-8 UTF-8" >/etc/locale.gen
+                     /usr/sbin/locale-gen
+                     update-locale LANG=en_US.UTF-8
+                  fi
+
+                  dpkg --configure -a || true
+                  dpkg --configure -a # configure any packages that failed the first time and abort on failure.
+
+                  rm -f /usr/sbin/policy-rc.d
+                  """)
+            ```
+            1. 创建一个策略文件 `/usr/sbin/policy-rc.d`，输入退出命令到该策略文件，防止服务在 chroot 环境中自动启动
+            2. 设置环境变量 `DEBIAN_FRONTEND=noninteractive` 和 `DEBCONF_NONINTERACTIVE_SEEN=true` 以使 Debian 包配置过程不需要交互
+            3. 配置基本的系统文件：
+               1. /etc/hosts: `echo "127.0.0.1 localhost" >/etc/hosts`
+               2. /etc/fstab: `touch /etc/fstab`
+               3. /etc/hostname: `echo "localhost" >/etc/hostname`
+               4. 如果存在 dash 预安装脚本`/var/lib/dpkg/info/dash.preinst`，执行它`/var/lib/dpkg/info/dash.preinst install`
+               5. 配置系统区域设置（locale）为 en_US.UTF-8:
+                  ```shell
+                  if [ -f /usr/sbin/locale-gen ]; then
+                     echo "en_US.UTF-8 UTF-8" >/etc/locale.gen
+                     /usr/sbin/locale-gen
+                     update-locale LANG=en_US.UTF-8
+                  fi
+                  ```
+               6. 执行 `dpkg --configure -a || true` 命令配置所有未配置的包
+               7. 再次执行同样的命令 `dpkg --configure -a` ，但这次若失败会终止脚本
+               8. 最后移除之前创建的策略文件`/usr/sbin/policy-rc.d`
+         4. 使用 chroot 命令在目标文件系统环境中执行配置脚本：`onlu.execute("sudo chroot %s /tmp/configure.sh" % dir_, ex=OnlRfsError("Post Configuration failed."))`
+         5. 运行配置脚本完成后删除临时脚本：`os.unlink(script)`
+      2. 
 
 
 
