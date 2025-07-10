@@ -1,4 +1,4 @@
-# I210 Gigabit Network Connection
+# Network Card - I210 Gigabit Network Connection
 
 I210 是Intel 推出的**千兆**网络芯片解决方案，用来替代老产品82547；i210目前已经广泛应用在各个行业，主要以工控行业为主，应用场景需要保证稳定的网络传输效果，Intel 推出的 I210方案，包括i210AT（正常工作温度），i210IT（工业级宽温），i210IS（光纤通信），i211(i210AT 降成本方案)主要针对不同市场应用。
 

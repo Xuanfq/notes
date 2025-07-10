@@ -1,7 +1,7 @@
 # Summary
 
 - Firmware Update
-  - TPM
+  - TPM *
     - TPMFactoryUpd
     - TPMFactoryUpd.efi
   - BMC *
@@ -18,12 +18,12 @@
     - afulnx_64
     - AfuEfix64.efi
     - via AMIBMC yafuflash
-  - SATA
+  - SSD *
     - hdparm
   - SES
     - serial port: cmd "fw_update" then send in XMODEM
     - in-band: insmod switchtec.ko; install sg3_utils tool; cmd "sg_ses_microcode xxx"
-  - Network Card
+  - Network Card *
     - X722/X710/X520/I210
       - nvmupdate64e
   - BBU(Backup Battery Unit)
@@ -37,7 +37,7 @@
   - Fan control board eeprom
   - Fan1/2/3/4 eeprom
   - PSU1/PSU2 eeprom
-- MAC Addrss *
+- MAC Address *
   - X722/X710/X520/I210
     - eeupdate64e
 - RTC(Real-Time Clock) Test *
@@ -47,9 +47,9 @@
 - CPU Test *
 - Storage Test *
 - USB Test *
-- TPM Test
-- CPLD Test
-- FPGA Test
+- TPM Test *
+- CPLD Test *
+- FPGA Test *
 - PHY(Ethernet) Test
 - System Info Test (Software/Firmware Versions Check)
 - I2C Test
