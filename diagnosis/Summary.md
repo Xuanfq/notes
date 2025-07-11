@@ -50,7 +50,7 @@
 - TPM Test *
 - CPLD Test *
 - FPGA Test *
-- PHY(Ethernet) Test
+- PHY(Ethernet) Test *
 - System Info Test (Software/Firmware Versions Check)
 - I2C Test
   - BMC I2C
