@@ -622,7 +622,7 @@ aiden@Xuanfq:~/workspace/onl/build$
             7. 本地文件系统的清单文件（从文件系统中拷贝）：`LOCAL_MANIFEST := $(RFS_WORKDIR)/manifest.json`
             8. 执行默认make目标：`RFS: clean`
                1. 执行文件系统制作命令onlrfs.py：`$(RFS_COMMAND)`
-               2. 拷贝/生成存放于本地的文件系统清单：`[ -f $(RFS_DIR)/$(RFS_MANIFEST) ] && sudo cp $(RFS_DIR)/$(RFS_MANIFEST) $(LOCAL_MANIFEST)`
+               2. 拷贝/生成存放于本地的文件系统(根文件系统上一级)清单：`[ -f $(RFS_DIR)/$(RFS_MANIFEST) ] && sudo cp $(RFS_DIR)/$(RFS_MANIFEST) $(LOCAL_MANIFEST)`
       2. 编译`swi`: `$(ONL_MAKE) -C builds/$arch/swi/ $(MAKECMDGOALS)` ---实际上--> `include $(ONL)/make/pkg.mk`
       3. 编译`installer`: `$(ONL_MAKE) -C builds/$arch/installer/ $(MAKECMDGOALS)` ---实际上--> `include $(ONL)/make/pkg.mk`
 
@@ -1116,7 +1116,302 @@ aiden@Xuanfq:~/workspace/onl/build$
                8. 最后移除之前创建的策略文件`/usr/sbin/policy-rc.d`
          4. 使用 chroot 命令在目标文件系统环境中执行配置脚本：`onlu.execute("sudo chroot %s /tmp/configure.sh" % dir_, ex=OnlRfsError("Post Configuration failed."))`
          5. 运行配置脚本完成后删除临时脚本：`os.unlink(script)`
-      2. 
+      2. 配置其他：`with OnlRfsContext(dir_): #...`
+         1. 若存在`$dir_/etc/os-release`，转换其为`/etc/os-release.json`
+         2. 获取配置文件中的`Configure`，存为变量Configure
+         3. run - 若Configure存在`run`命令列表配置，使用chroot逐个运行：
+            ```py
+            """
+            run:
+              - ls
+              - pwd
+              - ...
+            """
+            for cmd in Configure.get('run', []): 
+               onlu.execute("sudo chroot %s %s" % (dir_, cmd), ex=OnlRfsError("run command '%s' failed" % cmd))
+            ```
+         4. overlays - 若Configure存在`overlays`目录覆盖列表配置，将逐个目录里的内容复制到dir_下，并保留文件的权限和其他元数据：
+            ```py
+            for overlay in Configure.get('overlays', []): 
+               onlu.execute('tar -C %s -c --exclude "*~" . | sudo tar -C %s -x -v --no-same-owner' % (overlay, dir_),
+                                 ex=OnlRfsError("Overlay '%s' failed." % overlay))
+            ```
+         5. update-rc.d - 若Configure存在`update-rc.d`自启动rc.d服务的列表配置，将逐个进行配置：
+            ```py
+            """
+            update-rc.d:
+             - 'faultd defaults'
+             - 'onlpd defaults'
+             - ...
+            """
+            for update in Configure.get('update-rc.d', []): 
+               onlu.execute("sudo chroot %s /usr/sbin/update-rc.d %s" % (dir_, update), 
+                                 ex=OnlRfsError("update-rc.d %s failed." % (update)))
+            ```
+            update-rc.d命令用于管理系统启动时的服务启动脚本，是Debian/Ubuntu系统中用于管理System V风格初始化脚本的工具。
+         6. scripts - 若Configure存在`scripts`脚本列表配置，将逐个使用sudo权限并使用dir_为参数进行运行：
+            ```py
+            """
+            scripts:
+             - '111.sh'
+             - '222.sh'
+             - ...
+            """
+            for script in Configure.get('scripts', []): onlu.execute("sudo %s %s" % (script, dir_),
+                                 ex=OnlRfsError("script '%s' failed." % script))
+            ```
+         7. commands - 若Configure存在`commands`命令列表配置，将逐个使用`__rfs__=dir_`替换command中的`%(__rfs__)s`参数并执行该命令：
+            ```py
+            """
+            commands:
+             - 'ls %(__rfs___)s'
+             - 'echo %(__rfs___)s'
+             - ...
+            """
+            for command in Configure.get('commands', []): 
+               if '__rfs__' in command:
+                  command = command % dict(__rfs__=dir_)
+               onlu.execute(command, ex=OnlRfsError("Command '%s' failed." % command))
+            ```
+         8. 创建根文件系统管理器ua：`ua = OnlRfsSystemAdmin(dir_)`
+         9. groups - 若Configure存在`groups`用户组字典列表配置，将逐个添加到文件系统：
+            ```py
+            """
+            groups:
+               group1:
+                  gid: 1000
+                  system: true
+                  force: false
+                  unique: true
+                  password: null
+               group2:
+                  gid: 1001
+               group3: null
+            """
+            for (group, values) in Configure.get('groups', {}).iteritems():
+                    ua.groupadd(group=group, **values if values else {})
+            ```
+         10. users - 若Configure存在`users`用户字典列表配置，将逐个添加到文件系统：
+             ```py
+             """
+             users:
+                root:
+                   password: onl
+             """
+             for (user, values) in Configure.get('users', {}).iteritems():
+                if user == 'root':
+                   if 'password' in values:
+                         ua.user_password_set(user, values['password'])
+                else:
+                   ua.useradd(username=user, **values)
+             ```
+         11. 获取配置文件中的`options`，存为变量options
+         12. options.clean - 若options存在`clean`bool配置且其值为True，则执行文件系统清理动作以减轻文件系统大小：
+             ```py
+             """
+             options:
+               clean: True
+               securetty: False
+               ttys: False
+               console: True
+               PermitRootLogin: 'yes'
+             """
+             if options.get('clean', False):
+               logger.info("Cleaning Filesystem...")
+               onlu.execute('sudo chroot %s /usr/bin/apt-get clean' % dir_)  # 清理 APT（Debian/Ubuntu 包管理器）的缓存
+               onlu.execute('sudo chroot %s /usr/sbin/localepurge' % dir_ )  # 清理不需要的语言文件
+               onlu.execute('sudo chroot %s find /usr/share/doc -type f -not -name asr.json -delete' % dir_)  # 删除 /usr/share/doc 下的文件（除了 asr.json）
+               onlu.execute('sudo chroot %s find /usr/share/man -type f -delete' % dir_)  # 删除 /usr/share/man 下的所有文件
+             ``` 
+         13. options.PermitRootLogin - 若options存在`PermitRootLogin`配置，则修改`/etc/ssh/sshd_config`中的对应项。
+             ```py
+             """
+             options:
+               PermitRootLogin: 'yes'
+             """                
+             if 'PermitRootLogin' in options:
+               config = os.path.join(dir_, 'etc/ssh/sshd_config')
+               ua.chmod('a+rw', config)
+               lines = open(config).readlines()
+               with open(config, "w") as f:
+                  for line in lines:
+                        if line.startswith('PermitRootLogin'):
+                           v = options['PermitRootLogin']
+                           logger.info("Setting PermitRootLogin to %s" % v)
+                           f.write('PermitRootLogin %s\n' % v)
+                        else:
+                           f.write(line)
+               ua.chmod('644', config)
+             ``` 
+         14. options.securetty - 若options存在`securetty`配置且其值为False，则移除`/etc/securetty`文件。
+             ```py
+             """
+             options:
+               securetty: False
+             """
+             if not options.get('securetty', True):
+               f = os.path.join(dir_, 'etc/securetty')
+               if os.path.exists(f):
+                  logger.info("Removing %s" % f)
+                  onlu.execute('sudo rm %s' % f,
+                                 ex=OnlRfsError('Could not remove file %s' % f))
+             ``` 
+         15. options.ttys - 若options存在`ttys`配置且其值为False，则移除`/etc/inittab`文件中tty的配置（匹配以1-6加冒号开头的行（这些行通常定义了tty终端），如`#2:23:respawn:/sbin/getty 38400 tty2`），并且移除组用户和其他用户的写权限，保持安全性。
+             ```py
+             """
+             options:
+               ttys: False
+             """
+             if os.path.exists(os.path.join(dir_, 'etc/inittab')):
+               if not options.get('ttys', False):
+                  f = os.path.join(dir_, 'etc/inittab')
+                  ua.chmod('a+w', f)
+                  ua.chmod('a+w', os.path.dirname(f))
+
+                  logger.info("Clearing %s ttys..." % f)
+                  for line in fileinput.input(f, inplace=True):
+                        if re.match("^[123456]:.*", line):
+                           line = "#" + line
+                        print line,
+
+                  ua.chmod('go-w', f)
+                  ua.chmod('go-w', os.path.dirname(f))
+             ``` 
+         16. options.console - 若options存在`console`配置且其值为True，则通过`/etc/inittab`配置系统串口控制台：`T0:23:respawn:/sbin/pgetty`
+             ```py
+             """
+             options:
+               console: True
+             """
+             if os.path.exists(os.path.join(dir_, 'etc/inittab')):
+               if options.get('console', True):
+                  logger.info('Configuring Console Access in %s' % f)
+                  f = os.path.join(dir_, 'etc/inittab')
+                  ua.chmod('a+w', f)
+                  ua.chmod('a+w', os.path.dirname(f))
+                  with open(f, 'a') as h:
+                        h.write("T0:23:respawn:/sbin/pgetty\n")
+                  ua.chmod('go-w', f)
+                  ua.chmod('go-w', os.path.dirname(f))
+             ``` 
+         17. options.asr - 若options存在`asr`字典配置，则加载dir_目录下的所有asr.json开头的文件合并到一起，并按格式保存到配置的文件里：
+             ```py
+             """
+             options:
+               asr:
+                 file: asr_all_dump.yml
+                 format: yaml
+             """
+             if options.get('asr', None):
+               asropts = options.get('asr')
+               logger.info("Gathering ASR documentation...")
+               sys.path.append("%s/sm/infra/tools" % os.getenv('ONL'))
+               import asr
+               asro = asr.AimSyslogReference()
+               asro.merge(dir_)
+               asrf = os.path.join(dir_, asropts['file'])
+               OnlRfsSystemAdmin.chmod('777', os.path.dirname(asrf))
+               asro.format(os.path.join(dir_, asropts['file']), fmt=asropts['format'])
+             ``` 
+         18. manifests - 若Configure存在`manifests`清单字典列表配置，将新建清单文件并保存相关配置：
+             ```py
+             """
+             manifests:
+               '/etc/onl/rootfs/manifest.json' :
+                  version : $ONL/make/versions/version-onl.json
+                  platforms : $PLATFORM_LIST
+                  keys_1: ddd
+                  ...
+               
+               manifest.json内容:
+                 version: load($ONL/make/versions/version-onl.json)
+                 platforms: load($PLATFORM_LIST) if os.path.exists($PLATFORM_LIST) else $PLATFORM_LIST.split(',')
+                 arch: $arch
+                 os-release: load($dir_/etc/os-release)
+                 keys_1: ddd
+                 ...
+             """
+             for (mf, fields) in Configure.get('manifests', {}).iteritems():
+               logger.info("Configuring manifest %s..." % mf)
+               if mf.startswith('/'):
+                  mf = mf[1:]
+               mname = os.path.join(dir_, mf)
+               onlu.execute("sudo mkdir -p %s" % os.path.dirname(mname))
+               onlu.execute("sudo touch %s" % mname)
+               onlu.execute("sudo chmod a+w %s" % mname)
+               md = {}
+               md['version'] = json.load(open(fields['version']))
+               md['arch'] = self.arch
+               md['os-release'] = os_release_dict
+
+               if os.path.exists(fields['platforms']):
+                  md['platforms'] = yaml.load(open(fields['platforms']))
+               else:
+                  md['platforms'] = fields['platforms'].split(',')
+
+               for (k, v) in fields.get('keys', {}).iteritems():
+                  if k in md:
+                        md[k].update(v)
+                  else:
+                        md[k] = v
+
+               with open(mname, "w") as f:
+                  json.dump(md, f, indent=2)
+               onlu.execute("sudo chmod a-w %s" % mname)
+             ```
+         19. files - 若Configure存在`files`文件操作字典列表配置，将执行相关文件的创建和删除操作：
+             ```py
+             """
+             files:
+               remove:
+                  - /etc/motd
+               add:
+                  '/etc/ssh/sshd_config.bk': '/etc/ssh/sshd_config'  # new_file: origin or content
+                  '/etc/ssh/dddd': 'hello world'  # new_file: origin or content
+             """
+             for (fname, v) in Configure.get('files', {}).get('add', {}).iteritems():
+               if fname.startswith('/'):
+                  fname = fname[1:]
+               dst = os.path.join(dir_, fname)
+               onlu.execute("sudo mkdir -p %s" % os.path.dirname(dst))
+               onlu.execute("sudo touch %s" % dst)
+               onlu.execute("sudo chmod a+w %s" % dst)
+               if os.path.exists(v):
+                  shutil.copy(v, dst)
+               else:
+                  with open(dst, "w") as f:
+                        f.write("%s\n" % v)
+
+             for fname in Configure.get('files', {}).get('remove', []):
+               if fname.startswith('/'):
+                  fname = fname[1:]
+               f = os.path.join(dir_, fname)
+               if os.path.exists(f):
+                  onlu.execute("sudo rm -rf %s" % f)
+             ```
+         20. issue - 若Configure存在`issue`版本配置，将写入到文件系统/etc/issue和/etc/issue.net中：
+             ```py
+             """
+             issue: $VERSION_STRING
+
+             直接写入到`$dir_/etc/issue`和`$dir_/etc/issue.net`中
+             """
+             if Configure.get('issue'):
+               issue = Configure.get('issue')
+               fn = os.path.join(dir_, "etc/issue")
+               onlu.execute("sudo chmod a+w %s" % fn)
+               with open(fn, "w") as f:
+                  f.write("%s\n\n" % issue)
+               onlu.execute("sudo chmod a-w %s" % fn)
+
+               fn = os.path.join(dir_, "etc/issue.net")
+               onlu.execute("sudo chmod a+w %s" % fn)
+               with open(fn, "w") as f:
+                  f.write("%s\n" % issue)
+               onlu.execute("sudo chmod a-w %s" % fn)
+             ```
+   4. 若传入参数`cpio`，调用`tools/scripts/make-cpio.sh`进行rootfs镜像制作：`if ops.cpio: onlu.execute("%s/tools/scripts/make-cpio.sh %s %s" % (os.getenv('ONL'), ops.dir, ops.cpio))`, `cd ops.dir && find . | cpio -H newc -o | gzip -f > ops.cpio`
+   5. 若传入参数`squash`，调用`mksquashfs`命令进行squashfs镜像制作：`if ops.squash: onlu.execute("sudo mksquashfs %s %s -no-progress -noappend -comp gzip" % (ops.dir, ops.squash))`
 
 
 
