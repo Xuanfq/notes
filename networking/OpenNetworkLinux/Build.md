@@ -585,20 +585,28 @@ aiden@Xuanfq:~/workspace/onl/build$
          2. 若没定义目录，列出目录：`ifndef DIRECTORIES DIRECTORIES := $(notdir $(wildcard $(CURDIR)/*))`
          3. 过滤特殊目录：`FILTER := make Makefile Makefile~ $(FILTER)`; `DIRECTORIES := $(filter-out $(FILTER),$(DIRECTORIES))`
          4. 定义编译规则：
-           ```makefile
-           all $(MAKECMDGOALS):
-             +$(ONL_V_at) $(foreach d,$(DIRECTORIES),$(ONL_MAKE) -C $(d) $(MAKECMDGOALS) || exit 1;)
-           ```
+            ```makefile
+            all $(MAKECMDGOALS):
+              +$(ONL_V_at) $(foreach d,$(DIRECTORIES),$(ONL_MAKE) -C $(d) $(MAKECMDGOALS) || exit 1;)
+            ```
       
       1. 编译`rootfs`: `$(ONL_MAKE) -C builds/$arch/rootfs/ $(MAKECMDGOALS)` ---实际上--> `include $(ONL)/make/pkg.mk`
          ```makefile
-          include $(ONL)/make/config.mk
+         include $(ONL)/make/config.mk
 
-          # ...
-          pkgall:  # 使用第一个目标作为默认编译目标，编译所有架构
+         ifndef PLATFORM_LIST
+         export PLATFORM_LIST=$(shell onlpm --list-platforms --arch amd64 --csv )
+         endif
+
+         RFS_CONFIG := $(ONL)/builds/any/rootfs/$(ONL_DEBIAN_SUITE)/standard/standard.yml
+
+         include $(ONL)/make/rfs.mk  # below is main target
+
+         # ...
+         pkgall:  # 使用第一个目标作为默认编译目标，编译所有架构
 	          $(ONL_V_GEN) $(ONLPM_ENVIRONMENT) $(ONLPM) $(ONLPM_OPTS) --build all --arches $(ARCHES)  # ONLPM_OPTS为空
           
-          # ...
+         # ...
          ```
          PackageGroup构建过程中(见下方), 通过`make -C builds/amd64/rootfs/builds/ -j?`命令进行编译, Makefile `builds/amd64/rootfs/builds/Makefile`：
          1. 导入配置: `include $(ONL)/make/config.amd64.mk`:
@@ -610,7 +618,7 @@ aiden@Xuanfq:~/workspace/onl/build$
               - export UARCH := AMD64
               - export ARCH_BOOT := grub
               - export __$(ARCH)__ := 1
-         2. 导出该架构下的平台列表到环境变量：`export PLATFORM_LIST=$(shell onlpm --list-platforms --arch amd64 --csv )`, onlpm其实是onlpm.py的脚本, 位于`tools/scripts/onlpm`。平台实现位于`packages/platforms/$vendor/$arm/$product/platform-config/r0/`通过PKG.yml导入`packages/base/any/templates/platform-config-platform.yml`的方式进行配置。
+         2. 导出该架构下的平台列表到环境变量：`export PLATFORM_LIST=$(shell onlpm --list-platforms --arch amd64 --csv )`, onlpm其实是onlpm.py的脚本, 位于`tools/scripts/onlpm`。平台实现位于`packages/platforms/$vendor/$arm/$product/platform-config/r0/`通过PKG.yml导入`packages/base/any/templates/platform-config-platform.yml`的方式进行配置，如`!include $ONL_TEMPLATES/platform-config-platform.yml ARCH=amd64 VENDOR=kvm BASENAME=x86-64-kvm-x86-64-r0 REVISION=r0`。platform命名规则：$BASENAME-$REVISION，如`x86-64-kvm-x86-64-r0`，kvm-x86-64是sku。所以PLATFORM_LIST类似于`x86-64-kvm-x86-64-r0 ...`。
          3. 设置根文件系统配置：`RFS_CONFIG := $(ONL)/builds/any/rootfs/$(ONL_DEBIAN_SUITE)/standard/standard.yml`
          4. 导入根文件系统Makefile: `include $(ONL)/make/rfs.mk`
             1. 工作目录：`RFS_WORKDIR := $(ONL_DEBIAN_SUITE)`
@@ -624,6 +632,37 @@ aiden@Xuanfq:~/workspace/onl/build$
                1. 执行文件系统制作命令onlrfs.py：`$(RFS_COMMAND)`
                2. 拷贝/生成存放于本地的文件系统(根文件系统上一级)清单：`[ -f $(RFS_DIR)/$(RFS_MANIFEST) ] && sudo cp $(RFS_DIR)/$(RFS_MANIFEST) $(LOCAL_MANIFEST)`
       2. 编译`swi`: `$(ONL_MAKE) -C builds/$arch/swi/ $(MAKECMDGOALS)` ---实际上--> `include $(ONL)/make/pkg.mk`
+         ```makefile
+         ROOTFS_PACKAGE := onl-rootfs
+         include $(ONL)/make/config.amd64.mk
+         include $(ONL)/make/swi.mk # below: 
+
+         # ...
+         ifndef SWI_WORKDIR
+         SWI_WORKDIR := $(ONL_DEBIAN_SUITE)
+         endif
+         LINK_OPTIONS := $(FORCE_OPTION) --link-file $(ROOTFS_PACKAGE):$(ARCH) rootfs-$(ARCH).sqsh . --link-file $(ROOTFS_PACKAGE):$(ARCH) manifest.json .
+
+         ifndef FILENAMER
+         FILENAMER := $(ONL)/tools/filenamer.py
+         endif
+
+         swi: FORCE clean
+            mkdir $(SWI_WORKDIR) && cd $(SWI_WORKDIR) && $(ONLPM) $(LINK_OPTIONS)
+         ifdef ONL_PRE_SWITOOL_CMDS
+            $(ONL_V_at) $(ONL_PRE_SWITOOL_CMDS)
+         endif
+            $(ONL_V_at) cd $(SWI_WORKDIR) && $(ONL)/tools/switool.py --create $(ONL_SWITOOL_EXTRA_ARGS) --rootfs rootfs-$(ARCH).sqsh --manifest manifest.json $@  # ONL_SWITOOL_EXTRA_ARGS为空
+            $(ONL_V_at) cd $(SWI_WORKDIR) && mv $@ `$(FILENAMER) --type swi --manifest manifest.json $@`
+            $(ONL_V_at) cd $(SWI_WORKDIR) && for f in `ls *.swi`; do md5sum $$f > $$f.md5sum; done
+            $(ONL_V_at) rm -rf $(SWI_WORKDIR)/rootfs-$(ARCH).sqsh
+            $(ONL_V_at) ls $(SWI_WORKDIR)/*.swi
+         FORCE:
+
+         clean:
+            rm -rf $(SWI_WORKDIR)
+         ```
+         `swi`实际上是`Switch Image`，由rootfs制作时生成的`rootfs-$(ARCH).sqsh`和`manifest.json`组合成**ZIP**归档。
       3. 编译`installer`: `$(ONL_MAKE) -C builds/$arch/installer/ $(MAKECMDGOALS)` ---实际上--> `include $(ONL)/make/pkg.mk`
 
 
@@ -631,6 +670,8 @@ aiden@Xuanfq:~/workspace/onl/build$
 
 
 #### onlpm包管理
+
+##### onlpm.py概况
 
 `onlpm`是`ONL Package Management`的缩写。`Package`实际上为`Debian Package`, 即`.deb`文件。
 
@@ -667,7 +708,7 @@ aiden@Xuanfq:~/workspace/onl/build$
 
 
 
-**主要运行过程**：
+##### onlpm.py主要运行过程
 
 1. 设置仓库：`pm.set_repo(ops.repo, packagedir=ops.repo_package_dir)`
    
@@ -786,7 +827,7 @@ aiden@Xuanfq:~/workspace/onl/build$
    3. 构建缓存后，若`usecache=True`，保存缓存：`self.__write_cache(basedir)`。
       缓存文件为`packagedir`(即`$ONL/packages`或`$ONL/builds`)对应目录下的`'.PKGs.cache.%s' % g_dist_codename`文件。使用`pickle`来保存和加载。
       
-3. 过滤 不被支持的架构的PackageGroup 以及 不在子目录范围内的PackageGroup：`pm.filter(subdir = ops.subdir, arches = ops.arches)`
+3. 过滤 不被支持的架构的PackageGroup 以及 不在子目录范围内的PackageGroup(不包含ops.subdir,即ops.subdir在范围内)：`pm.filter(subdir = ops.subdir, arches = ops.arches)`
    
    ops.subdir = os.getcwd()
    
@@ -994,6 +1035,8 @@ aiden@Xuanfq:~/workspace/onl/build$
 
 #### onlrfs根文件系统生成器
 
+##### onlrfs.py概况
+
 `onlrfs.py`, 原意为`ONL Root Filesystem Generator`, 根文件系统生成器。
 
 `onlrfs.py`包含了：
@@ -1021,9 +1064,8 @@ aiden@Xuanfq:~/workspace/onl/build$
          - !include $ONL/builds/any/rootfs/$ONL_DEBIAN_SUITE/common/all-base-packages.yml
          - !include $ONL/builds/any/rootfs/$ONL_DEBIAN_SUITE/common/${ARCH}-base-packages.yml
          - !include $ONL/builds/any/rootfs/$ONL_DEBIAN_SUITE/common/${ARCH}-onl-packages.yml
-         - !script  $ONL/tools/onl-platform-pkgs.py ${PLATFORM_LIST}  # 值为：`- onlp-%(platform)s` & `- onl-platform-config-%(platform)s`, 所有平台多需要的包
+         - !script  $ONL/tools/onl-platform-pkgs.py ${PLATFORM_LIST}  # 值为：`- onlp-%(platform)s` & `- onl-platform-config-%(platform)s`, 每个平台都需要的各自平台的包， platform命名规则：$BASENAME-$REVISION，如`x86-64-kvm-x86-64-r0`，kvm-x86-64是sku，前面的x86-64是架构。
       ```
-
 - 根文件系统上下文管理器：`class OnlRfsContext`
   - 在进入和退出上下文时自动管理资源(`with OnlRfsContext(directory, resolvconf=True):`):
     - 进入时在指定目录(directory)中挂载 dev 和 proc 文件系统，模拟系统运行环境
@@ -1034,7 +1076,8 @@ aiden@Xuanfq:~/workspace/onl/build$
 
 
 
-**主要运行过程**：
+
+##### onlrfs.py主要运行过程
 
 1. 若设置了参数`--enable-root`，设置root密码为`--enable-root`的值；修改ssh登录`sshd_config`为允许root登录；修改配置文件的权限改为`644`。正常退出脚本。
 
@@ -1055,13 +1098,69 @@ aiden@Xuanfq:~/workspace/onl/build$
          若需使用其他的镜像源或配置，可修改*此处*或执行修改*standard.yml*
       2. 加载配置文件到`self.config`，默认变量填充为`self.kwargs`。
       3. 验证当前架构和编译环境是否匹配，并加载multistrap配置管理器`self.ms = OnlMultistrapConfig(self.config['Multistrap'])`。
-   2. 若没有传入参数`--no-multistrap`及环境变量`os.getenv('NO_MULTISTRAP')`为None或False，执行`multistrap`命令安装所需的debian包：`x.multistrap(dir_=ops.dir)` (参阅源码, 默认会执行该步骤)
+   2. 若没有传入参数`--no-build-packages`，即需要编译packages，获取配置文件`standard.yml`里的`Packages`配置(`get_packages(self)`)并调用`onlpm.py`进行编译：
+      ```py
+      if not ops.no_build_packages:
+         pkgs = x.get_packages()
+         # Invoke onlpm to build all required (local) packages.
+         onlu.execute("%s/tools/onlpm.py --try-arches %s all --skip-missing --require %s" % (os.getenv('ONL'), ops.arch, " ".join(pkgs)),
+                        ex=OnlRfsError("Failed to build all required packages."))
+         if ops.only_build_packages:
+               sys.exit(0)
+      ```
+      若传入`--only-build-packages`参数，即仅编译packages，则编译后停止执行。`--skip-missing`是由于很多packages是网络下载的，不是本地。这一步骤主要**编译扫描下packages目录下的平台所需的包**：
+      1. `onlp-%(platform)s`
+         1. 实现方式(packages/platforms/$vendor/x86-64/$sku/onlp/)：
+            1. PKG.yml: `!include $ONL_TEMPLATES/onlp-platform-any.yml PLATFORM=x86-64-kvm-x86-64 ARCH=amd64 TOOLCHAIN=x86_64-linux-gnu`
+            2. Makefile: `include $(ONL)/make/pkg.mk`
+            3. builds/:
+               1. Makefile: `FILTER=src \n include $(ONL)/make/subdirs.mk`
+               2. lib/: 
+                  1. Makefile: ...
+               3. onldump/:
+                  1. Makefile
+               4. $platform(e.g. x86-64-kvm-x86-64): 
+                  1. Makefile
+         2. 依赖包：/
+      2. `onl-platform-config-%(platform)s`
+         1. 实现方式(packages/platforms/$vendor/x86-64/$sku/platform-config/r0/)：
+            1. PKG.yml: `!include $ONL_TEMPLATES/platform-config-platform.yml ARCH=amd64 VENDOR=kvm BASENAME=x86-64-kvm-x86-64 REVISION=r0`
+            2. Makefile: `include $(ONL)/make/pkg.mk`
+            3. src/:
+               1. lib/: ...
+               2. python/: ...
+         2. 依赖包：
+            1. onl-vendor-config-$VENDOR(:all)
+               1. 实现方式(packages/platforms/$vendor/vendor-config/)：
+                  1. PKG.yml: `!include $ONL_TEMPLATES/platform-config-vendor.yml VENDOR=kvm Vendor=KVM`
+                  2. Makefile: `include $(ONL)/make/pkg.mk`
+                  3. src/python/${VENDOR}/__init__.py
+               2. 依赖包：
+                  1. onl-vendor-config-onl(:all): packages/base/all/vendor-config-onl/
+            2. onl-platform-modules-$BASENAME(:$ARCH)
+               1. 实现方式(packages/platforms/$vendor/x86-64/$sku/modules/)：
+                  1. PKG.yml: `!include $ONL_TEMPLATES/platform-modules.yml ARCH=amd64 VENDOR=kvm BASENAME=x86-64-kvm-x86-64 KERNELS="onl-kernel-5.4-lts-x86-64-all:amd64"`
+                  2. Makefile: `include $(ONL)/make/pkg.mk`
+                  3. builds/
+                     1. Makefile: ...
+                     2. src/: ?
+               2. 依赖包：
+                  1. $KERNELS, e.g. KERNELS="onl-kernel-5.4-lts-x86-64-all:amd64"
+                  2. onl-vendor-${VENDOR}-modules(:$ARCH):
+                     1. 实现方式(packages/platforms/$vendor/x86-64/modules/)：
+                        1. PKG.yml: `!include $ONL_TEMPLATES/no-arch-vendor-modules.yml ARCH=amd64 VENDOR=kvm` # 或 arch-vendor-modules.yml
+                        2. Makefile: `include $(ONL)/make/pkg.mk`
+                        3. builds/ (if with arch-vendor)
+                           1. Makefile: ...
+                     2. 依赖包：
+                        1. $KERNELS, e.g. KERNELS="onl-kernel-5.4-lts-x86-64-all:amd64"
+   3. 若没有传入参数`--no-multistrap`及环境变量`os.getenv('NO_MULTISTRAP')`为None或False，执行`multistrap`命令安装所需的debian包：`x.multistrap(dir_=ops.dir)` (参阅源码, 默认会执行该步骤)
       1. 生成multistrap配置：`msconfig = self.ms.generate_file()`
       2. 查看是否设置环境变量`ONLRFS_NO_PACKAGE_SCAN`，若有则进行本地package更新：`for r in self.ms.localrepos: if os.path.exists(os.path.join(r, 'Makefile')): onlu.execute("make -C %s" % r)`
       3. 若临时文件系统根目录ops.dir已存在，删除：`onlu.execute("sudo rm -rf %s" % dir_, ex=OnlRfsError("Could not remove target directory."))`
       4. 执行multistrap安装：`onlu.execute("sudo %s -d %s -f %s" % (self.MULTISTRAP, dir_, msconfig))`, MULTISTRAP='/usr/sbin/multistrap'
       5. 若设置了multistrap debug环境变量`MULTISTRAP_DEBUG`，抛出错误以停止后续执行：`if os.getenv("MULTISTRAP_DEBUG"): raise OnlRfsError("Multistrap debug.")`
-   3. 若没有传入参数`--no-configure`及环境变量`os.getenv('NO_DPKG_CONFIGURE')`为None或False，执行根文件系统的一系列配置：`x.configure(ops.dir)` (参阅源码, 默认会执行该步骤)
+   4. 若没有传入参数`--no-configure`及环境变量`os.getenv('NO_DPKG_CONFIGURE')`为None或False，执行根文件系统的一系列配置：`x.configure(ops.dir)` (参阅源码, 默认会执行该步骤)
       1. 若环境变量`os.getenv('NO_DPKG_CONFIGURE')`为None或False，配置`dpkg`: `with OnlRfsContext(dir_, resolvconf=False): self.dpkg_configure(dir_=dir_)`
          1. 根据为不同架构的系统准备 QEMU 用户空间仿真环境，用于在非本地架构上运行二进制文件（跨架构执行）：
             - powerpc: `sudo cp /usr/bin/qemu-ppc-static os.path.join(dir_, 'usr/bin')`
@@ -1410,9 +1509,15 @@ aiden@Xuanfq:~/workspace/onl/build$
                   f.write("%s\n" % issue)
                onlu.execute("sudo chmod a-w %s" % fn)
              ```
-   4. 若传入参数`cpio`，调用`tools/scripts/make-cpio.sh`进行rootfs镜像制作：`if ops.cpio: onlu.execute("%s/tools/scripts/make-cpio.sh %s %s" % (os.getenv('ONL'), ops.dir, ops.cpio))`, `cd ops.dir && find . | cpio -H newc -o | gzip -f > ops.cpio`
-   5. 若传入参数`squash`，调用`mksquashfs`命令进行squashfs镜像制作：`if ops.squash: onlu.execute("sudo mksquashfs %s %s -no-progress -noappend -comp gzip" % (ops.dir, ops.squash))`
+   5. 若传入参数`cpio`，调用`tools/scripts/make-cpio.sh`进行rootfs镜像制作：`if ops.cpio: onlu.execute("%s/tools/scripts/make-cpio.sh %s %s" % (os.getenv('ONL'), ops.dir, ops.cpio))`, `cd ops.dir && find . | cpio -H newc -o | gzip -f > ops.cpio`
+   6. 若传入参数`squash`，调用`mksquashfs`命令进行squashfs镜像制作：`if ops.squash: onlu.execute("sudo mksquashfs %s %s -no-progress -noappend -comp gzip" % (ops.dir, ops.squash))`
 
+
+
+### 总结
+
+- `PKG.yml`/`pkg.yml`(通常是PKG.yml): 打包成一个或多个debian包(OnlPackageGroup)的配置。应位于`$ONL/builds`或`$ONL/packages`下并被`standard.yml`的`Packages`字段的debian包所包含，否则无法打包到文件系统。若同级目录下存在`builds`或`BUILDS`目录，执行`make -C /path/to/builds_or_BUILDS`及所有依赖项编译完成后再进行打包。
+- `Makefile: include $(ONL)/make/pkg.mk`: 用于提供直接手动 "编译和打包Makefile所在目录及其子目录中所有的`PKG.yml`/PackageGroup的debian包" 的Make规则。即便于在`$ONL`下`make -C ...`到该目录，毕竟pkg.mk中调用onlpm.py一般只自动扫描和编译工作目录(os.getcwd())下的`PKG.yml`/PackageGroup，最好加上`ARCHES=amd64`参数指定架构。
 
 
 
