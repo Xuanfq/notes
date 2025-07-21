@@ -27,10 +27,12 @@
       - onlp/               # 实现package：`onlp-%(platform)s`
       - platform-config/    # 实现package：`onl-platform-config-%(platform)s`
         - r0/
-          - lib/
-          - python/
+          - src/
+            - lib/
+            - python/
+            - Makefile        # `include $(ONL)/make/pkg.mk`
+            - PKG.yml         # `!include $ONL_TEMPLATES/platform-config-platform.yml ARCH=amd64 VENDOR=kvm BASENAME=x86-64-machinename1 REVISION=r0`
           - Makefile        # `include $(ONL)/make/pkg.mk`
-          - PKG.yml         # `!include $ONL_TEMPLATES/platform-config-platform.yml ARCH=amd64 VENDOR=kvm BASENAME=x86-64-machinename1 REVISION=r0`
     - machinename2/
       - ...
   - arm/
@@ -58,26 +60,63 @@
       - `$KERNELS` (onl-kernel-5.4-lts-x86-64-all(:amd64))
       - `onl-vendor-${VENDOR}-modules(:$ARCH)`  (packages/platforms/$vendor/$arch/modules/)
         - `$KERNELS` (onl-kernel-5.4-lts-x86-64-all(:amd64))
- 
+
 
 ### Implementation
+
+
+
+#### platform-config
+
+```markdown
+- packages/platforms/vendor/
+  - x86-64/
+    - machinename1/
+      - platform-config/    # 实现package：`onl-platform-config-%(platform)s`
+        - r0/
+          - src/
+            - lib/            # Mapping `src/lib: /lib/platform-config/$PLATFORM/onl/`
+            - python/         # Mapping `src/python : ${PY_INSTALL}/onl/platform/`
+            - Makefile        # `include $(ONL)/make/pkg.mk`
+            - PKG.yml         # `!include $ONL_TEMPLATES/platform-config-platform.yml ARCH=amd64 VENDOR=kvm BASENAME=x86-64-machinename1 REVISION=r0`
+            - Makefile        # `include $(ONL)/make/pkg.mk`
+            - PKG.yml         # `!include $ONL_TEMPLATES/platform-config-platform.yml ARCH=amd64 VENDOR=celestica BASENAME=x86-64-cel-silverstone-v2 REVISION=r0`
+          - Makefile          # `include $(ONL)/make/pkg.mk`
+```
+
+
+
+
+
+##### Source
+
 
 
 
 #### vendor-config
 
 ```markdown
-- vendor-config/          # 实现package：`onl-vendor-config-$VENDOR(:all)`，适用于所有不同架构的不同machine。
-  - src/
-    - python/
-      - vendor/
-        - __init__.py     # Vendor专属的python模块，主要是实现`OnlPlatformCelestica`
-        - ...             # 其他自定义python模块
-  - Makefile              # `include $(ONL)/make/pkg.mk`
-  - PKG.yml               # `!include $ONL_TEMPLATES/platform-config-vendor.yml VENDOR=kvm Vendor=KVM`
+- packages/platforms/vendor/
+  - vendor-config/          # 实现package：`onl-vendor-config-$VENDOR(:all)`，适用于所有不同架构的不同machine。
+    - src/
+      - python/
+        - vendor/
+          - __init__.py     # Vendor专属的python模块，主要是实现`OnlPlatformCelestica`
+          - ...             # 其他自定义python模块
+    - Makefile              # `include $(ONL)/make/pkg.mk`
+    - PKG.yml               # `!include $ONL_TEMPLATES/platform-config-vendor.yml VENDOR=kvm Vendor=KVM`
 ```
 
 实际上是实现python模块`onl.platform.$vendor`，并在该python模块中通过继承`onl.platform.base`模块(packages/base/all/vendor-config-onl/src/python/onl/platform/base.py)中的`class OnlPlatformBase`类实现供应商专属平台配置类`class OnlPlatform$Vendor(OnlPlatformBase)`。主要是定义供应商的`MANUFACTURER`和`PRIVATE_ENTERPRISE_NUMBER`，使该供应商的机器都可以通过导入该模块`onl.platform.$vendor`并继承`OnlPlatform$Vendor`的方式实现机器专属平台机器配置类。
+
+- `MANUFACTURER`: 主要是用于生成模块目录，如：
+  - /lib/modules/<kernel>/onl/<vendor>/<platform-name>
+  - /lib/modules/<kernel>/onl/<vendor>/<basename>, basename = "-".join(self.PLATFORM.split('-')[:-1])
+  - /lib/modules/<kernel>/onl/<vendor>/common
+  - /lib/modules/<kernel>/onl/onl/common
+  - /lib/modules/<kernel>/onl
+  - /lib/modules/<kernel>
+- `PRIVATE_ENTERPRISE_NUMBER`: Vendor ID -- IANA Private Enterprise Number, http://www.iana.org/assignments/enterprise-numbers, 主要用于生成类__str__
 
 
 
@@ -122,6 +161,8 @@ from onl.platform.base import *
 class OnlPlatformKVM(OnlPlatformBase):
     MANUFACTURER='KVM'
     PRIVATE_ENTERPRISE_NUMBER=42623
+    # Vendor ID -- IANA Private Enterprise Number:
+    # http://www.iana.org/assignments/enterprise-numbers
 ```
 
 
