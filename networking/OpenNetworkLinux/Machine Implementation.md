@@ -76,11 +76,14 @@
         - r0/
           - src/
             - lib/            # Mapping `src/lib: /lib/platform-config/$PLATFORM/onl/`
+              - x86-64-machinename-r0.yml         # `$platform.yml`
             - python/         # Mapping `src/python : ${PY_INSTALL}/onl/platform/`
+              - x86_64_machinename_r0\            # `$platform.replace('-','_').replace('.','_')`
+                - __init__.py                     # `class OnlPlatform_$platform.replace('-','_').replace('.','_')`
             - Makefile        # `include $(ONL)/make/pkg.mk`
             - PKG.yml         # `!include $ONL_TEMPLATES/platform-config-platform.yml ARCH=amd64 VENDOR=kvm BASENAME=x86-64-machinename1 REVISION=r0`
             - Makefile        # `include $(ONL)/make/pkg.mk`
-            - PKG.yml         # `!include $ONL_TEMPLATES/platform-config-platform.yml ARCH=amd64 VENDOR=celestica BASENAME=x86-64-cel-silverstone-v2 REVISION=r0`
+            - PKG.yml         # `!include $ONL_TEMPLATES/platform-config-platform.yml ARCH=amd64 VENDOR=celestica BASENAME=x86-64-machinename1 REVISION=r0`
           - Makefile          # `include $(ONL)/make/pkg.mk`
 ```
 
@@ -90,6 +93,121 @@
 
 ##### Source
 
+1. PKG.yml
+
+```yml
+# !include $ONL_TEMPLATES/platform-config-platform.yml ARCH=amd64 VENDOR=kvm BASENAME=x86-64-machinename REVISION=r0  # Below
+
+# PKG template for all platform-config packages.
+
+variables:
+  PLATFORM : $BASENAME-$REVISION
+
+prerequisites:
+  packages:
+    - "onl-vendor-config-$VENDOR:all"
+    - "onl-platform-modules-$BASENAME:$ARCH"
+
+common:
+  version: 1.0.0
+  arch: $ARCH
+  copyright: Copyright 2013, 2014, 2015 Big Switch Networks
+  maintainer: support@bigswitch.com
+  support: opennetworklinux@googlegroups.com
+  changelog: None
+  dists: $DISTS
+
+packages:
+  - name: onl-platform-config-$PLATFORM
+    depends: onl-vendor-config-$VENDOR,onl-platform-modules-$BASENAME
+    summary: ONL Platform Configuration Package for the $PLATFORM
+
+    files:
+      src/lib: /lib/platform-config/$PLATFORM/onl
+      src/python : ${PY_INSTALL}/onl/platform/
+
+  - name: onl-platform-build-$PLATFORM
+    summary: ONL Platform Build Package for the $PLATFORM
+    optional-files:
+      builds: $$PKG_INSTALL
+
+```
+
+
+
+2. src/lib/$platform.yml
+
+```yml
+x86-64-machinename-r0:
+
+  grub:
+
+    serial: >-
+      --port=0x3f8
+      --speed=115200
+      --word=8
+      --parity=no
+      --stop=1
+
+    kernel:
+      <<: *kernel-4-14
+
+    args: >-
+      nopat
+      console=ttyS0,115200n8
+
+  installer:
+  - ONL-BOOT:
+      =: 128MiB
+      format: ext4
+  - ONL-CONFIG:
+      =: 128MiB
+      format: ext4
+  - ONL-IMAGES:
+      =: 1GiB
+      format: ext4
+  - ONL-DATA:
+      =: 3GiB
+      format: ext4
+
+  ##network:
+  ##  interfaces:
+  ##    ma1:
+  ##      name: ~
+  ##      syspath: pci0000:00/0000:00:14.0
+```
+
+
+
+
+3. src/python/$platform.replace('-','_').replace('.','_')/__init__.py
+
+```py
+from onl.platform.base import * # packages/base/all/vendor-config-onl/src/python/onl/platform/base.py
+from onl.platform.kvm import *  # vendor config
+
+
+class OnlPlatform_x86_64_machinename_r0(
+    OnlPlatformKVM, OnlPlatformPortConfig_32x400_2x10
+):
+    PLATFORM = "x86-64-machinename-r0"
+    MODEL = "machinename"
+    SYS_OBJECT_ID = ".2060.1"
+    
+    # Below Implementation by Super Object OnlPlatformPortConfig_32x400_2x10
+    # PORT_COUNT = 34
+    # PORT_CONFIG = "32x400G + 2x10"
+
+    def baseconfig(self):
+      """
+      开机时自动执行的平台机器配置，如：
+      1. 根据硬件配置（如是否存在BMC板）加载驱动
+      2. 执行特定于该机器的自定义配置
+      3. 启动监控服务
+      4. ...
+      """
+      pass
+```
 
 
 

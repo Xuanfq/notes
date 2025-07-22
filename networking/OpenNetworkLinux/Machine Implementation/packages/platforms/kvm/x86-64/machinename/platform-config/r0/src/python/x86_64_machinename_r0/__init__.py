@@ -1,5 +1,5 @@
-from onl.platform.base import *
-from onl.platform.kvm import *
+from onl.platform.base import * # packages/base/all/vendor-config-onl/src/python/onl/platform/base.py
+from onl.platform.kvm import *  # vendor config
 
 
 class OnlPlatform_x86_64_machinename_r0(
