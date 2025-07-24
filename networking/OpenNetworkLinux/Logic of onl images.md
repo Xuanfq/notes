@@ -16,7 +16,7 @@
 
 
 
-## 文件来源详解
+## MISC
 
 ### /etc/inittab 来源
 
@@ -78,7 +78,19 @@ Configure:
 
 
 
+### rc & 开机自启动 (并发) (/etc/init.d/rc)
 
+`/etc/init.d/rcS` -> link to `/lib/init/rcS`，即: `exec /etc/init.d/rc S` -> link to `/lib/init/rc S`
+
+1. 设置环境变量，捕获错误退出情况
+2. 确定当前和前一个运行级别
+3. 加载系统配置
+4. 检测并发启动能力（依赖于/etc/init.d/.depend.*文件）
+5. 根据并发设置选择启动方法，onl中主要用`startpar`进行多并发
+   1. startpar 读取 /etc/init.d/.depend.* 文件来了解服务之间的依赖关系
+   2. 这些依赖文件由 insserv 工具生成， onlpm.py中生成deb包时存在 依赖项指定 ，安装服务脚本时存在 /usr/sbin/update-rc.d 调用。
+6. 执行服务停止脚本（K开头的脚本）（切换运行级别或关机重启时才有用，开机时跳过），避免重复停止已经停止的服务。遍历`/etc/rc{runlevel}.d/K*`脚本，或`/etc/init.d/.depend.stop`。
+7. 执行服务启动脚本（S开头的脚本），避免重复启动已经启动的服务。遍历`/etc/rc{runlevel}.d/S*`脚本，或运行级别S`/etc/init.d/.depend.boot`，或普通运行级别（2-5）的服务启动`/etc/init.d/.depend.start`。
 
 
 
