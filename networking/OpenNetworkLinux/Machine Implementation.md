@@ -39,20 +39,22 @@
     - ...
 
 
-## Details
 
-### Notice
+
+## Notice
 
 - `ONL`的`platform`应和onie中的`platform-name`保持一致，但字符`_`和`.`应使用`-`代替。$PLATFORM=$BASENAME-$REVISION, 如BASENAME=x86-64-kvm-x86-64-r0, REVISION=r0, platform = `x86-64-kvm-x86-64-r0`, 同onie platform-name `x86_64-kvm_x86_64-r0`。
 - `PKG.yml`末行留空？！
 - 上述的目录结构不是死的，而是参照kvm/qemu例子实现，理论上只要放在`export ONLPM_OPTION_PACKAGEDIRS="$ONL/packages:$ONL/builds"`目录下都能被扫描到。
 
 
-### Dependency
+
+
+## Dependency
 
 - `onl-rootfs`
-  - `onlp-%(platform)s` (packages/platforms/$vendor/$arch/$machinename/onlp/)
-  - `onl-platform-config-%(platform)s`  (packages/platforms/$vendor/$arch/$machinename/platform-config/r0/)
+  - `onlp-%(platform)s` (packages/platforms/$vendor/$arch/$machinename/onlp/) [onl-platform-pkgs.py $PLATFORM_LIST]
+  - `onl-platform-config-%(platform)s`  (packages/platforms/$vendor/$arch/$machinename/platform-config/r0/) [onl-platform-pkgs.py $PLATFORM_LIST]
     - `onl-vendor-config-$VENDOR(:all)` (packages/platforms/$vendor/vendor-config/)
       - `onl-vendor-config-onl(:all)` (packages/base/all/vendor-config-onl/)
         - `onl-bootd(:all)` (packages/base/all/boot.d/)
@@ -60,19 +62,42 @@
       - `$KERNELS` (onl-kernel-5.4-lts-x86-64-all(:amd64))
       - `onl-vendor-${VENDOR}-modules(:$ARCH)`  (packages/platforms/$vendor/$arch/modules/)
         - `$KERNELS` (onl-kernel-5.4-lts-x86-64-all(:amd64))
+  - `onl-upgrade`(amd64) (packages/base/amd64/upgrade/) [amd64-onl-packages.yml]
+    - `onl-kernel-3.16-lts-x86-64-all:amd64` (packages/base/amd64/kernels/kernel-3.16-lts-x86-64-all/)
+    - `onl-kernel-4.9-lts-x86-64-all:amd64` (packages/base/amd64/kernels/kernel-4.9-lts-x86-64-all/)
+    - `onl-kernel-4.14-lts-x86-64-all:amd64` (packages/base/amd64/kernels/kernel-4.14-lts-x86-64-all/)
+    - `onl-kernel-4.19-lts-x86-64-all:amd64` (packages/base/amd64/kernels/kernel-4.19-lts-x86-64-all/)
+    - `onl-kernel-5.4-lts-x86-64-all:amd64` (packages/base/amd64/kernels/kernel-5.4-lts-x86-64-all/)
+    - `onl-loader-initrd:amd64` (packages/base/amd64/initrds/loader/)
+      - `onl-buildroot-initrd:$ARCH` (packages/base/any/initrds/buildroot/)
+      - `onl-loader-initrd-files:all` (packages/base/all/initrds/loader-initrd-files/)
+  - `onl-loader-fit`(arm64|armel|armhl|powerpc) (packages/base/$arch/fit/loader/) [$arch-onl-packages.yml]
+    - `onl-loader-initrd:$ARCH` (packages/base/$arch/initrds/loader/)
+      - `onl-buildroot-initrd:$ARCH` (packages/base/any/initrds/buildroot/)
+      - `onl-loader-initrd-files:all` (packages/base/all/initrds/loader-initrd-files/)
+  - `onlp` (packages/base/$arch/onlp) [all-base-packages.yml]
+  - `onl-faultd` (packages/base/$arch/faultd) [all-base-packages.yml]
+  - `onlp-snmpd` (packages/base/$arch/onlp-snmpd) [all-base-packages.yml]
+  - `onl-mibs` (packages/base/all/onl-mibs) [all-base-packages.yml]
+  - `oom-shim` (packages/base/$arch/oom-shim) [all-base-packages.yml]
 
 
-### Implementation
+**Notice**: 
+- 非amd64，即`onl-loader-fit`时，没有依赖于内核，内核依赖将在`onl-platform-config-%(platform)s:all`包里的配置`lib/$platform.yml`以及`onl-vendor-config-onl:all`包里的配置`lib/platform-config-defaults-$(x86-64|uboot).yml`处的`kernel`字段完成指定。在**onl-loader-fit制作阶段**完成内核编译，Ref: `tools/flat-image-tree.py`。
 
 
 
-#### platform-config
+## Implementation
+
+
+
+### platform-config
 
 ```markdown
 - packages/platforms/vendor/
   - x86-64/
     - machinename1/
-      - platform-config/    # 实现package：`onl-platform-config-%(platform)s`
+      - platform-config/      # 实现package：`onl-platform-config-%(platform)s`
         - r0/
           - src/
             - lib/            # Mapping `src/lib: /lib/platform-config/$PLATFORM/onl/`
@@ -82,18 +107,17 @@
                 - __init__.py                     # `class OnlPlatform_$platform.replace('-','_').replace('.','_')`
             - Makefile        # `include $(ONL)/make/pkg.mk`
             - PKG.yml         # `!include $ONL_TEMPLATES/platform-config-platform.yml ARCH=amd64 VENDOR=kvm BASENAME=x86-64-machinename1 REVISION=r0`
-            - Makefile        # `include $(ONL)/make/pkg.mk`
-            - PKG.yml         # `!include $ONL_TEMPLATES/platform-config-platform.yml ARCH=amd64 VENDOR=celestica BASENAME=x86-64-machinename1 REVISION=r0`
           - Makefile          # `include $(ONL)/make/pkg.mk`
 ```
 
+Notice: 目录`r0`只是为了便于区分硬件版本，实际还是根据`PKG.yml`所在目录作为编译或Package工作目录。同时这也是根据官方例子的设计规范。
 
 
 
 
-##### Source
 
-1. PKG.yml
+
+#### src/PKG.yml
 
 ```yml
 # !include $ONL_TEMPLATES/platform-config-platform.yml ARCH=amd64 VENDOR=kvm BASENAME=x86-64-machinename REVISION=r0  # Below
@@ -135,8 +159,48 @@ packages:
 
 
 
-2. src/lib/$platform.yml
+#### src/lib/$platform.yml
 
+**用于覆盖以下配置**:
+
+- `packages/base/all/vendor-config-onl/src/lib/platform-config-defaults-x86-64.yml`: x86-64
+- `packages/base/all/vendor-config-onl/src/lib/platform-config-defaults-uboot.yml`: powerpc, arm
+
+
+**加载方式**:
+
+```python
+# packages/base/all/vendor-config-onl/src/python/onl/platform/base.py
+y2 = os.path.join(self.basedir_onl(), "%s.yml" % self.platform())
+if os.path.exists(y1) and os.path.exists(y2):
+    self.platform_config = onl.YamlUtils.merge(y1, y2)
+    if self.platform() in self.platform_config:
+        self.platform_config = self.platform_config[self.platform()]
+elif os.path.exists(y2):
+    with open(y2) as fd:
+        self.platform_config = yaml.load(fd)
+    if self.platform() in self.platform_config:
+        self.platform_config = self.platform_config[self.platform()]
+elif os.path.exists(y1):
+    with open(y1) as fd:
+        self.platform_config = yaml.load(fd)
+    if 'default' in self.platform_config:
+        self.platform_config = self.platform_config['default']
+else:
+    self.platform_config = {}
+```
+
+
+**覆盖方式**:
+
+- 使用`$platform`或其他非`default`键作为顶级key覆写默认`default`的数据，只能有一个顶级key
+- 遍历新配置(y2)的每个键值对：
+  - 如果 y2 中的值是 nil（'~'），则从原始配置 y1 中删除对应的键。
+  - 如果 y2 中的值是字典，而 y1 中对应的值不是字典，则将 y1 中的值提升为字典，并在字典里用key '=' 作为旧的不是字典的配置值作为key '='的值。
+  - 否则，直接用 y2 中的值覆盖 y1 中的值。
+
+
+**Example**:
 ```yml
 x86-64-machinename-r0:
 
@@ -150,7 +214,7 @@ x86-64-machinename-r0:
       --stop=1
 
     kernel:
-      <<: *kernel-4-14
+      <<: *kernel-4-14  # 将自动将 &kernel-4-14 中的内容覆盖在此行，如platform-config-defaults-x86-64.yml中的kernel-4.14: &kernel-4-14下的内容
 
     args: >-
       nopat
@@ -179,8 +243,17 @@ x86-64-machinename-r0:
 
 
 
+#### src/python/`$platform.replace('-','_').replace('.','_')/__init__.py`
 
-3. src/python/$platform.replace('-','_').replace('.','_')/__init__.py
+**目的**:
+
+- 用于实现平台及供应商等信息的配置
+- 自定义平台开机启动脚本以配置平台所需
+
+开机时通过`packages/base/all/vendor-config-onl/src/boot.d/51.onl-platform-baseconf`调用。在`rc S`之前执行。
+
+
+**Example**:
 
 ```py
 from onl.platform.base import * # packages/base/all/vendor-config-onl/src/python/onl/platform/base.py
@@ -211,7 +284,7 @@ class OnlPlatform_x86_64_machinename_r0(
 
 
 
-#### vendor-config
+### vendor-config
 
 ```markdown
 - packages/platforms/vendor/
@@ -238,9 +311,8 @@ class OnlPlatform_x86_64_machinename_r0(
 
 
 
-##### Source
 
-1. PKG.yml
+#### PKG.yml
 
 - platform-config-vendor.yml
 
@@ -267,7 +339,7 @@ packages:
 ```
 
 
-2. __init__.py
+#### __init__.py
 
 - `onl.platform.base`: packages/base/all/vendor-config-onl/python/onl/platform/base.py
 
@@ -286,7 +358,7 @@ class OnlPlatformKVM(OnlPlatformBase):
 
 
 
-#### modules
+### modules
 
 ```markdown
 - modules/            # 实现package：`onl-platform-modules-$BASENAME(:$ARCH)`
@@ -317,9 +389,8 @@ class OnlPlatformKVM(OnlPlatformBase):
 
 
 
-##### Source
 
-1. PKG.yml
+#### PKG.yml
 
 - platform-modules.yml
 
@@ -347,7 +418,7 @@ packages:
     changelog: Changes
 ```
 
-2. builds/Makefile
+#### builds/Makefile
 
 - builds/Makefile
 
