@@ -78,9 +78,20 @@ Configure:
 
 
 
-### rc & 开机自启动 (并发) (/etc/init.d/rc)
+### boot & 开机自启动 (/etc/boot.d/boot) (串行)
 
-`/etc/init.d/rcS` -> link to `/lib/init/rcS`，即: `exec /etc/init.d/rc S` -> link to `/lib/init/rc S`
+/etc/inittab: `si0::sysinit:/etc/boot.d/boot`: (packages/base/all/boot.d/src/boot)
+
+1. 导出环境变量：`export PATH=/sbin:/usr/sbin:/bin:/usr/bin`
+2. 生成所有模块的依赖关系文件`/lib/modules/$(uname -r)/modules.dep(.bin)`，使系统能正确找到/加载模块及其依赖：`depmod -a`
+3. 按字典顺序一次执行`/etc/boot.d/`下以数字开头的脚本：`for script in $(ls /etc/boot.d/[0-9]* | sort); do $script done`
+4. 在开始执行rc.S脚本之前等待控制台刷新：`sleep 1`
+
+
+
+### rc & 开机自启动 (/etc/init.d/rc) (串行/并发)
+
+/etc/inittab: `si1::sysinit:/etc/init.d/rcS` -> link to `/lib/init/rcS`，即: `exec /etc/init.d/rc S` -> link to `/lib/init/rc S`
 
 1. 设置环境变量，捕获错误退出情况
 2. 确定当前和前一个运行级别
@@ -92,6 +103,20 @@ Configure:
 6. 执行服务停止脚本（K开头的脚本）（切换运行级别或关机重启时才有用，开机时跳过），避免重复停止已经停止的服务。遍历`/etc/rc{runlevel}.d/K*`脚本，或`/etc/init.d/.depend.stop`。
 7. 执行服务启动脚本（S开头的脚本），避免重复启动已经启动的服务。遍历`/etc/rc{runlevel}.d/S*`脚本，或运行级别S`/etc/init.d/.depend.boot`，或普通运行级别（2-5）的服务启动`/etc/init.d/.depend.start`。
 
+
+
+### /etc/boot.d/ 来源
+
+- `packages/base/all/boot.d/src/`: 
+  - package: 
+    - name: onl-bootd
+    - path: packages/base/all/boot.d/PKG.yml
+    - main: `- src : /etc/boot.d`
+- `packages/base/all/vendor-config-onl/src/boot.d`
+  - package:
+    - name: onl-vendor-config-onl
+    - path: packages/base/all/vendor-config-onl/PKG.yml
+    - main: `- src/boot.d : /etc/boot.d`
 
 
 

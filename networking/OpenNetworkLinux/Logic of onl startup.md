@@ -47,10 +47,19 @@ onl启动逻辑
 1. /etc/inittab (builds/any/rootfs/$debian-name/sysvinit/overlay/etc/inittab): inittab为系统的PID=1的进程，决定这系统启动调用哪些启动脚本文件
    1. `id:2:initdefault:`: 设置默认运行级别为2，即多用户模式（立即生效）
    2. `si0::sysinit:/etc/boot.d/boot`: 执行系统初始化脚本（阻塞执行，完成后继续） (packages/base/all/boot.d/src/boot/)
-      1. 导出环境变量：`export PATH=/sbin:/usr/sbin:/bin:/usr/bin`
-      2. 生成所有模块的依赖关系文件`/lib/modules/$(uname -r)/modules.dep(.bin)`，使系统能正确找到/加载模块及其依赖：`depmod -a`
-      3. 按字典顺序一次执行`/etc/boot.d/`下以数字开头的脚本：`for script in $(ls /etc/boot.d/[0-9]* | sort); do $script done`
-      4. 在开始执行rc.S脚本之前等待控制台刷新：`sleep 1`
+      1. `10.upgrade-system`: 
+         - origin: -> packages/base/all/vendor-config-onl/src/sbin/onl-upgrade-system -> packages/base/all/vendor-config-onl/src/python/onl/upgrade/system.py -> SystemUpgrade().main()
+         - 
+      2. `15.upgrade-loader`: 
+      3. `50.initmounts`: 
+      4. `51.onl-platform-baseconf`: 
+      5. `51.pki`: 
+      6. `52.rc.boot`: 
+      7. `53.install-debs`: 
+      8. `60.upgrade-onie`: 
+      9.  `61.upgrade-firmware`: 
+      10. `64.upgrade-swi`: 
+      11. `70.dhclient.conf`: 
    3. `si1::sysinit:/etc/init.d/rcS`: -> link to `/lib/init/rcS`，即: `exec /etc/init.d/rc S`: -> link to `/lib/init/rc S` (/etc/init.d/.depend.boot): 
       1. 第1层（并行）: 
          1. `S01hostname.sh`: 设置主机名
