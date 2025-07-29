@@ -22,6 +22,25 @@ due -r xxx
 # build
 cd build-config
 make -j4 MACHINEROOT=../machine/<vendor> MACHINE=<vendor>_<model> all
+# make -j4 MACHINEROOT=../machine/<vendor> MACHINE=<vendor>_<model> all firmware-update (With firmware-update Need)
+```
+
+### ONIE FW Updater
+
+```sh
+cd build-config
+make -j4 MACHINEROOT=../machine/<vendor> MACHINE=<vendor>_<model> tree-stamp        # if not build all first
+make -j4 MACHINEROOT=../machine/<vendor> MACHINE=<vendor>_<model> firmware-update
+```
+
+### Modify and Rebuild
+
+- No kernel modify
+```sh
+make -j4 MACHINEROOT=../machine/<vendor> MACHINE=<vendor>_<model> image-clean firmware-update-clean
+make -j4 MACHINEROOT=../machine/<vendor> MACHINE=<vendor>_<model> all
+make -j4 MACHINEROOT=../machine/<vendor> MACHINE=<vendor>_<model> firmware-update
+# make -j4 MACHINEROOT=../machine/<vendor> MACHINE=<vendor>_<model> all firmware-update (With firmware-update Need)
 ```
 
 ## Release
