@@ -664,6 +664,51 @@ aiden@Xuanfq:~/workspace/onl/build$
          ```
          `swi`实际上是`Switch Image`，由rootfs制作时生成的`rootfs-$(ARCH).sqsh`和`manifest.json`组合成**ZIP**归档。
       3. 编译`installer`: `$(ONL_MAKE) -C builds/$arch/installer/ $(MAKECMDGOALS)` ---实际上--> `include $(ONL)/make/pkg.mk`
+         ```makefile
+         BOOTMODE=SWI
+         include $(ONL)/make/config.amd64.mk
+         # include $(ONL)/builds/any/installer/grub/builds/Makefile  # Below:
+         ifndef ARCH
+         $(error $$ARCH not set)
+         endif
+
+         ifndef BOOTMODE
+         $(error $$BOOTMODE not set)
+         endif
+
+         # Arg. This should be extracted from SWI manifest.
+         include /etc/os-release
+         DEBIAN_VERSION_ID := $(shell echo $(VERSION_ID))
+
+         # Hardcoded to match ONL File naming conventions.
+         include $(ONL)/make/versions/version-onl.mk
+         INSTALLER_NAME=$(FNAME_PRODUCT_VERSION)_ONL-OS$(DEBIAN_VERSION_ID)_$(FNAME_BUILD_ID)_$(UARCH)_$(BOOTMODE)_INSTALLER
+
+         MKINSTALLER_OPTS	= \
+         --onl-version "$(VERSION_STRING)" \
+         --arch $(ARCH) \
+         --boot-config ../boot-config \
+         --add-dir ../config \
+         --initrd onl-loader-initrd:$(ARCH) onl-loader-initrd-$(ARCH).cpio.gz \
+         --swi onl-swi:$(ARCH) \
+         --preinstall-script $(ONL)/builds/any/installer/sample-preinstall.sh \
+         --postinstall-script $(ONL)/builds/any/installer/sample-postinstall.sh \
+         --plugin $(ONL)/builds/any/installer/sample-preinstall.py \
+         --plugin $(ONL)/builds/any/installer/sample-postinstall.py \
+         # THIS LINE INTENTIONALLY LEFT BLANK
+
+         WORK_DIR := $(ONL_DEBIAN_SUITE)
+
+         __installer: clean
+            mkdir $(WORK_DIR)
+            cd $(WORK_DIR) && $(ONL)/tools/mkinstaller.py $(MKINSTALLER_OPTS) --out $(INSTALLER_NAME)
+            cd $(WORK_DIR) && md5sum "$(INSTALLER_NAME)" | awk '{ print $$1 }' > "$(INSTALLER_NAME).md5sum"
+
+         clean:
+            rm -rf $(WORK_DIR)
+         ```
+         1. 编译`installed/`: boot mode = installed , BOOTMODE=INSTALLED
+         2. 编译`swi/`: boot mode = swi , BOOTMODE=SWI
 
 
 
@@ -1061,9 +1106,9 @@ aiden@Xuanfq:~/workspace/onl/build$
       ```yml
       Packages: &Packages
          - !script  $ONL/tools/onl-init-pkgs.py ${INIT}  # 值为 `- sysvinit-core`(INIT=sysvinit) 或 `- systemd` & `- systemd-sysv`(INIT=systemd)
-         - !include $ONL/builds/any/rootfs/$ONL_DEBIAN_SUITE/common/all-base-packages.yml
-         - !include $ONL/builds/any/rootfs/$ONL_DEBIAN_SUITE/common/${ARCH}-base-packages.yml
-         - !include $ONL/builds/any/rootfs/$ONL_DEBIAN_SUITE/common/${ARCH}-onl-packages.yml
+         - !include $ONL/builds/any/rootfs/$ONL_DEBIAN_SUITE/common/all-base-packages.yml       # 适用所有架构的Package，来源网络下载或本地
+         - !include $ONL/builds/any/rootfs/$ONL_DEBIAN_SUITE/common/${ARCH}-base-packages.yml   # 单一架构相关的Package，来源网络下载
+         - !include $ONL/builds/any/rootfs/$ONL_DEBIAN_SUITE/common/${ARCH}-onl-packages.yml    # 单一架构相关的Package，onl-upgrade(x64|amd) / onl-loader-fit(arm)，来源本地packages/base/${ARCH}
          - !script  $ONL/tools/onl-platform-pkgs.py ${PLATFORM_LIST}  # 值为：`- onlp-%(platform)s` & `- onl-platform-config-%(platform)s`, 每个平台都需要的各自平台的包， platform命名规则：$BASENAME-$REVISION，如`x86-64-kvm-x86-64-r0`，kvm-x86-64是sku，前面的x86-64是架构。
       ```
 - 根文件系统上下文管理器：`class OnlRfsContext`
@@ -1512,6 +1557,228 @@ aiden@Xuanfq:~/workspace/onl/build$
    5. 若传入参数`cpio`，调用`tools/scripts/make-cpio.sh`进行rootfs镜像制作：`if ops.cpio: onlu.execute("%s/tools/scripts/make-cpio.sh %s %s" % (os.getenv('ONL'), ops.dir, ops.cpio))`, `cd ops.dir && find . | cpio -H newc -o | gzip -f > ops.cpio`
    6. 若传入参数`squash`，调用`mksquashfs`命令进行squashfs镜像制作：`if ops.squash: onlu.execute("sudo mksquashfs %s %s -no-progress -noappend -comp gzip" % (ops.dir, ops.squash))`
 
+
+
+
+#### mkinstaller镜像安装器
+
+##### mkinstaller.py概况
+
+`mkinstaller.py`, 原意为`Make Installer`, 基于onie(Open Network Install Environment)的ONL镜像安装器。
+
+`mkinstaller.py`包含了：
+- ONL镜像安装器：`class InstallerShar`
+
+
+
+##### mkinstaller.py主要运行过程
+
+1. 创建安装器类并填充安装模板中的架构值: `installer = InstallerShar(onl_version=ops.onl_version, arch=ops.arch)`, e.g. onl_version="VERSION_STRING=Open Network Linux OS ONL-master, 2025-06-28.17:21-28f52e6", 工作目录为临时工作目录/tmp/xxx，默认安装脚本模板文件为`builds/any/installer/installer.sh.in`。
+2. 若为amd64架构，添加初始化RAM磁盘initrd镜像(amd64)及平台所需内核，并填充镜像信息到安装脚本模板（实际上添加`onl-loader-initrd-$(ARCH).cpio.gz`）: `installer.add_initrd(package="onl-loader-initrd:$(ARCH)", filename="onl-loader-initrd-$(ARCH).cpio.gz", add_platforms=True)`
+   1. 查找镜像所在目录: `self.initrd = self.find_file(package, filename)`
+   2. 添加到文件列表: `self.add_file(self.initrd)`
+   3. 遍历所有支持的平台的所需的内核并添加到文件列表:
+      ```py
+      if add_platforms:
+         for platform in subprocess.check_output("onlpm --platform-manifest %s" % (package), shell=True).split():
+               logger.info("Adding platform %s..." % platform)
+               kernel = subprocess.check_output([os.path.join(self.ONL, 'tools', 'onlplatform.py'),
+                                                platform,
+                                                self.arch,
+                                                'kernel']).strip()
+
+               logger.info("Platform %s using kernel %s..." % (platform, os.path.basename(kernel)))
+               self.add_file(kernel)
+      ```
+      在运行`onlplatform.py`的过程中会自动添加内核文件: 
+         1. 查找`onl-platform-config-%(platform)s:all`包里的配置`lib/$platform.yml`，包不存在则编译
+         2. 查找`onl-vendor-config-onl:all`包里的配置`lib/platform-config-defaults-$(x86-64|uboot).yml`，包不存在则编译
+         3. 合并上述两个配置，platform覆盖vendor，覆盖方法：`platformConf = onl.YamlUtils.merge(defaultConfigPath, platformConfigPath)`
+            - 使用`$platform`或其他非`default`键作为顶级key覆写默认`default`的数据，只能有一个顶级key
+               - 遍历新配置(y2)的每个键值对：
+               - 如果 y2 中的值是 nil（'~'），则从原始配置 y1 中删除对应的键。
+               - 如果 y2 中的值是字典，而 y1 中对应的值不是字典，则将 y1 中的值提升为字典，并在字典里用key '=' 作为旧的不是字典的配置值作为key '='的值。
+               - 否则，直接用 y2 中的值覆盖 y1 中的值。
+         4. 查找平台配置的内核包`resource = platformConf[$platform][grub|flat_image_tree][kernel]; pkg = resource['package']; basename = resource['=']`，包不存在则编译!!! 特别是非amd64架构，内核将在此阶段编译。
+         5. 添加到文件列表: `self.add_file(kernel)`
+         6. 填充安装脚本模板: `self.setvar('INITRD_ARCHIVE', os.path.basename(self.initrd)); self.setvar('INITRD_OFFSET', ''); self.setvar('INITRD_SIZE', '')`
+3. 若为非amd64架构，添加FIT镜像并计算initrd的offset和size填充镜像信息到安装脚本模板(FIT镜像包含了内核)（实际上添加`onl-loader-fit.itb`）: `installer.add_fit(*ops.fit)`, `FIT = FlatImageTree (.itb) = DtbImage(.dtb) + InitrdImage(.cpio.gz) + KernelImage(Image(bzImage)->kernel-4.9-lts-arm64-all.bin.gz)`
+   1. 查找镜像所在目录: `self.fit = self.find_file(package, filename)`
+   2. 计算initrd的offset和size: `offsets = subprocess.check_output("PYTHONPATH=%s/src/python %s/src/bin/pyfit -v offset %s --initrd" % (VONL, VONL, self.fit), shell=True).split()`, `VONL=os.path.join(self.ONL, "packages", "base", "all", "vendor-config-onl")`
+   3. 填充安装脚本模板: `self.setvar('INITRD_ARCHIVE', os.path.basename(self.fit)); self.setvar('INITRD_OFFSET', offsets[0]); self.setvar('INITRD_SIZE', str(int(offsets[1]) - int(offsets[0])))`
+   4. 添加到文件列表: `self.add_file(self.fit)`
+4. 若传入参数`--boot-config`，则添加其指定的boot-config文件：`installer.add_file(ops.boot_config)`, 其内容为:
+   ```conf
+   NETDEV=ma1
+   BOOTMODE=INSTALLED  # or SWI
+   SWI=images::latest
+   ```
+5. 若传入参数`--add-file`以指定添加其他额外的文件，则逐个添加到文件列表（实际上没有添加额外的）：`for f in ops.add_file: installer.add_file(f)`
+6. 若传入参数`--add-dir`以指定添加其他额外的目录，则逐个添加目录列表（实际上添加了一个config目录，包含了一个README文件）：`for d in ops.add_dir: installer.add_dir(d)`
+7. 若传入参数`--swi`以指定添加SWI镜像所在Package，则解压该Package到工作目录中的swidir目录，并添加解压后的`.swi`后缀的文件到文件列表（实际上添加onl-swi:$(ARCH)）：`if ops.swi: installer.add_swi(ops.swi)`
+8. 在工作目录创建`tmp/`目录以及`tmp/plugins/`插件目录。
+9. 若传入参数`--preinstall-script`以指定镜像安装的前置钩子脚本，则拷贝到tmp/目录，命名成`preinstall.sh`，并添加到文件列表（实际上指定了`$(ONL)/builds/any/installer/sample-preinstall.sh`）：`installer.add_file_as(ops.preinstall_script, "preinstall.sh")`
+10. 若传入参数`--postinstall-script`以指定镜像安装的后置钩子脚本，则拷贝到tmp/目录，命名成`postinstall.sh`，并添加到文件列表（实际上指定了`$(ONL)/builds/any/installer/sample-postinstall.sh`）：`installer.add_file_as(ops.postinstall_script, "postinstall.sh")`
+11. 若传入参数`--plugin`以添加一个或多个插件，则拷贝到tmp/plugins/目录下并重命名为唯一名以防止重复，命名工作为文件后缀前添加-$random，并将插件目录添加到目录列表（实际上添加了上述的前后置钩子脚本）：
+    ```py
+    for plugin in ops.plugin:
+      basename = os.path.split(plugin)[1]
+      basename = os.path.splitext(basename)[0]
+      dst = tempfile.mktemp(dir=plugindir,
+                              prefix=basename+'-',
+                              suffix='.py')
+      shutil.copy(plugin, dst)
+    l = os.listdir(plugindir)
+    if l:
+        installer.add_dir(plugindir)
+    ```
+12. 获取镜像生成的名及其绝对路径（实际上为`$(FNAME_PRODUCT_VERSION)_ONL-OS$(DEBIAN_VERSION_ID)_$(FNAME_BUILD_ID)_$(UARCH)_$(BOOTMODE)_INSTALLER`）：`iname = os.path.abspath(ops.out)`
+13. 编译以制作镜像安装器：`installer.build(name=iname)`
+    1. 将文件列表里的文件拷贝到工作目录：`for f in self.files: shutil.copy(f, self.work_dir)`
+    2. 将目录列表里的目录拷贝到工作目录：`for d in self.dirs: subprocess.check_call(["cp", "-R", d, self.work_dir])`
+    3. 创建安装脚本`installer.sh`，填充安装脚本模板内容，末尾追加单行文本`PAYLOAD_FOLLOWS`:
+       ```py
+        with open(os.path.join(self.work_dir, 'installer.sh'), "w") as f:
+            f.write(self.template)
+            f.write("PAYLOAD_FOLLOWS\n")
+       ```
+    4. 创建修复文件权限的脚本`autoperms.sh`:
+       ```py
+         with open(os.path.join(self.work_dir, "autoperms.sh"), "w") as f:
+            f.write("#!/bin/sh\n")
+            f.write("set -e\n")
+            f.write("set -x\n")
+       ```
+    5. 切换到工作目录，调用`mkshar`工具生成自解压安装包/最终镜像:
+       ```py
+        cwd = os.getcwd()
+        os.chdir(self.work_dir)
+
+        mkshar = [ os.path.join(self.ONL, 'tools', 'mkshar'),
+                   '--lazy',
+                   '--unzip-pad',
+                   '--fixup-perms', 'autoperms.sh',
+                   name,
+                   os.path.join(self.ONL, 'tools', 'scripts', 'sfx.sh.in'),
+                   'installer.sh',
+                   ] + [ os.path.basename(f) for f in self.files ] + [ os.path.basename(d) for d in self.dirs ]
+
+        subprocess.check_call(mkshar)
+        os.chdir(cwd)
+       ```
+       1. 解析命令: `opts, args = parser.parse_args()`
+       2. 准备一些变量、函数和参数: 
+          - `ZIP`: 压缩工具, `/usr/bin/zip`
+          - `ZIP_OPTS`: 压缩工具参数, `['-v', '-y', '-n', '.zip:.loader:.swi:.jar:.gz:.bz:.bz2:.xz',]`, `-n`表示不压缩带这些后缀的文件。
+          - `ZIP_COMPRESS_OPTS`: 压缩工具压缩选项, `['-8',]` or `['-Z', 'bzip2', '-8',]`(需带`--bzip`参数, 实际上不带, 且这个参数不支持)
+          - `shar`: 输出shar文件的名称, 即镜像名, installer.build(name)中的name, `$(FNAME_PRODUCT_VERSION)_ONL-OS$(DEBIAN_VERSION_ID)_$(FNAME_BUILD_ID)_$(UARCH)_$(BOOTMODE)_INSTALLER`
+          - `sfx`: SFX自解压脚本片段的路径, 即 `tools/scripts/sfx.sh.in`
+          - `install`: 安装脚本的路径, 即 `installer.sh`
+          - `zipFile`: 创建新的临时的压缩包文件, `os.path.abspath(shar + ".zip.in")`, 若已存在则移除
+          - `def _addfile(path, *opts)`: 以更新文件模式添加单个文件到压缩包, 模式：`ZIP_OPTS list(opts) -u `
+          - `def _addfiles(paths, *opts)`: 添加多个文件到压缩包, 模式：`ZIP_OPTS list(opts) `
+       3. 读取SFX自解压脚本的内容存为`buf`，并根据指定的块大小进行填充对齐: `若不是整数block，填充换行符及注释符，若启用参数--unzip-pad(用于内部管理的额外区块)，则额外多加一个block并填充换行符及注释符。实际上是启用了。`
+          ```py
+            # block to 512 bytes
+            buf = open(sfx).read()
+            sz = len(buf)
+            logger.info("script size is %d bytes", sz)
+            rem = sz % opts.blocksize  # remain
+            pad = opts.blocksize - rem
+
+            # extra block for house keeping
+            if opts.unzip_pad:
+               pad = pad + opts.blocksize
+
+            if pad == 1:
+               buf += "\n"
+            elif pad > 1:
+               pad -= 1
+               buf = buf + ('#' * pad) + "\n"
+          ```
+       4. 若启用参数`--unzip-pad`(用于内部管理的额外区块)，创建一个`pad.bin`文件并添加到压缩包`$shar.zip.in`，大小为填充对其后的SFX自解压脚本的大小，内容为多注释符+一个换行符。至此，SFX自解压脚本内容`buf`的长度已固定。
+          ```py
+            if opts.unzip_pad:
+               logger.info("adding SFX pad to beginning as archive item")
+               fd = open("pad.bin", "w")
+               fd.write(('#' * (len(buf)-1)))
+               fd.write('\n')
+               fd.close()
+               _addfile("pad.bin", '-0', '-j')
+               os.unlink("pad.bin")
+          ```
+       5. 添加安装脚本到压缩包`$shar.zip.in`，压缩级别为0，即不压缩而保持源文件: `_addfile(install, '-0')`
+       6. 若传入参数`--fixup-perms`以添加修复文件权限的脚本，添加其到压缩包`$shar.zip.in`，压缩级别为0，即不压缩而保持源文件: `_addfile(opts.fixup_perms, '-0')`
+       7. 添加上述的文件列表及目录列表到压缩包`$shar.zip.in`，压缩级别为8，并跳过ZIP_OPTS设定的某些文件的压缩: `_addfiles(args, *(['-r',] + ZIP_COMPRESS_OPTS))`
+       8. 定义SFX自解压脚本`buf`的变量/参数修改函数:
+          - 定义SFX自解压脚本`buf`中变量(标签)设值函数`_splice`，设值脚本命令`tag=val #`的长度固定为原始内容的单行长度，不足补注释符，所以并不会修改`buf`长度: `def _splice(tag, val)`, tag为变量名
+          - 定义SFX自解压脚本`buf`中变量(标签)设默认值函数`_spliceMaybe`，即若该变量已通过环境变量传入，则使用该值，否则使用默认值；设值脚本命令`tag=${tag-\"val\"} #`的长度固定为原始内容的单行长度，不足补注释符，所以并不会修改`buf`长度: `def _spliceMaybe(tag, val)`, tag为变量名, val为默认值
+       10. 修改SFX自解压脚本`buf`的变量/参数:
+          - 设置自解压脚本Header大小(bytes)`SFX_BYTES`: `_splice('SFX_BYTES', len(buf))`
+          - 设置自解压脚本Header块大小(bytes)`SFX_BLOCKSIZE`（实际上是`512`）: `_splice('SFX_BLOCKSIZE', opts.blocksize)`
+          - 设置自解压脚本安装器文件名`SFX_INSTALL`（实际上是`installer.sh`）: `_splice('SFX_INSTALL', os.path.split(install)[1])`
+          - 设置自解压脚本checksum为空以保留`SFX_CHECKSUM`（实际上是checksum变量所在行以外的数据的checksum）: `_splice('SFX_CHECKSUM', '')`
+          - 设置是否将提取操作延迟至SFX_INSTALL阶段`SFX_LAZY`（为1则是延时，实际上是延时了(`--lazy`)）: `_splice('SFX_LAZY', '1')`
+          - 自解压文件的压缩部分处理:
+            - 优先级1: 若启用unzip工具来处理自解压文件的压缩部分`SFX_UNZIP`（为1则是启用，实际上是**启用**(`--unzip-sfx`)）: `_spliceMaybe('SFX_UNZIP', '1')`
+            - 优先级2: 若启用dd工具来处理自解压文件的压缩部分`SFX_PIPE`（为1则是启用，实际上是没有启用(`--unzip-pipe`)）: `_spliceMaybe('SFX_PIPE', '')`
+            - 优先级3: 若启用losetup工具来处理自解压文件的压缩部分，此解压缩程序能从环回/块设备读取`SFX_LOOP`（为1则是启用，实际上是没有启用(`--unzip-loop`)）: `_spliceMaybe('SFX_LOOP', '')`
+          - 设置跳过解压处理的无实际有效内容的用于文件`SFX_PAD`为`pad.bin`(实际上是设置了`--unzip-pad`): `_splice('SFX_PAD', 'pad.bin')`
+          - 设置权限修复的文件`SFX_PERMS`为`autoperms.sh`: ``
+          - 设置是否启用允许ZIP文件可在原地修改`SFX_INPLACE`（为1则是启用，实际上是没有启用(`--inplace`): `_spliceMaybe('SFX_INPLACE', '')`
+       11. 生成`$shar`自解压安装器: [SFX脚本片段][ZIP文件内容]
+          - 若启用参数`--unzip-pad`:
+            1. 先创建一个包含 ZIP 内容的文件
+            2. 保存 ZIP 文件的第一个块（用于后续恢复）
+            3. 将 SFX 片段写入文件开头，但不会覆盖后面的内容，而是插入。
+            4. 恢复 ZIP 文件的第一个块（覆盖被 SFX 覆盖的部分）
+            ```
+            某些 unzip 版本（尤其是早期或简化版本，如嵌入式系统中的 busybox unzip）对自解压归档（SFX）的头部处理存在兼容性问题，主要体现在对 ZIP 文件格式规范的严格性或灵活性支持不足。--unzip-pad 选项正是为了解决这类问题而设计的，常见的缺陷场景包括：
+              1. 对非 ZIP 格式前缀的不兼容: 标准 ZIP 文件以特定魔术数（PK\x03\x04）开头，而 SFX 归档会在 ZIP 内容前附加一段可执行脚本（SFX 片段）。部分旧版 unzip 无法识别这种 "前缀 + ZIP" 结构，会直接报错 "不是有效的 ZIP 文件"，因为它严格要求文件必须以 ZIP 魔术数开头。--unzip-pad 通过特殊填充和块对齐，让 ZIP 魔术数最终出现在文件的某个块边界（如 512 字节）处，使这些严格的 unzip 版本能 "跳过" 前缀识别到有效的 ZIP 部分。
+              2. 对头部大小超过特定阈值的处理失败: 某些 unzip 实现对 ZIP 内容前的非 ZIP 数据长度有限制（例如超过 1 个块大小就无法处理）。当 SFX 片段较长时，即使格式正确，这些版本也会忽略后续的 ZIP 内容。脚本中通过 pad = pad + opts.blocksize 额外增加一个块的填充，确保 SFX 片段长度符合这些 unzip 版本的预期。
+              3. 对自解压标记（zip -A）的不支持: 标准流程中使用 zip -A 命令给 ZIP 文件添加 "自解压标记"，让 unzip 识别前缀为 SFX 脚本。但部分简化版 unzip 会忽略该标记，直接校验文件开头是否为 ZIP 魔术数，导致无法解压。--unzip-pad 通过手动恢复 ZIP 头部的魔术数（magic 变量），绕开了对 zip -A 标记的依赖，使这些简化版本能直接识别 ZIP 内容。
+            ```
+          - 不启用参数`--unzip-pad`:
+            1. 先写入 SFX 片段内容
+            2. 写入 ZIP 文件内容
+            3. 调整 SFX，让 ZIP 识别自解压头部。使用 zip -A 命令调整归档，即让 ZIP 格式识别前面的 SFX 片段作为自解压头部: `subprocess.check_call([ZIP,] + ZIP_OPTS + ['-A', shar,])`
+          - 计算并写入校验和，确保文件完整性，校验和为`SFX_CHECKSUM=`所在行的前后部分！
+          - 设置 shar 文件为可执行，并清理临时文件
+
+
+
+
+
+
+
+
+### 杂项梳理
+
+#### onl-loader-initrd:$ARCH
+
+**Path**: 
+- packages/base/any/initrds/loader/
+
+
+**该Package由`onl-buildroot-initrd:$ARCH`修改产生，实际上是一个RAM磁盘文件系统**:
+
+1. 解压该包 `onl-buildroot-initrd:$ARCH` 为 `onl-buildroot-initrd-$(ARCH).cpio.gz`
+2. 解压包 `onl-loader-initrd-files:all` 并添加该包的内容到 `onl-buildroot-initrd-$(ARCH).cpio.gz`
+3. 解压所有platform配置包`onl-platform-config-$platform:$ARCH` 并添加该包的内容到 `onl-buildroot-initrd-$(ARCH).cpio.gz`
+4. 解压所有platform配置包直接依赖的vendor配置包`onl-vendor-config-$VENDOR:all` 并添加该包的内容到 `onl-buildroot-initrd-$(ARCH).cpio.gz`
+5. 解压包 `onl-vendor-config-onl:all` 并添加该包的内容到 `onl-buildroot-initrd-$(ARCH).cpio.gz`
+6. 生成清单文件`/etc/onl/loader/manifest.json`并添加到`onl-buildroot-initrd-$(ARCH).cpio.gz`里的相同目录。清单包括：
+   - version: `$(ONL)/make/versions/version-onl.json`里的内容
+   - platforms: `$(shell onlpm --list-platforms --arch $(ARCH))`列表
+   - arch: `$(ARCH)`
+7. 使用`makedevs -d $(ROOT)/etc/rootperms $(abspath $(ROOT)`创建批量指定文件(不是/dev里的设备文件)和一个设备表，如/etc/shadow等，并添加到`onl-buildroot-initrd-$(ARCH).cpio.gz`里的相同目录。表格位于/etc/rootperms。主要是为文件分配所有权和权限。用于初始化RAM磁盘（initrd）或根文件系统，以确保在系统启动时，设备文件具有正确的所有权和权限。
+8. 改`onl-buildroot-initrd-$(ARCH).cpio.gz`为`onl-loader-initrd-$(ARCH).cpio.gz`。
+
+
+**主要文件**:
+
+- builds/onl-loader-initrd-$ARCH.cpio.gz : $$PKG_INSTALL/  # /usr/share/onl/packages/$arch/onl-loader-initrd/
+- builds/manifest.json : $$PKG_INSTALL/
 
 
 ### 总结
