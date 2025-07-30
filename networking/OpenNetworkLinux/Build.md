@@ -689,7 +689,7 @@ aiden@Xuanfq:~/workspace/onl/build$
          --arch $(ARCH) \
          --boot-config ../boot-config \
          --add-dir ../config \
-         --initrd onl-loader-initrd:$(ARCH) onl-loader-initrd-$(ARCH).cpio.gz \
+         --initrd onl-loader-initrd:$(ARCH) onl-loader-initrd-$(ARCH).cpio.gz \  # Uboot 为 --fit onl-loader-fit:$(ARCH) onl-loader-fit.itb \
          --swi onl-swi:$(ARCH) \
          --preinstall-script $(ONL)/builds/any/installer/sample-preinstall.sh \
          --postinstall-script $(ONL)/builds/any/installer/sample-postinstall.sh \
@@ -707,8 +707,8 @@ aiden@Xuanfq:~/workspace/onl/build$
          clean:
             rm -rf $(WORK_DIR)
          ```
-         1. 编译`installed/`: boot mode = installed , BOOTMODE=INSTALLED
-         2. 编译`swi/`: boot mode = swi , BOOTMODE=SWI
+         1. 编译`installed/`: boot mode = installed , BOOTMODE=INSTALLED , Refer: `mkinstaller.py`
+         2. 编译`swi/`: boot mode = swi , BOOTMODE=SWI , Refer: `mkinstaller.py`
 
 
 
@@ -1619,7 +1619,7 @@ aiden@Xuanfq:~/workspace/onl/build$
 8. 在工作目录创建`tmp/`目录以及`tmp/plugins/`插件目录。
 9. 若传入参数`--preinstall-script`以指定镜像安装的前置钩子脚本，则拷贝到tmp/目录，命名成`preinstall.sh`，并添加到文件列表（实际上指定了`$(ONL)/builds/any/installer/sample-preinstall.sh`）：`installer.add_file_as(ops.preinstall_script, "preinstall.sh")`
 10. 若传入参数`--postinstall-script`以指定镜像安装的后置钩子脚本，则拷贝到tmp/目录，命名成`postinstall.sh`，并添加到文件列表（实际上指定了`$(ONL)/builds/any/installer/sample-postinstall.sh`）：`installer.add_file_as(ops.postinstall_script, "postinstall.sh")`
-11. 若传入参数`--plugin`以添加一个或多个插件，则拷贝到tmp/plugins/目录下并重命名为唯一名以防止重复，命名工作为文件后缀前添加-$random，并将插件目录添加到目录列表（实际上添加了上述的前后置钩子脚本）：
+11. 若传入参数`--plugin`以添加一个或多个插件，则拷贝到tmp/plugins/目录下并重命名为唯一名以防止重复，命名工作为文件后缀前添加-$random，并将插件目录添加到目录列表（实际上添加了有别于上述的前后置钩子脚本，`sample-postinstall.py` & `sample-preinstall.py`，这是python）：
     ```py
     for plugin in ops.plugin:
       basename = os.path.split(plugin)[1]

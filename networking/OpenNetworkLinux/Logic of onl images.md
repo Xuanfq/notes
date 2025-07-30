@@ -2,16 +2,53 @@
 
 ## 制作和安装逻辑
 
+### 制作
+
+Reference: [Build.md](./Build.md)
 
 
+### Image结构
+
+**解压Image**: `./ONL-master_ONL-OS10_2025-06-28.1721-28f52e6_AMD64_INSTALLED_INSTALLER -x "" ""`
+
+```log
+aiden@Xuanfq:/tmp/tmp.t9G9fw3xWe$ ./ONL-master_ONL-OS10_2025-06-28.1721-28f52e6_AMD64_INSTALLED_INSTALLER -x " " ""
+ONL-master_ONL-OS10_2025-06-28.1721-28f52e6_AMD64_INSTALLED_INSTALLER: computing checksum of original archive
+ONL-master_ONL-OS10_2025-06-28.1721-28f52e6_AMD64_INSTALLED_INSTALLER: checksum is OK
+ONL-master_ONL-OS10_2025-06-28.1721-28f52e6_AMD64_INSTALLED_INSTALLER: extracting pad
+1+0 records in
+1+0 records out
+512 bytes copied, 4.73e-05 s, 10.8 MB/s
+ONL-master_ONL-OS10_2025-06-28.1721-28f52e6_AMD64_INSTALLED_INSTALLER: copying file before resetting pad
+ONL-master_ONL-OS10_2025-06-28.1721-28f52e6_AMD64_INSTALLED_INSTALLER: resetting pad
+1+0 records in
+1+0 records out
+512 bytes copied, 5.0325e-05 s, 10.2 MB/s
+ONL-master_ONL-OS10_2025-06-28.1721-28f52e6_AMD64_INSTALLED_INSTALLER: processing with zip
+ONL-master_ONL-OS10_2025-06-28.1721-28f52e6_AMD64_INSTALLED_INSTALLER: correcting permissions with autoperms.sh
+```
 
 
+**Structure**:
 
-
-
-
-
-
+- config/
+  - README
+- plugins/
+  - sample-preinstall-Mvjcxq.py
+  - sample-postinstall-lSta2D.py
+- boot-config
+- kernel-3.16-lts-x86_64-all
+- kernel-4.14-lts-x86_64-all
+- kernel-4.19-lts-x86_64-all
+- kernel-5.4-lts-x86_64-all
+- kernel-4.9-lts-arm64-all.bin.gz (arm64)
+- ONL-master_ONL-OS10_2025-06-28.1721-28f52e6_AMD64.swi
+- onl-loader-initrd-amd64.cpio.gz (x86)
+- onl-loader-fit.itb (arm)
+- postinstall.sh
+- preinstall.sh
+- autoperms.sh
+- installer.sh
 
 
 
