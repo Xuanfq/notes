@@ -46,10 +46,10 @@ ONL-master_ONL-OS10_2025-06-28.1721-28f52e6_AMD64_INSTALLED_INSTALLER: correctin
 - ONL-master_ONL-OS10_2025-06-28.1721-28f52e6_AMD64.swi
 - onl-loader-initrd-amd64.cpio.gz (x86)
 - onl-loader-fit.itb (arm)
-- postinstall.sh
-- preinstall.sh
+- postinstall.sh  <-  sample-postinstall.sh
+- preinstall.sh  <-  sample-preinstall.sh
 - autoperms.sh
-- installer.sh  -> installer-XXXXXX
+- installer.sh  -> installer-XXXXXX  <-  installer.sh.in
 
 
 
@@ -63,7 +63,8 @@ ONL-master_ONL-OS10_2025-06-28.1721-28f52e6_AMD64_INSTALLED_INSTALLER: correctin
 
 2. 初始化和架构检查阶段: 
    1. 比对预设的安装器架构`IARCH` 以及 onie环境的架构`uname -m`，根据架构设置其中之一变量`ARCH_PPC=$ARCH;ARCH_X86=$ARCH;ARCH_ARM=$ARCH`
-   2. 初始化常用变量
+   2. 初始化常用变量: 
+      - installer_dir=${0%/*}, `installer.sh/install-XXXXXX`脚本所在目录
 3. 环境检测和设置阶段: 
    1. 检查`grub`或`uboot`环境变量是否存在`onl_installer_debug`，若有则设置为debug模式: `set -x`
    2. 根据onie环境设置变量，若已存在于环境变量则跳过，无则通过`onie-sysinfo`获取，最者用onie的`. /etc/machine.conf`设置: 
@@ -73,12 +74,12 @@ ONL-master_ONL-OS10_2025-06-28.1721-28f52e6_AMD64_INSTALLED_INSTALLER: correctin
       1. 日志输出方式：`installer_say`, onie为`echo "$@" > /dev/console;`, 其他为`echo "* $@";`
       2. 安装结束后的清理方法: `installer_cleanup`, onie下需要重启
 4. 临时文件系统准备阶段: 查找或创建临时文件系统，导出临时文件系统目录`TMPDIR`
-5. 安装包解压阶段:
+5. 安装包解压阶段: 提取ram根文件系统
    1. 定义解压函数，根据不同情况选择解压方式，解压的文件到当前目录，同时排除SFX_PAD(pad.bin)的解压: `installer_unzip`
-   2. 执行解压，提取ram根文件系统`$initrd_archive`: `installer_unzip $installer_zip $installer_list`
+   2. 执行解压，提取ram根文件系统`$initrd_archive`: `installer_unzip $installer_zip $initrd_archive`
    3. 检查`grub`或`uboot`环境变量是否存在`onl_installer_unpack_only`，若有则设置为仅unpack模式，由于已完成解压，直接退出退出 
 6. 根文件系统准备阶段: 
-   1. 创建根目录: `initrd-XXXXXX`
+   1. 创建根目录(临时文件夹，占用的是RAM内存): `rootdir=$(mktemp -d -t "initrd-XXXXXX")`
    2. 根据uboot/x86中的initrd.cpio.gz/fit.itb差异，即是否存在$initrd_offset，来提取真实根文件系统
    3. 解压根文件系统到到根目录
    4. 加载安装脚本的函数库: `. "${rootdir}/lib/vendor-config/onl/install/lib.sh"`
@@ -117,10 +118,36 @@ ONL-master_ONL-OS10_2025-06-28.1721-28f52e6_AMD64_INSTALLED_INSTALLER: correctin
             3. 复制 ONL（Open Network Linux）相关配置: `cp -a /etc/onl/. "${rootdir}/etc/onl/."`
             4. 复制固件环境配置（用于访问硬件固件的配置，如 flash 分区）: `cp /etc/fw_env.config "${rootdir}/etc/fw_env.config"`
 7. 挂载点和配置准备阶段: 
+   1. 创建根文件系统安装器目录: `mkdir -p "${rootdir}/mnt/installer"`
+   2. 挂载安装器所在目录到根文件系统安装器目录(只读): `mount -o ro,bind "${installer_dir}" "${rootdir}/mnt/installer"`
+   3. 确保onie-boot已挂载到宿主机，若未挂载，尝试挂载，失败则跳过。若挂载正常，将其挂载到根文件系统rootdir相对同一位置(只读): `mount -o ro,bind "/mnt/onie-boot" "${rootdir}/mnt/onie-boot"`
+   4. 创建安装器环境的相关配置文件: `${rootdir}/etc/onl/installer.conf`
+      1. onl_version="$onl_version"
+      2. onie_platform=$onie_platform
+      3. onie_arch=$onie_arch
+      4. installer_md5="$installer_md5"
+      5. installer_zip="${installer_zip##*/}"
+      6. installer_dir=/mnt/installer
+      7. installer_url=\"$installer_url\" (if test -f "$0.url")
+      8. initrd_archive=\"$initrd_archive\" (arm)
+      9. initrd_offset=\"$initrd_offset\" (arm)
+      10. initrd_size=\"$initrd_size\" (arm)
+      11. installer_chroot=\"${rootdir}\"
+      12. installer_postinst=\"/mnt/installer/$(mktemp -t postinst-XXXXXX)\" (好像没啥用, set -x; . "$postinst"; set +x)
+   5. 设置主安装脚本`installer_shell`: `installer_shell=${installer_shell-"/usr/bin/onl-install --force"}`，由此，`可通过环境变量installer_shell进行debug和设置安装脚本`。若为默认主安装脚本`/usr/bin/onl-install --force`，取消挂载`/mnt/*|/boot/*`
 8. 预安装阶段: 
-9. 主安装阶段: 
+   1. 从压缩包中提取前置安装脚本`preinstall.sh`: `installer_unzip $installer_zip preinstall.sh`
+   2. 赋予执行权限并传入根文件系统目录$rootdir运行前置安装脚本`preinstall.sh`: `./preinstall.sh $rootdir`
+9.  主安装阶段: 
+   1. 检测和简单修复 GPT（GUID 分区表）分区表错误，从ESP_DEVICE、GRUB_DEVICE、ONIE_DEVICE依次找出可用的GPT分区，检查是否需要修复，若需要则通过备份和恢复备份的方式简单修复: `installer_fixup_gpt`; `sgdisk -b "$dat" "$dev"; sgdisk -l "$dat" "$dev" || return 1`
+   2. 以chroot的方式执行主安装脚本: `chroot "${rootdir}" $installer_shell`, 实际上是`/usr/bin/onl-install --force`, 也即`packages/base/all/vendor-config-onl/src/python/onl/install/App.py`!
 10. 后安装阶段:
+   1. 执行上诉创建的配置文件的installer_postinst项(无实际内容): `set -x; . "$postinst"; set +x`
+   2. 从压缩包中提取后置安装脚本`postinstall.sh`: `installer_unzip $installer_zip postinstall.sh`
+   3. 赋予执行权限并传入根文件系统目录$rootdir运行后置安装脚本`postinstall.sh`: `./postinstall.sh $rootdir`
 11. 清理和重启阶段: 
+   1. 清理资源: `trap - 0 1; installer_umount`
+   2. 重启系统: `installer_reboot $installer_wait`, 3秒或30秒(debug)重启，可中断。
 
 
 
