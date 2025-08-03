@@ -43,7 +43,9 @@ ONL-master_ONL-OS10_2025-06-28.1721-28f52e6_AMD64_INSTALLED_INSTALLER: correctin
 - kernel-4.19-lts-x86_64-all
 - kernel-5.4-lts-x86_64-all
 - kernel-4.9-lts-arm64-all.bin.gz (arm64)
-- ONL-master_ONL-OS10_2025-06-28.1721-28f52e6_AMD64.swi
+- ONL-master_ONL-OS10_2025-06-28.1721-28f52e6_AMD64.swi (.zip)
+  - rootfs-$(ARCH).sqsh (initrd, squashfs, readonly filesystem)
+  - manifest.json (os-release, platforms, version)
 - onl-loader-initrd-amd64.cpio.gz (x86)
 - onl-loader-fit.itb (arm)
 - postinstall.sh  <-  sample-postinstall.sh
@@ -201,7 +203,7 @@ ONL-master_ONL-OS10_2025-06-28.1721-28f52e6_AMD64_INSTALLED_INSTALLER: correctin
             9. 纠正/重新设置 GRUB BOOT 配置所在分区: 将 `grubEnv` 里的 `bootPart` 设为 `ONL-BOOT`，`bootDir`设为None以防止冲突。
             10. 安装 swi 交换机镜像到`ONL-IMAGES`分区: `installSwi()`
                - 优先从`installerConf.installer_dir`获取.swi, 其次压缩包，实际是压缩包。不允许有多个swi文件。
-            11. 安装 kernel & initrd 到`ONL-BOOT`分区: `installLoader()`
+            11. 安装 kernel & initrd (此处initrd仅用于引导) 到`ONL-BOOT`分区: `installLoader()`
                 - 查找kernel，即所有带`kernel`关键字的文件名的文件。
                 - 查找initrd，匹配`sysconfig.installer.grub`里的`[$PLATFORM.cpio.gz, onl-loader-initrd-amd64.cpio.gz]`注意次序，仅匹配一个。**可以通过此处为平台定制化initrd**。`sysconfig.installer.grub`的文件来源是`/etc/onl/sysconfig`(packages/base/all/vendor-config-onl/src/etc/onl/sysconfig/00-defaults.yml)以及`/mnt/onl/config/sysconfig`(安装时查无此文件)
                 - 查找过程中优先从`installerConf.installer_dir`获取kernel或initrd, 其次压缩包，实际是压缩包。

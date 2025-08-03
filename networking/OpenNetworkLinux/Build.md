@@ -662,7 +662,7 @@ aiden@Xuanfq:~/workspace/onl/build$
          clean:
             rm -rf $(SWI_WORKDIR)
          ```
-         `swi`实际上是`Switch Image`，由rootfs制作时生成的`rootfs-$(ARCH).sqsh`和`manifest.json`组合成**ZIP**归档。
+         `swi`实际上是`Switch Image`，由rootfs制作时生成的`rootfs-$(ARCH).sqsh`(squashfs,压缩的只读文件系统)和`manifest.json`组合成**ZIP**归档。
       3. 编译`installer`: `$(ONL_MAKE) -C builds/$arch/installer/ $(MAKECMDGOALS)` ---实际上--> `include $(ONL)/make/pkg.mk`
          ```makefile
          BOOTMODE=SWI
@@ -1777,8 +1777,16 @@ aiden@Xuanfq:~/workspace/onl/build$
 
 **主要文件**:
 
-- builds/onl-loader-initrd-$ARCH.cpio.gz : $$PKG_INSTALL/  # /usr/share/onl/packages/$arch/onl-loader-initrd/
-- builds/manifest.json : $$PKG_INSTALL/
+- builds/onl-loader-initrd-$ARCH.cpio.gz : $$PKG_INSTALL/  # deb: /usr/share/onl/packages/$arch/onl-loader-initrd/
+- builds/manifest.json : $$PKG_INSTALL/                    # deb: /usr/share/onl/packages/$arch/onl-loader-initrd/
+
+
+#### *.swi
+
+**原理**: `swi`实际上是`Switch Image`，由rootfs制作时生成的`rootfs-$(ARCH).sqsh`(squashfs,压缩的只读文件系统)和`manifest.json`组合成**ZIP**归档。
+
+**说明**: 该`rootfs-$(ARCH).sqs`才是系统实际使用的`initrd`，`onl-loader-initrd-$ARCH.cpio.gz`是用于引导设置真实的`initrd`。
+
 
 
 ### 总结
