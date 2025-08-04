@@ -28,8 +28,11 @@
       - platform-config/    # 实现package：`onl-platform-config-%(platform)s`
         - r0/
           - src/
-            - lib/
-            - python/
+            - lib/            # Mapping `src/lib: /lib/platform-config/$PLATFORM/onl/`
+              - x86-64-machinename-r0.yml         # `$platform.yml`
+            - python/         # Mapping `src/python : ${PY_INSTALL}/onl/platform/`
+              - x86_64_machinename_r0\            # `$platform.replace('-','_').replace('.','_')`
+                - __init__.py                     # `class OnlPlatform_$platform.replace('-','_').replace('.','_')`
             - Makefile        # `include $(ONL)/make/pkg.mk`
             - PKG.yml         # `!include $ONL_TEMPLATES/platform-config-platform.yml ARCH=amd64 VENDOR=kvm BASENAME=x86-64-machinename1 REVISION=r0`
           - Makefile        # `include $(ONL)/make/pkg.mk`
@@ -53,8 +56,8 @@
 ## Dependency
 
 - `onl-rootfs`
-  - `onlp-%(platform)s` (packages/platforms/$vendor/$arch/$machinename/onlp/) [onl-platform-pkgs.py $PLATFORM_LIST]
-  - `onl-platform-config-%(platform)s`  (packages/platforms/$vendor/$arch/$machinename/platform-config/r0/) [onl-platform-pkgs.py $PLATFORM_LIST]
+  - `onlp-%(platform)s` (packages/platforms/$vendor/$arch/$machinename/onlp/) [standard.yml][onl-platform-pkgs.py $PLATFORM_LIST]
+  - `onl-platform-config-%(platform)s`  (packages/platforms/$vendor/$arch/$machinename/platform-config/r0/) [standard.yml][onl-platform-pkgs.py $PLATFORM_LIST]
     - `onl-vendor-config-$VENDOR(:all)` (packages/platforms/$vendor/vendor-config/)
       - `onl-vendor-config-onl(:all)` (packages/base/all/vendor-config-onl/)
         - `onl-bootd(:all)` (packages/base/all/boot.d/)
@@ -62,7 +65,7 @@
       - `$KERNELS` (onl-kernel-5.4-lts-x86-64-all(:amd64))
       - `onl-vendor-${VENDOR}-modules(:$ARCH)`  (packages/platforms/$vendor/$arch/modules/)
         - `$KERNELS` (onl-kernel-5.4-lts-x86-64-all(:amd64))
-  - `onl-upgrade`(amd64) (packages/base/amd64/upgrade/) [amd64-onl-packages.yml]
+  - `onl-upgrade`(amd64) (packages/base/amd64/upgrade/) [standard.yml][amd64-onl-packages.yml]
     - `onl-kernel-3.16-lts-x86-64-all:amd64` (packages/base/amd64/kernels/kernel-3.16-lts-x86-64-all/)
     - `onl-kernel-4.9-lts-x86-64-all:amd64` (packages/base/amd64/kernels/kernel-4.9-lts-x86-64-all/)
     - `onl-kernel-4.14-lts-x86-64-all:amd64` (packages/base/amd64/kernels/kernel-4.14-lts-x86-64-all/)
@@ -71,23 +74,120 @@
     - `onl-loader-initrd:amd64` (packages/base/amd64/initrds/loader/)
       - `onl-buildroot-initrd:$ARCH` (packages/base/any/initrds/buildroot/)
       - `onl-loader-initrd-files:all` (packages/base/all/initrds/loader-initrd-files/)
-  - `onl-loader-fit`(arm64|armel|armhl|powerpc) (packages/base/$arch/fit/loader/) [$arch-onl-packages.yml]
+  - `onl-loader-fit`(arm64|armel|armhl|powerpc) (packages/base/$arch/fit/loader/) [standard.yml][$arch-onl-packages.yml]
     - `onl-loader-initrd:$ARCH` (packages/base/$arch/initrds/loader/)
       - `onl-buildroot-initrd:$ARCH` (packages/base/any/initrds/buildroot/)
       - `onl-loader-initrd-files:all` (packages/base/all/initrds/loader-initrd-files/)
-  - `onlp` (packages/base/$arch/onlp) [all-base-packages.yml]
-  - `onl-faultd` (packages/base/$arch/faultd) [all-base-packages.yml]
-  - `onlp-snmpd` (packages/base/$arch/onlp-snmpd) [all-base-packages.yml]
-  - `onl-mibs` (packages/base/all/onl-mibs) [all-base-packages.yml]
-  - `oom-shim` (packages/base/$arch/oom-shim) [all-base-packages.yml]
+  - `onlp` (packages/base/$arch/onlp) [standard.yml][all-base-packages.yml]
+  - `onl-faultd` (packages/base/$arch/faultd) [standard.yml][all-base-packages.yml]
+  - `onlp-snmpd` (packages/base/$arch/onlp-snmpd) [standard.yml][all-base-packages.yml]
+  - `onl-mibs` (packages/base/all/onl-mibs) [standard.yml][all-base-packages.yml]
+  - `oom-shim` (packages/base/$arch/oom-shim) [standard.yml][all-base-packages.yml]
 
 
 **Notice**: 
 - 非amd64，即`onl-loader-fit`时，没有依赖于内核，内核依赖将在`onl-platform-config-%(platform)s:all`包里的配置`lib/$platform.yml`以及`onl-vendor-config-onl:all`包里的配置`lib/platform-config-defaults-$(x86-64|uboot).yml`处的`kernel`字段完成指定。在**onl-loader-fit制作阶段**完成内核编译，Ref: `tools/flat-image-tree.py`。
+- 非直属的由[standard.yml]引用的Package不会被安装到rootfs上。若platform需要安装一些其他的自定义的Package的文件，可通过以下方法:
+  - 通过`onl-platform-config-%(platform)s`的文件映射描述里添加，直接拷贝相关文件到rootfs。
+  - 通过`PKG.yml`里的`packages.depends`设置依赖包，安装时会自动安装这些依赖包，可以是网络的，也可以是本地。本地最好通过`prerequisites.packages`引用进行预先编译。
 
 
 
 ## Implementation
+
+
+### misc
+
+#### install plugins of platform customization
+
+
+**插件实现原理**: `${PY_INSTALL}/onl/install/plugins/*.py`
+
+- 核心是把该插件通过ONL Package的规则安装到文件系统initrd的`${PY_INSTALL}/onl/install/plugins/*.py`
+- 具体安装逻辑参照: [Logic of onl images](./Logic%20of%20onl%20images.md), 位于"**可以通过此处为平台添加插件**"附近。
+
+
+**插件内容参考**: `builds/any/installer/sample-(postinstall|preinstall).py`
+
+```py
+import onl.install.Plugin
+
+class Plugin(onl.install.Plugin.Plugin):
+    def run(self, mode):
+        if mode == self.PLUGIN_POSTINSTALL:
+            self.log.info("hello from postinstall plugin")
+            if self.installer.im.installerConf.installer_platform == 'x86-64-machinename-r0':
+              # add your need here!
+              pass
+            return 0
+        elif mode == self.PLUGIN_PREINSTALL:
+            self.log.info("hello from preinstall plugin")
+            if self.installer.im.installerConf.installer_platform == 'x86-64-machinename-r0':
+              # add your need here!
+              pass
+            return 0
+        return 0
+```
+
+
+**插件接口参考**: `packages/base/all/vendor-config-onl/src/python/onl/install/Plugin.py`
+
+```py
+class Plugin(object):
+
+    PLUGIN_PREINSTALL = "preinstall"
+    PLUGIN_POSTINSTALL = "postinstall"
+
+    def __init__(self, installer):
+        # installer is GrubInstaller or UbootInstaller
+        # refer to packages/base/all/vendor-config-onl/src/python/onl/install/BaseInstall.py
+        self.installer = installer
+        self.log = self.installer.log.getChild("plugin")
+
+    def run(self, mode):
+
+        if hasattr(self, mode):
+            return getattr(self, mode)()
+
+        if mode == self.PLUGIN_PREINSTALL:
+            self.log.warn("pre-install plugin not implemented")
+            return 0
+
+        if mode == self.PLUGIN_POSTINSTALL:
+            self.log.warn("post-install plugin not implemented")
+            return 0
+
+        self.log.warn("invalid plugin mode %s", repr(mode))
+        return 1
+
+    def shutdown(self):
+        pass
+```
+
+
+
+**Notice**: 若是平台特定的，应在实现过程中匹配到对应平台再执行。
+
+
+
+#### kernel of platform customization
+
+
+Reference Below: `src/lib/$platform.yml`
+
+
+
+#### initrd of platform customization
+
+
+**initrd实现原理**: `packages/base/all/vendor-config-onl/src/etc/onl/sysconfig/00-defaults.yml`中的installer.grub.`$PLATFORM.cpio.gz|.itb`, $PLATFORM=onlPlatform().platform(), e.g. x86-64-machinename-r0
+
+- 该处自定义的平台特定initrd有别于`onl-loader-initrd-files:all`中的initrd，即有别于安装环境的initrd(使用chroot)。安装环境的initrd不能更改，这可能会导致很大区别，这个要特别注意！
+- `00-defaults.yml`(initrd上是`/etc/onl/sysconfig`)能通过`/mnt/onl/config/sysconfig`进行覆盖，该文件没有实现，可以自定义！
+- 具体安装逻辑参照: [Logic of onl images](./Logic%20of%20onl%20images.md), 位于"**可以通过此处为平台定制化initrd**"附近。
+
+
+
 
 
 
@@ -167,6 +267,17 @@ packages:
 - `packages/base/all/vendor-config-onl/src/lib/platform-config-defaults-uboot.yml`: powerpc, arm
 
 
+**用于自定义内核版本**:
+
+1. 修改配置中的`kernel`，根据以下的配置作为参考(platform-config-defaults-x86-64.yml):
+```yml
+    kernel:
+      =: kernel-6.4-lts-x86_64-all
+      package: onl-kernel-6.4-lts-x86-64-all:amd64
+```
+2. 在机器目录下参考onl的kernel实现方式，自定义内核deb包及其编译方式: `onl-kernel-6.4-lts-x86-64-all:amd64`
+
+
 **加载方式**:
 
 ```python
@@ -233,12 +344,145 @@ x86-64-machinename-r0:
   - ONL-DATA:
       =: 3GiB
       format: ext4
+  # 'GiB' : 1024 * 1024 * 1024,
+  # 'G' : 1000 * 1000 * 1000,
+  # 'MiB' : 1024 * 1024,
+  # 'M' : 1000 * 1000,
+  # 'KiB' : 1024,
+  # 'K' : 1000,
+  # 也可以用100%，代表剩下的所有空间
 
   ##network:
   ##  interfaces:
   ##    ma1:
   ##      name: ~
   ##      syspath: pci0000:00/0000:00:14.0
+```
+
+
+**platform-config-defaults-x86-64.yml**:
+```yml
+default:
+
+  grub:
+
+    label: gpt
+    # default, use a GPT (not msdos) label
+    # this is mostly to *reject* invalid disk labels,
+    # since we will never create our own
+
+    kernel-3.2: &kernel-3-2
+      =: kernel-3.2-lts-x86_64-all
+      package: onl-kernel-3.2-lts-x86-64-all:amd64
+
+    kernel-3.16: &kernel-3-16
+      =: kernel-3.16-lts-x86_64-all
+      package: onl-kernel-3.16-lts-x86-64-all:amd64
+
+    kernel-4.9: &kernel-4-9
+      =: kernel-4.9-lts-x86_64-all
+      package: onl-kernel-4.9-lts-x86-64-all:amd64
+
+
+    kernel-4.14: &kernel-4-14
+      =: kernel-4.14-lts-x86_64-all
+      package: onl-kernel-4.14-lts-x86-64-all:amd64
+
+    kernel-4.19: &kernel-4-19
+      =: kernel-4.19-lts-x86_64-all
+      package: onl-kernel-4.19-lts-x86-64-all:amd64
+
+    kernel-5.4: &kernel-5-4
+      =: kernel-5.4-lts-x86_64-all
+      package: onl-kernel-5.4-lts-x86-64-all:amd64
+
+    # pick one of the above kernels
+    kernel:
+      <<: *kernel-3-16
+
+    # GRUB command line arguments for 'serial' declaration
+    # this is equivalent to, but not in the same format as,
+    # the linux 'console=' arguments below
+    # Default for ttyS1
+    serial: >-
+      --port=0x2f8
+      --speed=115200
+      --word=8
+      --parity=no
+      --stop=1
+
+    # supplemental kernel arguments
+    # (not including kernel, initrd and ONL-specific options)
+    # Default for ttyS1
+    args: >-
+      nopat
+      console=ttyS1,115200n8
+
+    ### Defaults for ttyS0
+    ##serial: >-
+    ##  --port=0x3f8
+    ##  --speed=115200
+    ##  --word=8
+    ##  --parity=no
+    ##  --stop=1
+    ##args: >-
+    ##  nopat
+    ##  console=ttyS0,115200n8
+
+    ##device: /dev/vda
+    ### install to a specific block device
+
+    device: ONIE-BOOT
+    # install to the device that contains the ONIE-BOOT partition
+    # (query using parted and/or blkid)
+
+  # Default partitioning scheme
+  # boot, config --> 128MiB
+  # images --> 1GiB
+  # data --> rest of disk
+  # default format (as shown) is ext4
+  # 'GiB' : 1024 * 1024 * 1024,
+  # 'G' : 1000 * 1000 * 1000,
+  # 'MiB' : 1024 * 1024,
+  # 'M' : 1000 * 1000,
+  # 'KiB' : 1024,
+  # 'K' : 1000,
+  installer:
+  - ONL-BOOT:
+      =: 128MiB
+      format: ext4
+  - ONL-CONFIG:
+      =: 128MiB
+      format: ext4
+  - ONL-IMAGES:
+      =: 1GiB
+      format: ext4
+  - ONL-DATA:
+      =: 100%
+      format: ext4
+
+  ### Sample partitioning scheme experiencing disk space pressure
+  ##installer:
+  ##- ONL-BOOT: 128MiB
+  ##- ONL-CONFIG: 128MiB
+  ##- ONL-IMAGES: 384MiB
+  ##- ONL-DATA: 100%
+
+  network:
+
+    # remap interface names on boot (loader only)
+    # make sure you have a valid 'ma1' entry in your platform config...
+
+    interfaces:
+
+      # this should work for most systems
+      ma1:
+        name: eth0
+
+      # for other wierd corner cases
+      ##ma1:
+      ##  name: ~
+      ##  syspath: SOME-PATH
 ```
 
 
@@ -358,7 +602,7 @@ class OnlPlatformKVM(OnlPlatformBase):
 
 
 
-### modules
+### modules (Vendor's or Platform's)
 
 ```markdown
 - modules/            # 实现package：`onl-platform-modules-$BASENAME(:$ARCH)`
