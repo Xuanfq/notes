@@ -41,8 +41,44 @@ onl启动逻辑
 
 
 
+## Loader 步骤概述 - 引导进入真实的文件系统环境
 
-## 步骤概述
+1. /etc/inittab (packages/base/all/initrds/loader-initrd-files/src/etc/inittab)
+   1. `::sysinit:/bin/sysinit`: 系统初始化 (在运行 /bin/sysinit 这个系统初始化程序时，不给他分配 “控制终端”（controlling tty）。这样一来，用户就无法通过 “作业控制”（比如 Linux 中的Ctrl+Z暂停进程、bg后台运行等操作）来绕过密码验证等安全机制。)
+      1. 输出重定向控制及设置**退出后恢复输出及强制重启**:
+         1. 将标准输出和错误重定向到/tmp/sysinit.out文件
+         2. 设置退出陷阱，确保脚本退出时*恢复输出*并*强制重启*
+      2. 文件系统挂载:
+         1. mount -t proc proc /proc
+         2. mount -t sysfs sysfs /sys
+         3. -d /sys/firmware/efi/efivars && (modprobe efivarfs || :) && mount -t efivarfs efivarfs /sys/firmware/efi/efivars
+         4. mount -o remount,size=1M /dev
+         5. 检查/tmp目录的文件系统类型，如果不是tmpfs或ramfs，就将其重新挂载为tmpfs: mount -t tmpfs tmpfs /tmp
+      3. 初始化随机数生成器(RNG): python /bin/initrng.py . 通过收集系统中的熵源信息并将其注入到系统的随机数池中，以提高系统随机数的质量。
+      4. 内核命令行参数处理: 提取以`onl_`开头的参数（如onl_param1）并保存到`/etc/onl/`参数目录（如/etc/onl/param1），主要参数是:
+         1. `onl_platform`: machineConf['onie_platform'].replace('_', '-').replace('.', '-')
+         2. nopat console=ttyS0,115200n8: from platform-config-defaults-(x86-64|uboot).yml or platform.yml
+      5. 平台检测和初始化: `. /lib/platform-detect`
+         1. 若没有配置需要运行的平台`/etc/onl/platform`(platform="$(cat /etc/onl/platform)")，启动自动检查流程:
+            1. 检测`/lib/platform-config`下所有`detect0.sh`，依次运行直到运行后存在需要运行的平台的配置`/etc/onl/platform`才不再往下检测。
+            2. 检测`/lib/platform-config`下所有`detect.sh`，同上
+            3. 检测`/lib/platform-config`下所有`detect1.sh`，同上
+            4. 上述检查都没有生成`/etc/onl/platform`则配置为未知平台`echo "unknown" > /etc/onl/platform`
+         2. 创建空文件`/etc/onl/block`
+         3. 检测是否存在`/etc/onl/platform`中配置的平台的配置目录`/lib/platform-config/${platform}`
+            1. 若存在，则检测平台的配置目录中是否存在启动配置`/lib/platform-config/${platform}/onl/boot/${platform}`，若有，则以加载库的形式加载: `. /lib/platform-config/${platform}/onl/boot/${platform}`
+            2. 不存在，则输出不支持平台的log信息到`/etc/onl/abort`文件。
+      6. 
+   2. `::wait:-/bin/aumount -t sysfs sysfs /systoboot`: 若上述`sysinit`失败或被中断，尝试自动启动，如果用户中断则进入下一步启动shell。 （-表示就算进入失败也能正常运行后续）
+   3. `::wait:-/bin/login`: 若上述`sysinit`及`autoboot`失败了，此处可进入shell登录提示。
+   4. `::wait:/bin/umount -a -r`: 卸载所有文件系统（-a选项），卸载失败则尝试以只读方式重新挂载。
+   5. `::wait:/sbin/reboot -f`: 强制重启系统
+   6. `::restart:/bin/switchroot`: 当init进程收到SIGHUP或SIGQUIT信号时
+
+
+
+
+## RealFS 步骤概述 - 真实的文件系统环境
 
 1. /etc/inittab (builds/any/rootfs/$debian-name/sysvinit/overlay/etc/inittab): inittab为系统的PID=1的进程，决定这系统启动调用哪些启动脚本文件
    1. `id:2:initdefault:`: 设置默认运行级别为2，即多用户模式（立即生效）
