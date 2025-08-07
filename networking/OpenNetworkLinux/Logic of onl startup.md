@@ -68,9 +68,74 @@ onl启动逻辑
          3. 检测是否存在`/etc/onl/platform`中配置的平台的配置目录`/lib/platform-config/${platform}`
             1. 若存在，则检测平台的配置目录中是否存在启动配置`/lib/platform-config/${platform}/onl/boot/${platform}`，若有，则以加载库的形式加载: `. /lib/platform-config/${platform}/onl/boot/${platform}`
             2. 不存在，则输出不支持平台的log信息到`/etc/onl/abort`文件。
-      6. 
-   2. `::wait:-/bin/aumount -t sysfs sysfs /systoboot`: 若上述`sysinit`失败或被中断，尝试自动启动，如果用户中断则进入下一步启动shell。 （-表示就算进入失败也能正常运行后续）
-   3. `::wait:-/bin/login`: 若上述`sysinit`及`autoboot`失败了，此处可进入shell登录提示。
+      6. 若平台检测成功: `if [ ! -f /etc/onl/abort ];`
+         1. 初始化设备:
+            1. 设置mdev作为热插拔管理器: `echo /sbin/mdev >/proc/sys/kernel/hotplug`
+            2. 初始化网络设备: `cd /sys/class/net; for d in *; do initnetdev $d add; done`
+               1. 遍历所有`/sys/class/net/`下的设备名`name`或`syspath`，看是否匹配平台配置文件`$platform_name.replace('_','-')...`中的配置:
+                  ```yml
+                  network:
+                    interfaces:
+                      ma1:
+                        name: eth0
+                        syspath: pci0000:00/0000:00:14.0
+                  ```
+                  若匹配成功且定义的接口名(如`ma1`)不存在，则通过命令`ip link set $oldname name $newname`重命名网络接口
+         2. 文件系统检查和挂载: 
+            1. 执行文件系统检查并自动修复: `onl-mounts fsck all`
+               1. 分区包括`ONL-*`所有分区, 参照packages/base/all/initrds/loader-initrd-files/src/etc/mtab.yml
+               2. 检查修复命令: `fsck.ext4 -p $device`
+            2. 挂载所有必要的文件系统: `onl-mounts -q mount all`
+               1. 分区包括`EFI`及`ONL-*`所有分区, 参照packages/base/all/initrds/loader-initrd-files/src/etc/mtab.yml
+               2. EFI-BOOT: /boot/efi/, ro
+               3. ONL-BOOT: /mnt/onl/boot/, rw
+               4. ONL-CONFIG: /mnt/onl/config/, ro
+               5. ONL-IMAGES: /mnt/onl/images/, rw
+               6. ONL-DATA: /mnt/onl/data/, rw
+         3. 若是uboot，初始化uboot环境: `[ -s /proc/device-tree/model ] && initubootenv`
+         4. 若是存在`/etc/issue`输出以显示版本信息: `[ -f /etc/issue ] && cat /etc/issue`
+         5. `/etc/onl/boot-config`配置文件获取与生成:
+            1. (优先)若ONL-BOOT分区存在`boot-config`，使用该配置: `cp /mnt/onl/boot/boot-config /etc/onl/boot-config` (默认并一般存在)
+            2. 若存在默认备用`boot-config`，使用该配置并设为首选: `cp /etc/onl/boot-config-default /etc/onl/boot-config`, `cp /etc/onl/boot-config-default /mnt/onl/boot/boot-config`
+      7. 初始化PKI(公钥基础设施)key及cert: `[ -f "/usr/bin/onl-pki" ] && /usr/bin/onl-pki --init`
+         1. 若ONL-CONFIG不存在`/mnt/onl/config/pki/$(sysconfig.pki.key.name)`(即key.pem)，则通过命令生成: `openssl genrsa -out ...`
+         2. 若ONL-CONFIG不存在`/mnt/onl/config/pki/$(sysconfig.pki.cert.name)`(即certificate)，则通过命令及key生成证书:
+            ```py
+                self._execute(('openssl', 'req',
+                               '-new', '-batch',
+                               '-subj', subject,
+                               '-key', self.kpath,
+                               '-out', csr.name,),
+                              logLevel=logging.INFO)
+                self._execute(('openssl', 'x509',
+                               '-req',
+                               '-days', str(sysconfig.pki.cert.csr.cdays),
+                               '-sha256',
+                               '-in', csr.name,
+                               '-signkey', self.kpath,
+                               '-out', self.cpath,),
+                              logLevel=logging.INFO)
+            ```
+         3. 以上`sysconfig`位于packages/base/all/vendor-config-onl/src/etc/onl/sysconfig/00-defaults.yml, 也能通过/mnt/onl/config/sysconfig(默认没有)进行覆盖。
+         4. 运行自定义初始化脚本`/etc/sysinit.d/*`(默认没有): `for s in $(ls /etc/sysinit.d/* | sort); do [ -x "$s" ] && "$s"`
+         5. `/etc/onl/boot-config`配置解析和应用，创建空白配置文件并逐行解析`/etc/onl/boot-config`到配置文件:
+            1. /etc/onl/SWI: SWI=images::latest
+            2. /etc/onl/CONSOLESPEED
+            3. /etc/onl/PASSWORD
+            4. /etc/onl/NET: NETDEV=ma1
+            5. /etc/onl/BOOTMODE: INSTALLED
+            6. /etc/onl/BOOTPARAMS
+         6. 根据`boot-config`|`/etc/onl/CONSOLESPEED`设置串口控制台波特率: `CONSOLESPEED=$(cat /etc/onl/CONSOLESPEED); [ "${CONSOLESPEED}" ] && stty ${CONSOLESPEED}`
+   2. `::wait:-/bin/autoboot`: 进入自动启动，如果用户中断则进入下一步启动shell。 （-表示就算进入失败也能正常运行后续）
+      1. 若检测平台失败，即存在`/etc/onl/abort`文件，退出autoboot脚本。
+      2. 若ONL-BOOT分区存在自动启动配置文件autoboot，则加载该配置: `[ -f /mnt/onl/boot/autoboot ] && . /mnt/onl/boot/autoboot`
+      3. 设置最大运行/bin/autoboot的重试次数（50次）
+      4. 输出横幅内容，即版本信息、OS信息等，并检查`boot-config`: `/bin/banner`
+         1. 客制化版本信息: `. /lib/customize.sh` -> `. /etc/onl/loader/versions.sh`
+            1. 但loader相关是固定的
+         2. 输出`/etc/onl/boot-config`内容，若存在且不为空
+         3. 若不存在或为空则尝试通过`/bin/boot-config.py configure`进行配置，但实际上没有该python文件。不存在时创建`/etc/onl/abort`以终止autoboot。
+   3. `::wait:-/bin/login`: 进入shell登录提示。
    4. `::wait:/bin/umount -a -r`: 卸载所有文件系统（-a选项），卸载失败则尝试以只读方式重新挂载。
    5. `::wait:/sbin/reboot -f`: 强制重启系统
    6. `::restart:/bin/switchroot`: 当init进程收到SIGHUP或SIGQUIT信号时
