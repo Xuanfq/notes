@@ -119,26 +119,100 @@ onl启动逻辑
          3. 以上`sysconfig`位于packages/base/all/vendor-config-onl/src/etc/onl/sysconfig/00-defaults.yml, 也能通过/mnt/onl/config/sysconfig(默认没有)进行覆盖。
          4. 运行自定义初始化脚本`/etc/sysinit.d/*`(默认没有): `for s in $(ls /etc/sysinit.d/* | sort); do [ -x "$s" ] && "$s"`
          5. `/etc/onl/boot-config`配置解析和应用，创建空白配置文件并逐行解析`/etc/onl/boot-config`到配置文件:
-            1. /etc/onl/SWI: SWI=images::latest
+            1. /etc/onl/SWI
             2. /etc/onl/CONSOLESPEED
             3. /etc/onl/PASSWORD
-            4. /etc/onl/NET: NETDEV=ma1
-            5. /etc/onl/BOOTMODE: INSTALLED
-            6. /etc/onl/BOOTPARAMS
+            4. /etc/onl/NET: `NETDEV=ma1`
+            5. /etc/onl/BOOTMODE: `INSTALLED`
+            6. /etc/onl/BOOTPARAMS: `SWI=images::latest`
          6. 根据`boot-config`|`/etc/onl/CONSOLESPEED`设置串口控制台波特率: `CONSOLESPEED=$(cat /etc/onl/CONSOLESPEED); [ "${CONSOLESPEED}" ] && stty ${CONSOLESPEED}`
    2. `::wait:-/bin/autoboot`: 进入自动启动，如果用户中断则进入下一步启动shell。 （-表示就算进入失败也能正常运行后续）
       1. 若检测平台失败，即存在`/etc/onl/abort`文件，退出autoboot脚本。
-      2. 若ONL-BOOT分区存在自动启动配置文件autoboot，则加载该配置: `[ -f /mnt/onl/boot/autoboot ] && . /mnt/onl/boot/autoboot`
+      2. 若ONL-BOOT分区存在自动启动配置文件autoboot，则加载该配置(一般不存在): `[ -f /mnt/onl/boot/autoboot ] && . /mnt/onl/boot/autoboot`
       3. 设置最大运行/bin/autoboot的重试次数（50次）
       4. 输出横幅内容，即版本信息、OS信息等，并检查`boot-config`: `/bin/banner`
          1. 客制化版本信息: `. /lib/customize.sh` -> `. /etc/onl/loader/versions.sh`
             1. 但loader相关是固定的
          2. 输出`/etc/onl/boot-config`内容，若存在且不为空
          3. 若不存在或为空则尝试通过`/bin/boot-config.py configure`进行配置，但实际上没有该python文件。不存在时创建`/etc/onl/abort`以终止autoboot。
+      5. 尝试应用网络配置，失败则重新执行/bin/autoboot: `[ ! /bin/ifup ] && tryagain`
+         1. 实际上是根据`/etc/onl/boot-config`的解析结果进行配置，以下是参数，但仅配置了NETDEV:
+            ```py
+            # packages/base/all/initrds/loader-initrd-files/src/bin/ifup
+            # NETDEV: device name
+            # NETAUTO: autoconfiguration method ("dhcp" or empty)
+            # NETRETRIES: autoconfiguration timeout
+            # NETIP: IP address (/prefix optional for v4)
+            # NETMASK: netmask (if NETIP has no prefix)
+            # NETGW: default gateway IP address (optional)
+            # NETDOMAIN: DNS default domain (optional)
+            # NETDNS: DNS server IP address (optional)
+            # NETHW: hardware (MAC) address (optional)
+            ```
+         2. 禁用ipv6自动配置: `echo 0 >/proc/sys/net/ipv6/conf/${NETDEV}/autoconf`
+         3. 清除网口已配置的ip地址: `ip addr  flush dev ${NETDEV}`
+         4. 清除网口所有的路由条目: `ip route flush dev ${NETDEV}`
+         5. 启用/激活网口: `ip link set ${NETDEV} up`
+         6. 若网口非down，启用网口: `grep -q down "/sys/class/net/${NETDEV}/operstate" || ifconfig "${NETDEV}" up`
+         7. 等待指定网络接口（${NETDEV}）上的 IPv6 地址完成重复地址检测（DAD），直到所有 IPv6 地址退出 “tentative（暂定）” 状态或超时为止。
+      6. 检测`/etc/onl/BOOTMODE`是否存在且不允许为空，并存在对应脚本文件`/bootmodes/$BOOTMODE`，即`/bootmodes/installed`或`/bootmodes/swi`，一般用`installed`
+      7. 调用启动模式脚本: `/bootmodes/$BOOTMODE`, 以`/bootmodes/installed`为例。
+         1. 加载boot参数(即`SWI=images::latest`): `. /etc/onl/BOOTPARAMS`
+         2. 环境检查，检查关键目录/mnt/onl/data及mtab.yml是否存在并正确挂载，这是存储系统镜像数据的重要目录
+         3. 根据boot参数`SWI`的不同类型采取不同处理方式获取swi镜像所存放到变量swipath: 最终是从以mtab.yml中挂载的目标目录中以images结尾的目录作为镜像所在，即ONL-IMAGES分区
+            1. `""|dir:*|nfs://*)`: 本地镜像, 必须位于`/mnt/onl/data/etc/onl/SWI`且非空
+            2. `*)`: 通过参数值的开头部分进行下载或获取: http/ftp/tftp/ssh/scp/nfs/(/dev/sdx)/(/path/to/swi)/(for mtab.yml's mount)
+               1. 文件不存在或为空时，设置需要解压(实际上是需要解压): `[ ! -s /mnt/onl/data/etc/onl/SWI ] && do_unpack=1`
+         4. 镜像版本处理:
+            1. `*::latest)`(实际上为此处,值为`images:*.swi`): `swistamp=${SWI%:latest}${swipath##*/}`
+            2. `*)`: `swistamp=$SWI`
+         5. 更新启动参数`/etc/onl/BOOTPARAMS`，将SWI设置为本地目录(查找时会变为`/mnt/onl/data`目录，并挂载到`/`目录): `sed -i -e '/^SWI=/d' /etc/onl/BOOTPARAMS; echo "SWI=dir:data:/" >> /etc/onl/BOOTPARAMS`
+         6. 镜像解压与安装: `swiprep --install "$swipath" --swiref "$swistamp" /mnt/onl/data`
+            1. 创建并清空目标目录: `/mnt/onl/data`, 该目录为ONL-DATA分区，在ONIE下安装后没有存放任何东西
+            2. 解压 SWI 中 `rootfs-${arch}.sqsh` 为 `rootfs.sqsh`
+            3. 使用 unsquashfs 解压 `rootfs.sqsh` 文件到目标目录 `/mnt/onl/data`
+            4. 通过是否存在文件`/mnt/onl/data/lib/vendor-config/onl/install/lib.sh`来校验rootfs.sqsh是否合法
+            5. 若 SWI 中存在数据包 `swi-data.tar.gz`，解压到 `/mnt/onl/data/boot`
+            6. 复制loader中的非sysconfig配置文件到 `/mnt/onl/data/etc/onl/.`: `for thing in /etc/onl/*; do [ $thing != "/etc/onl/sysconfig" ] && cp -R $thing "$destdir/etc/onl/."`
+            7. 复制loader中的fw_env.config配置文件到 `/mnt/onl/data/etc/fw_env.config`(若存在,uboot才有)
+            8. 若`/mnt/onl/data/etc/onl/rootfs/version`不存在且 SWI 中存在，解压 SWI 中的 `version` 文件到该处 (实际两处都没有该文件)
+            9.  若`/mnt/onl/data/etc/onl/rootfs/manifest.json`不存在且 SWI 中存在，解压 SWI 中的 `manifest.json` 文件到该处 (已存在)
+            10. 输出镜像版本信息到`/mnt/onl/data/etc/onl/SWI`
+         7. 记录镜像信息: `swiprep --record "$swipath" --swiref "$swistamp" /mnt/onl/data`
+            1. 若`/mnt/onl/data/etc/onl/upgrade/swi/version`不存在且 SWI 中存在，解压 SWI 中的 `version` 文件到该处 (实际两处都没有该文件)
+            2. 若`/mnt/onl/data/etc/onl/upgrade/swi/manifest.json`不存在且 SWI 中存在，解压 SWI 中的 `manifest.json` 文件到该处 (已存在)
+            3. 输出镜像版本信息到`/mnt/onl/data/etc/onl/upgrade/swi/SWI`
+         8. 启动swi: `. /bootmodes/swi`, 实际为`for url in $SWI; do timeout -t 180 boot "${url}" && exit 0 done`
+            1. 重新挂载`swipath=/mnt/onl/data`为读写: `mount -o rw,remount /mnt/onl/data`
+            2. 重新生成配置`/etc/onl/boot-config`:
+               1. SWI=${SWI}
+               2. CONSOLESPEED=$(stty speed)
+               3. 密码一般没有: `[ ! "${PASSWORD}" ] || echo "PASSWORD=${PASSWORD}" >>/etc/onl/boot-config`
+               4. 获取网络配置并写入boot-config: `ifget && cat /etc/onl/NET >>/etc/onl/boot-config`
+                  1. NETDEV=$(ip -o link show up | sed -n -e '/LOOPBACK/d' -e 's/^[0-9]\+: \([^:]\+\): .*/\1/p' | head -n 1)
+                  2. NETHW...
+                  3. ...
+            3. **将`/mnt/onl/data`关联到`/newroot`目录**: `mount --bind "${swipath}/${rootfs}" /newroot`
+            4. 若loader中存在`/lib/boot-custom`, 加载: `. /lib/boot-custom`
+            5. 停止当前`init`进程，触发`/etc/inittab`中的`restart`切换到真实的swi的`root`: `kill -QUIT 1`
    3. `::wait:-/bin/login`: 进入shell登录提示。
    4. `::wait:/bin/umount -a -r`: 卸载所有文件系统（-a选项），卸载失败则尝试以只读方式重新挂载。
    5. `::wait:/sbin/reboot -f`: 强制重启系统
-   6. `::restart:/bin/switchroot`: 当init进程收到SIGHUP或SIGQUIT信号时
+   6. `::restart:/bin/switchroot`: 当init进程收到SIGHUP或SIGQUIT信号时，进入真正的交换机镜像的根文件系统
+      1. 卸载文件系统: 
+         1. 创建临时文件复制当前挂载信息
+         2. 通过拷贝的挂载信息遍历所有挂载点，卸载除了根目录`/`、`/proc`、`/sys`、`/dev` 和 `/newroot` 及其子目录`/newroot/*`之外的所有文件系统，即主要是
+            1. `tmpfs`
+            2. `onl-*` (因为是bind，所以并不会影响/newroot)
+      2. 移动/保留关键文件系统: 将关键的虚拟文件系统（proc、sys、dev）移动到新的临时的`/netroot`下
+         1. `mount --move /proc /newroot/proc`
+         2. `mount --move /sys /newroot/sys`
+         3. `mount --move /dev /newroot/dev`
+      3. 处理 EFI 变量: 如果系统使用 UEFI，先卸载 EFI 变量文件系统，然后在新的根目录下`/netroot`重新挂载
+      4. 执行根文件系统切换，切换到`/newroot`为根文件系统并初始化: `switch_root`来源于`busybox`
+         1. `[ -x /newroot/sbin/init ] && exec switch_root -c /dev/console /newroot /sbin/init`
+         2. `[ -x /newroot/lib/systemd/systemd ] && exec switch_root -c /dev/console /newroot /lib/systemd/systemd`
+         3. `else exec /init`: re-init
 
 
 
