@@ -35,8 +35,8 @@ ONL-master_ONL-OS10_2025-06-28.1721-28f52e6_AMD64_INSTALLED_INSTALLER: correctin
 - config/
   - README
 - plugins/
-  - sample-preinstall-Mvjcxq.py
-  - sample-postinstall-lSta2D.py
+  - sample-preinstall-Mvjcxq.py     <- sample-preinstall.py
+  - sample-postinstall-lSta2D.py    <- sample-postinstall.py
 - boot-config
 - kernel-3.16-lts-x86_64-all
 - kernel-4.14-lts-x86_64-all
@@ -52,6 +52,52 @@ ONL-master_ONL-OS10_2025-06-28.1721-28f52e6_AMD64_INSTALLED_INSTALLER: correctin
 - preinstall.sh  <-  sample-preinstall.sh
 - autoperms.sh
 - installer.sh  -> installer-XXXXXX  <-  installer.sh.in
+
+
+
+### 磁盘分区结构
+
+- BOOT
+  - ONL
+    - grubx64.efi
+- ONL-BOOT
+  - grub/
+    - grubenv
+    - grub.cfg
+  - boot-config
+  - *kernel*
+    - kernel-3.16-lts-x86_64-all
+    - kernel-4.14-lts-x86_64-all
+    - kernel-4.19-lts-x86_64-all
+    - kernel-5.4-lts-x86_64-all
+    - kernel-4.9-lts-arm64-all.bin.gz (arm64)
+  - $PLATFORM.cpio.gz (loader-initrd, 二选一, 将自动重命名为$PLATFORM.cpio.gz)
+    - $PLATFORM.cpio.gz
+    - onl-loader-initrd-amd64.cpio.gz
+- ONL-CONFIG
+  - README
+- ONL-IMAGES
+  - ONL-master_ONL-OS10_2025-06-28.1721-28f52e6_AMD64.swi (.zip)
+    - rootfs-$(ARCH).sqsh (initrd, squashfs, readonly filesystem)
+    - manifest.json (os-release, platforms, version)
+- ONL-DATA (default is none after installing and without boot) (below is after booting)
+  - /
+    - *                    (rootfs-$(ARCH).sqsh/`*`)
+    - etc/
+      - onl/
+        - loader/          ($PLATFORM.cpio.gz/etc/onl/loader/`*`，当前loader对应的ONL-OS的版本信息)
+          - manifest.json
+          - versions.json
+          - versions.mk
+          - versions.sh
+        - boot-config
+        - SWI
+        - CONSOLESPEED
+        - PASSWORD
+        - NET              (NETDEV=ma1)
+        - BOOTMODE         (INSTALLED)
+        - BOOTPARAMS       (current, SWI=dir:data:/)
+
 
 
 
@@ -153,7 +199,9 @@ ONL-master_ONL-OS10_2025-06-28.1721-28f52e6_AMD64_INSTALLED_INSTALLER: correctin
 
 
 
-#### 主要安装过程 `onl-install --force`
+#### 主要安装过程 `onl-install --force` (py: onl.install.APP.main())
+
+`packages/base/all/vendor-config-onl/src/python/onl/install/App.py`
 
 1. 初始化阶段:
    1. 设置log输出到/dev/console
