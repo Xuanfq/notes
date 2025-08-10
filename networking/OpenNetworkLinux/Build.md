@@ -1764,8 +1764,8 @@ aiden@Xuanfq:~/workspace/onl/build$
 
 1. 解压该包 `onl-buildroot-initrd:$ARCH` 为 `onl-buildroot-initrd-$(ARCH).cpio.gz`
 2. 解压包 `onl-loader-initrd-files:all` 并添加该包的内容到 `onl-buildroot-initrd-$(ARCH).cpio.gz`
-3. 解压所有platform配置包`onl-platform-config-$platform:$ARCH` 并添加该包的内容到 `onl-buildroot-initrd-$(ARCH).cpio.gz`
-4. 解压所有platform配置包直接依赖的vendor配置包`onl-vendor-config-$VENDOR:all` 并添加该包的内容到 `onl-buildroot-initrd-$(ARCH).cpio.gz`
+3. 解压所有platform-config配置包`onl-platform-config-$platform:$ARCH` 并添加该包的内容到 `onl-buildroot-initrd-$(ARCH).cpio.gz`
+4. 解压所有platform-config配置包直接依赖的vendor配置包`onl-vendor-config-$VENDOR:all` 并添加该包的内容到 `onl-buildroot-initrd-$(ARCH).cpio.gz`
 5. 解压包 `onl-vendor-config-onl:all` 并添加该包的内容到 `onl-buildroot-initrd-$(ARCH).cpio.gz`
 6. 生成清单文件`/etc/onl/loader/manifest.json`并添加到`onl-buildroot-initrd-$(ARCH).cpio.gz`里的相同目录。清单包括：
    - version: `$(ONL)/make/versions/version-onl.json`里的内容
