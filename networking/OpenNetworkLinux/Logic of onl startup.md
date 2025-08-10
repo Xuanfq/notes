@@ -56,13 +56,13 @@ onl启动逻辑
          5. 检查/tmp目录的文件系统类型，如果不是tmpfs或ramfs，就将其重新挂载为tmpfs: mount -t tmpfs tmpfs /tmp
       3. 初始化随机数生成器(RNG): python /bin/initrng.py . 通过收集系统中的熵源信息并将其注入到系统的随机数池中，以提高系统随机数的质量。
       4. 内核命令行参数处理: 提取以`onl_`开头的参数（如onl_param1）并保存到`/etc/onl/`参数目录（如/etc/onl/param1），主要参数是:
-         1. `onl_platform`: machineConf['onie_platform'].replace('_', '-').replace('.', '-')
+         1. /etc/onl/platform(`onl_platform`): machineConf['onie_platform'].replace('_', '-').replace('.', '-')
          2. nopat console=ttyS0,115200n8: from platform-config-defaults-(x86-64|uboot).yml or platform.yml
       5. 平台检测和初始化: `. /lib/platform-detect`
-         1. 若没有配置需要运行的平台`/etc/onl/platform`(platform="$(cat /etc/onl/platform)")，启动自动检查流程:
-            1. 检测`/lib/platform-config`下所有`detect0.sh`，依次运行直到运行后存在需要运行的平台的配置`/etc/onl/platform`才不再往下检测。
-            2. 检测`/lib/platform-config`下所有`detect.sh`，同上
-            3. 检测`/lib/platform-config`下所有`detect1.sh`，同上
+         1. 若没有配置需要运行的平台`/etc/onl/platform`(platform="$(cat /etc/onl/platform)")，启动自动递归检查流程 (实际上已有):
+            1. 递归检测`/lib/platform-config/*`下所有`detect0.sh`，依次运行直到运行后存在需要运行的平台的配置`/etc/onl/platform`才不再往下检测。
+            2. 递归检测`/lib/platform-config/*`下所有`detect.sh`，同上
+            3. 递归检测`/lib/platform-config/*`下所有`detect1.sh`，同上
             4. 上述检查都没有生成`/etc/onl/platform`则配置为未知平台`echo "unknown" > /etc/onl/platform`
          2. 创建空文件`/etc/onl/block`
          3. 检测是否存在`/etc/onl/platform`中配置的平台的配置目录`/lib/platform-config/${platform}`
@@ -96,8 +96,8 @@ onl启动逻辑
          4. 若是存在`/etc/issue`输出以显示版本信息: `[ -f /etc/issue ] && cat /etc/issue`
          5. `/etc/onl/boot-config`配置文件获取与生成:
             1. (优先)若ONL-BOOT分区存在`boot-config`，使用该配置: `cp /mnt/onl/boot/boot-config /etc/onl/boot-config` (默认并一般存在)
-            2. 若存在默认备用`boot-config`，使用该配置并设为首选: `cp /etc/onl/boot-config-default /etc/onl/boot-config`, `cp /etc/onl/boot-config-default /mnt/onl/boot/boot-config`
-      7. 初始化PKI(公钥基础设施)key及cert: `[ -f "/usr/bin/onl-pki" ] && /usr/bin/onl-pki --init`
+            2. 若存在默认备用`boot-config`，使用该配置并设为首选(默认不存在): `cp /etc/onl/boot-config-default /etc/onl/boot-config`, `cp /etc/onl/boot-config-default /mnt/onl/boot/boot-config`
+      7. 初始化PKI(公钥基础设施)key及cert(一般首次启动时生成一次即可): `[ -f "/usr/bin/onl-pki" ] && /usr/bin/onl-pki --init`
          1. 若ONL-CONFIG不存在`/mnt/onl/config/pki/$(sysconfig.pki.key.name)`(即key.pem)，则通过命令生成: `openssl genrsa -out ...`
          2. 若ONL-CONFIG不存在`/mnt/onl/config/pki/$(sysconfig.pki.cert.name)`(即certificate)，则通过命令及key生成证书:
             ```py
@@ -117,7 +117,7 @@ onl启动逻辑
                               logLevel=logging.INFO)
             ```
          3. 以上`sysconfig`位于packages/base/all/vendor-config-onl/src/etc/onl/sysconfig/00-defaults.yml, 也能通过/mnt/onl/config/sysconfig(默认没有)进行覆盖。
-         4. 运行自定义初始化脚本`/etc/sysinit.d/*`(默认没有): `for s in $(ls /etc/sysinit.d/* | sort); do [ -x "$s" ] && "$s"`
+         4. 运行自定义初始化脚本`/etc/sysinit.d/*`(默认没有): `for s in $(ls /etc/sysinit.d/* | sort); do [ -x "$s" ] && "$s" done`
          5. `/etc/onl/boot-config`配置解析和应用，创建空白配置文件并逐行解析`/etc/onl/boot-config`到配置文件:
             1. /etc/onl/SWI
             2. /etc/onl/CONSOLESPEED
@@ -159,21 +159,21 @@ onl启动逻辑
       7. 调用启动模式脚本: `/bootmodes/$BOOTMODE`, 以`/bootmodes/installed`为例。
          1. 加载boot参数(即`SWI=images::latest`): `. /etc/onl/BOOTPARAMS`
          2. 环境检查，检查关键目录/mnt/onl/data及mtab.yml是否存在并正确挂载，这是存储系统镜像数据的重要目录
-         3. 根据boot参数`SWI`的不同类型采取不同处理方式获取swi镜像所存放到变量swipath: 最终是从以mtab.yml中挂载的目标目录中以images结尾的目录作为镜像所在，即ONL-IMAGES分区
-            1. `""|dir:*|nfs://*)`: 本地镜像, 必须位于`/mnt/onl/data/etc/onl/SWI`且非空
-            2. `*)`: 通过参数值的开头部分进行下载或获取: http/ftp/tftp/ssh/scp/nfs/(/dev/sdx)/(/path/to/swi)/(for mtab.yml's mount)
-               1. 文件不存在或为空时，设置需要解压(实际上是需要解压): `[ ! -s /mnt/onl/data/etc/onl/SWI ] && do_unpack=1`
+         3. 根据boot参数`SWI`的不同类型采取不同处理方式获取swi镜像所存放到变量swipath: 首次启动时最终是从以mtab.yml中挂载的目标目录中以images结尾的目录作为镜像所在，即ONL-IMAGES分区
+            1. 非首次启动`""|dir:*|nfs://*)`: 本地镜像, 必须位于`/mnt/onl/data/etc/onl/SWI`且非空
+            2. 首次启动`*)`: 通过参数值的开头部分进行下载或获取: http/ftp/tftp/ssh/scp/nfs/(/dev/sdx)/(/path/to/swi)/(for mtab.yml's mount)
+               1. 文件不存在或为空时，设置需要解压(实际上只有首次启动是需要解压): `[ ! -s /mnt/onl/data/etc/onl/SWI ] && do_unpack=1`
          4. 镜像版本处理:
             1. `*::latest)`(实际上为此处,值为`images:*.swi`): `swistamp=${SWI%:latest}${swipath##*/}`
             2. `*)`: `swistamp=$SWI`
          5. 更新启动参数`/etc/onl/BOOTPARAMS`，将SWI设置为本地目录(查找时会变为`/mnt/onl/data`目录，并挂载到`/`目录): `sed -i -e '/^SWI=/d' /etc/onl/BOOTPARAMS; echo "SWI=dir:data:/" >> /etc/onl/BOOTPARAMS`
-         6. 镜像解压与安装: `swiprep --install "$swipath" --swiref "$swistamp" /mnt/onl/data`
+         6. 若是首次启动，解压与安装SWI根文件系统: `[ "$do_unpack" ] && swiprep --install "$swipath" --swiref "$swistamp" /mnt/onl/data`
             1. 创建并清空目标目录: `/mnt/onl/data`, 该目录为ONL-DATA分区，在ONIE下安装后没有存放任何东西
             2. 解压 SWI 中 `rootfs-${arch}.sqsh` 为 `rootfs.sqsh`
-            3. 使用 unsquashfs 解压 `rootfs.sqsh` 文件到目标目录 `/mnt/onl/data`
+            3. 使用 unsquashfs 解压/提取 `rootfs.sqsh` 文件到目标目录 `/mnt/onl/data` **(并非挂载！因此可以进行读写该分区)**
             4. 通过是否存在文件`/mnt/onl/data/lib/vendor-config/onl/install/lib.sh`来校验rootfs.sqsh是否合法
             5. 若 SWI 中存在数据包 `swi-data.tar.gz`，解压到 `/mnt/onl/data/boot`
-            6. 复制loader中的非sysconfig配置文件到 `/mnt/onl/data/etc/onl/.`: `for thing in /etc/onl/*; do [ $thing != "/etc/onl/sysconfig" ] && cp -R $thing "$destdir/etc/onl/."`
+            6. *复制loader中的非sysconfig配置文件到 `/mnt/onl/data/etc/onl/.`*: `for thing in /etc/onl/*; do [ $thing != "/etc/onl/sysconfig" ] && cp -R $thing "$destdir/etc/onl/."`
             7. 复制loader中的fw_env.config配置文件到 `/mnt/onl/data/etc/fw_env.config`(若存在,uboot才有)
             8. 若`/mnt/onl/data/etc/onl/rootfs/version`不存在且 SWI 中存在，解压 SWI 中的 `version` 文件到该处 (实际两处都没有该文件)
             9.  若`/mnt/onl/data/etc/onl/rootfs/manifest.json`不存在且 SWI 中存在，解压 SWI 中的 `manifest.json` 文件到该处 (已存在)
@@ -184,7 +184,7 @@ onl启动逻辑
             3. 输出镜像版本信息到`/mnt/onl/data/etc/onl/upgrade/swi/SWI`
          8. 启动swi: `. /bootmodes/swi`, 实际为`for url in $SWI; do timeout -t 180 boot "${url}" && exit 0 done`
             1. 重新挂载`swipath=/mnt/onl/data`为读写: `mount -o rw,remount /mnt/onl/data`
-            2. 重新生成配置`/etc/onl/boot-config`:
+            2. 重新生成配置`/etc/onl/boot-config`(不是/mnt/onl/data/etc...):
                1. SWI=${SWI}
                2. CONSOLESPEED=$(stty speed)
                3. 密码一般没有: `[ ! "${PASSWORD}" ] || echo "PASSWORD=${PASSWORD}" >>/etc/onl/boot-config`
@@ -222,19 +222,96 @@ onl启动逻辑
 1. /etc/inittab (builds/any/rootfs/$debian-name/sysvinit/overlay/etc/inittab): inittab为系统的PID=1的进程，决定这系统启动调用哪些启动脚本文件
    1. `id:2:initdefault:`: 设置默认运行级别为2，即多用户模式（立即生效）
    2. `si0::sysinit:/etc/boot.d/boot`: 执行系统初始化脚本（阻塞执行，完成后继续） (packages/base/all/boot.d/src/boot/)
-      1. `10.upgrade-system`: 
+      1. `10.upgrade-system`(一般不会触发): 
          - origin: -> packages/base/all/vendor-config-onl/src/sbin/onl-upgrade-system -> packages/base/all/vendor-config-onl/src/python/onl/upgrade/system.py -> SystemUpgrade().main()
-         - 
-      2. `15.upgrade-loader`: 
-      3. `50.initmounts`: 
-      4. `51.onl-platform-baseconf`: 
-      5. `51.pki`: 
-      6. `52.rc.boot`: 
-      7. `53.install-debs`: 
-      8. `60.upgrade-onie`: 
-      9.  `61.upgrade-firmware`: 
-      10. `64.upgrade-swi`: 
-      11. `70.dhclient.conf`: 
+         - 步骤:
+           1. 比较loader版本兼容是否相等:
+             - 当前loader的兼容版本(`SYSTEM_COMPATIBILITY_VERSION` of `/etc/onl/loader/versions.json`)
+             - upgrade的loader中的兼容版本(`SYSTEM_COMPATIBILITY_VERSION` of `/etc/onl/upgrade/$PLATFORM_ARCH/manifest.json`)
+           2. 不相等则升级(没有设置强制升级), 升级方法: `onl.install.SystemInstall.App(force=True).run()` (手动命令`onl-install-system -F`)
+              1. 检查并调整/tmp文件系统大小为1G
+              2. 取消挂载`/mnt/onl/*`及`/boot/`
+              3. 获取loader根文件系统`path`，再回调`_runInitrd`: -> UpgradeHelper(callback=self._runInitrd).run() [Parent: onl.install.ShellApp] -> `path`=`/etc/onl/upgrade/$PLATFORM_ARCH/($PLATFORM.cpio.gz|onl-loader-initrd-$PARCH.cpio.gz)`, 一般是`onl-loader-initrd-..`, 依赖于`sysconfig/00-default.yml`
+                 1. 挂载`loader-initrd`
+                 2. `loader-initrd`下创建临时目录`/tmp/installer-xxxxxx.d/`
+                 3. 挂载`onie-boot`并获取`etc/machine*.conf`拷贝到`loader-initrd`对应目录
+                 4. 若是uboot，拷贝当前系统环境变量配置`/etc/fw_env.config`到`loader-initrd`对应目录
+                 5. 拷贝当前系统onl配置`/etc/onl`到`loader-initrd`对应目录
+                 6. 安装配置生成: `installerConf = InstallerConf(path="/dev/null")`
+                    1. 直接将`loader-initrd`下的`/tmp/installer-xxxxxx.d/`目录作为`installerConf.installer_dir`，用于swi等所需文件查找。
+                    2. ...
+                 7. `loader-initrd`下制作空压缩包`installer-xxxxxx.zip`
+                 8. loader文件处理: 
+                    1. 复制upgrade目录下的内核文件`kernel-*`到`loader-initrd`临时目录`/tmp/installer-xxxxxx.d/`
+                    2. 复制upgrade目录下的loader-initrd文件`$PLATFORM.cpio.gz|onl-loader-initrd-$PARCH.cpio.gz`到`loader-initrd`临时目录`/tmp/installer-xxxxxx.d/`。或uboot下`$PLATFORM.itb|onl-loader-fit.itb`。
+                 9. 再`loader-initrd`环境下使用`chroot /usr/bin/onl-install --force`进行升级。
+           3. 升级成功后重启
+         - **实际上跟`onie`下安装类似！但缺失文件如`*.swi`！** 可以通过优化此处升级逻辑，拷贝所有upgrade目录下的文件作为installer_dir的内容去查找，这样只要将相关文件放到该目录即可升级。
+      2. `15.upgrade-loader`(一般不会触发): 若版本不一样，将upgrade目录下的`kernel-*`及`$PLATFORM.cpio.gz|onl-loader-initrd-$PARCH.cpio.gz`拷贝到`ONL-BOOT`，然后更新grub。依赖于`sysconfig/00-default.yml`。
+      3. `50.initmounts`(一般会触发): 
+         1. 加载系统中所有已配置的 sysctl 参数，同时抑制输出信息
+            1. /etc/sysctl.conf（传统主配置文件）
+               1. 空
+            2. /etc/sysctl.d/*.conf（按文件名排序的配置文件目录，现代系统更常用）
+               1. protect-links.conf: 用于增强文件系统安全性的两个参数，主要用于防止通过硬链接（hardlink）和符号链接（symlink，软链接）进行的权限绕过攻击。
+            3. /run/sysctl.d/*.conf（运行时生成的临时配置）
+            4. /usr/lib/sysctl.d/*.conf（系统默认提供的配置）
+         2. 挂载所有必要的文件系统: `onl-mounts -q mount all`
+            1. 分区包括`EFI`及`ONL-*`所有分区, 参照packages/base/all/initrds/loader-initrd-files/src/etc/mtab.yml
+            2. EFI-BOOT: /boot/efi/, ro
+            3. ONL-BOOT: /mnt/onl/boot/, rw
+            4. ONL-CONFIG: /mnt/onl/config/, ro
+            5. ONL-IMAGES: /mnt/onl/images/, rw
+            6. ONL-DATA: /mnt/onl/data/, rw
+      4. `51.onl-platform-baseconf`(一般会触发): 运行平台自定义的配置，位于`src/python/$platform.replace('-','_').replace('.','_')/__init__.py`
+      5. `51.pki`(一般不会触发): 初始化PKI(公钥基础设施)key及cert: `/usr/bin/onl-pki --init`, 实际已经在`loader`阶段已经生成！
+         1. 若ONL-CONFIG不存在`/mnt/onl/config/pki/$(sysconfig.pki.key.name)`(即key.pem)，则通过命令生成: `openssl genrsa -out ...`
+         2. 若ONL-CONFIG不存在`/mnt/onl/config/pki/$(sysconfig.pki.cert.name)`(即certificate)，则通过命令及key生成证书:
+            ```py
+                self._execute(('openssl', 'req',
+                               '-new', '-batch',
+                               '-subj', subject,
+                               '-key', self.kpath,
+                               '-out', csr.name,),
+                              logLevel=logging.INFO)
+                self._execute(('openssl', 'x509',
+                               '-req',
+                               '-days', str(sysconfig.pki.cert.csr.cdays),
+                               '-sha256',
+                               '-in', csr.name,
+                               '-signkey', self.kpath,
+                               '-out', self.cpath,),
+                              logLevel=logging.INFO)
+            ```
+      6. `52.rc.boot`(一般不会触发): 若ONL相关分区中(按顺序: `boot config images data`)存在可执行的`rc.boot`，逐项执行，默认无。
+         ```sh
+         for dir in boot config images data; do
+            script=/mnt/onl/$dir/rc.boot
+            if [ -x "$script" ]; then
+               echo "Executing $script..."
+               $script
+            fi
+         done
+         ```
+      7. `53.install-debs`(一般不会触发): 若`/mnt/onl/data/install-debs`下存在`list`以及list中每行存在的`deb`包，逐行安装，默认无。
+         ```sh
+         PACKAGE_DIR=/mnt/onl/data/install-debs
+         PACKAGE_LIST="$PACKAGE_DIR/list"
+
+         if [ -e "$PACKAGE_LIST" ]; then
+            for package in $(cat $PACKAGE_LIST); do
+               echo "Installing packages $package..."
+               if ! dpkg -i "$PACKAGE_DIR/$package"; then
+                     echo "Failed."
+                     exit 1
+               fi
+            done
+         fi
+         ``` 
+      8. `60.upgrade-onie`(一般不会触发): 若存在平台配置的onie需要更新，重启进入onie进行更新。
+      9.  `61.upgrade-firmware`(一般不会触发): 若存在平台配置的onie-firmware需要更新，重启进入onie进行更新。
+      10. `64.upgrade-swi`(一般不会触发): 升级ONL swi，该项功能不完善，默认是禁用！
+      11. `70.dhclient.conf`: 为网络接口 ma1 配置 DHCP 客户端标识符（DHCP client identifier），并将配置写入 DHCP 客户端配置文件（dhclient.conf）。以此强制 ma1 接口的 DHCP 客户端使用固定格式的标识符（01:+MAC地址）向服务器请求 IP，确保服务器能稳定识别该客户端并分配预期的网络配置（如固定 IP、网关等）。
    3. `si1::sysinit:/etc/init.d/rcS`: -> link to `/lib/init/rcS`，即: `exec /etc/init.d/rc S`: -> link to `/lib/init/rc S` (/etc/init.d/.depend.boot): 
       1. 第1层（并行）: 
          1. `S01hostname.sh`: 设置主机名
