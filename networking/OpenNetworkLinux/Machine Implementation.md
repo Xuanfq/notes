@@ -25,6 +25,26 @@
         - Makefile          # `include $(ONL)/make/pkg.mk`
         - PKG.yml           # `!include $ONL_TEMPLATES/platform-modules.yml ARCH=amd64 VENDOR=kvm BASENAME=x86-64-machinename1 KERNELS="onl-kernel-5.4-lts-x86-64-all:amd64"`
       - onlp/               # 实现package：`onlp-%(platform)s`
+        - builds/
+          - lib/
+            - Makefile
+            - x86_64_machinename1.mk
+          - onlpdump/
+            - Makefile
+          - x86_64_machinename1/
+            - auto/
+              - make.mk
+              - x86_64_machinename1.yml
+            - inc/
+              - x86_64_machinename1/
+                - *
+            - src/
+              - make.mk
+              - Makefile
+              - *
+          - Makefile        
+        - Makefile
+        - PKG.yml
       - platform-config/    # 实现package：`onl-platform-config-%(platform)s`
         - r0/
           - src/
@@ -74,6 +94,9 @@
     - `onl-loader-initrd:amd64` (packages/base/amd64/initrds/loader/)
       - `onl-buildroot-initrd:$ARCH` (packages/base/any/initrds/buildroot/)
       - `onl-loader-initrd-files:all` (packages/base/all/initrds/loader-initrd-files/)
+      - `onl-platform-config-%(platform)s` (packages/platforms/$vendor/$arch/$machinename/platform-config/r0/)
+      - `onl-vendor-config-$VENDOR:all` (packages/platforms/$vendor/vendor-config/)
+      - `onl-vendor-config-onl(:all)` (packages/base/all/vendor-config-onl/)
   - `onl-loader-fit`(arm64|armel|armhl|powerpc) (packages/base/$arch/fit/loader/) [standard.yml][$arch-onl-packages.yml]
     - `onl-loader-initrd:$ARCH` (packages/base/$arch/initrds/loader/)
       - `onl-buildroot-initrd:$ARCH` (packages/base/any/initrds/buildroot/)
@@ -177,16 +200,331 @@ Reference Below: `src/lib/$platform.yml`
 
 
 
-#### initrd of platform customization
+#### loader initrd of platform customization
 
 
 **initrd实现原理**: `packages/base/all/vendor-config-onl/src/etc/onl/sysconfig/00-defaults.yml`中的installer.grub.`$PLATFORM.cpio.gz|.itb`, $PLATFORM=onlPlatform().platform(), e.g. x86-64-machinename-r0
 
 - 该处自定义的平台特定initrd有别于`onl-loader-initrd-files:all`中的initrd，即有别于安装环境的initrd(使用chroot)。安装环境的initrd不能更改，这可能会导致很大区别，这个要特别注意！
-- `00-defaults.yml`(initrd上是`/etc/onl/sysconfig`)能通过`/mnt/onl/config/sysconfig`进行覆盖，该文件没有实现，可以自定义！
+- `00-defaults.yml`(initrd上是`/etc/onl/sysconfig/*.yml`)能通过`/mnt/onl/config/sysconfig/*.yml`进行覆盖，该文件没有实现，可以自定义！
 - 具体安装逻辑参照: [Logic of onl images](./Logic%20of%20onl%20images.md), 位于"**可以通过此处为平台定制化initrd**"附近。
 
 
+
+#### sysconfig of platform customization
+
+packages/base/all/vendor-config-onl/src/python/onl/sysconfig/__init__.py
+
+**配置来源于**:
+
+- /                               # 按以下顺序依次加载
+  - /etc/onl/sysconfig/           # 按字典次序依次加载
+    - 00-defaults.yml             # 无论是loader还是真实的rootfs都存在，来源: onl-vendor-config-onl:all: packages/base/all/vendor-config-onl/src/etc/onl/sysconfig/00-defaults.yml
+    - *.yml                       # 空
+  - /mnt/onl/config/sysconfig/    # 按字典次序依次加载
+    - *.yml                       # 空
+
+
+**配置加载时机**:
+
+- 一旦该模块被导入时，则以读取配置且不会再次查找文件和读取配置!
+- 调用`onl-install --force`进行安装时已完成配置加载和固定!
+
+
+**实现方法**:
+
+- **ONL安装阶段**: 使用上述python安装插件`${PY_INSTALL}/onl/install/plugins/*.py`:
+  - 通过pre插件**判断平台**后在相关目录下创建配置覆盖默认`00-defaults.yml`配置，此处只放`/etc/onl/sysconfig/`
+  - 通过pre插件**判断平台**后重新导入python`onl.sysconfig`模块: `import importlib; importlib.reload(onl.sysconfig)`
+  - 通过post插件**判断平台**后在相关目录下创建配置覆盖默认`00-defaults.yml`配置，此处建议放在`/mnt/onl/config/sysconfig/`，其他阶段就不用操作了。但是若要改成随时切换平台则建议每个阶段分别动态加载，由于真实rootfs阶段下是永久保存的，并不适合动态增删该文件。
+
+- ONL-Loader阶段: 使用下方`boot interface during initrd-loader for platform customization`接口实现`/lib/platform-config/${platform}/onl/boot/${platform}`
+  - 通过接口在相关目录下创建配置覆盖默认`00-defaults.yml`配置，此处只放`/mnt/onl/config/sysconfig/`
+
+- -ONL-RealFS 真实`swi rootfs/initrd`阶段: 这个阶段若通过平台`baseconfig`接口加载会有一段空白期！可通过Package填充到`boot.d/00.xxx`使其拥有更高执行优先权。在该boot脚本中对配置进行增删操作！
+
+
+
+
+#### self detect platform correct or not of platform customization [Failover]
+
+**目的**: GRUB启动参数中`onl_platform`丢失的故障情况下，实现平台自我检测是否匹配。
+
+
+**实现原理**: 在平台自己的配置`platform-config`下，即在目录(`/lib/platform-config/$platform/`)创建以下一个或多个可执行脚本文件，文件中写入检测平台的脚本，可以检测自己本身平台，也可以通用地检测所有的平台，检测成功后将其平台名输出到文件`/etc/onl/platform`，建议规范为优雅地检测自己本身即可:
+
+- `detect0.sh`: 优先级为最高
+- `detect.sh`: 正常优先级
+- `detect1.sh`: 最低优先级
+
+
+**可行的实现存放位置**:
+
+- packages/platforms/vendor/
+  - x86-64/
+    - machinename1/
+      - platform-config/      # 实现package：`onl-platform-config-%(platform)s`
+        - r0/
+          - src/
+            - lib/            # Mapping `src/lib: /lib/platform-config/$PLATFORM/onl/`
+              - x86-64-machinename-r0.yml         # `$platform.yml`
+              - detect.sh                         # <- 
+
+
+
+#### boot interface during initrd-loader phase for platform customization
+
+**目的**: ONL引导正确的platform和rootfs阶段下，平台检测成功后，提供了平台自定义配置和初始化的接口，此处提供该接口的实现原理和方法。
+
+
+**接口说明与实现原理**: 
+
+- 平台检测成功后的平台客制化接口(磁盘分区未挂载，网络未初始化): `. /lib/platform-config/${platform}/onl/boot/${platform}`
+  - 实现方法: 在平台自己的配置`platform-config`下，即在目录(`/lib/platform-config/$platform/`)创建可执行脚本文件`boot/${platform}`，即可实现脚本`/lib/platform-config/${platform}/onl/boot/${platform}`
+
+- 初始化接口(磁盘分区已挂载，网络未初始化): `for s in $(ls /etc/sysinit.d/* | sort); do [ -x "$s" ] && "$s" done`
+  - 实现方法: 由于`/etc/sysinit.d/`下的文件为空且其相关代码处于`onl-loader-initrd-files:all`，虽然可以通过platform-config的`PKG.yml`进行映射文件，但这并不优雅，且会导致真实的SWI的rootfs也会存在该文件且该文件对其无用。建议通过`/lib/platform-config/${platform}/onl/boot/${platform}`脚本的方式生成这些文件。
+
+
+**存放位置**:
+
+- packages/platforms/vendor/
+  - x86-64/
+    - machinename1/
+      - platform-config/      # 实现package：`onl-platform-config-%(platform)s`
+        - r0/
+          - src/
+            - lib/            # Mapping `src/lib: /lib/platform-config/$PLATFORM/onl/`
+              - x86-64-machinename-r0.yml         # `$platform.yml`
+              - boot/
+                - x86-64-machinename-r0           # <- 
+
+
+
+#### onie updater of platform customization in ONL
+
+packages/base/all/vendor-config-onl/src/boot.d/60.upgrade-onie
+
+
+**`onie-updater`存放目录**: `sysconfig.upgrade.onie.package.dir`, 即`/lib/platform-config/$current/onl/upgrade/onie/`, 参考路径存放位置`packages/base/all/vendor-config-onl/src/etc/onl/sysconfig/00-defaults.yml`
+
+- /lib/platform-config/$current/onl/upgrade/onie/
+  - manifest.json       # 配置文件及清单
+  - `*`                 # `onie-updater文件名`，也可以是多个在清单上指定，将存放到ONL-IMAGES来自动发现，需注意命名。建议单项且文件名必须是onie-updater，这样升级后重启进入onl时自动删除！
+
+
+**manifest.json**:
+```json
+{
+  "next_version": "2021.11.1.0.0",  # 需要安装的onie版本, 以此为比对确定是否需要升级
+  "updater": "onie-updater"         # onie-updater文件名，也可以是列表，将存放到ONL-IMAGES来自动发现，需注意命名。建议单项且文件名必须是onie-updater，这样升级后重启进入onl时自动删除！
+
+}
+```
+
+
+**实现方式**:
+
+1. 在平台的`platform-config/r0/src/lib/`下创建相关目录和文件`upgrade/onie/`，`PKG.yml`中`src/lib: /lib/platform-config/$PLATFORM/onl`将自动映射到目录`onl/upgrade/onie/`: 
+
+- platform-config/r0/src/lib/upgrade/onie/
+  - manifest.json
+  - `*`             # onie-updater
+
+2. 也可通过`自定义Package`，然后通过`platform-config`的`PKG.yml`来关联产生依赖。
+
+
+**升级步骤**:
+
+1. 拷贝到`/mnt/onl/images`, 即`ONL-IMAGES`分区。
+2. 通过onie-boot中的`onie/tools/bin/onie-boot-mode -o `修改`默认onie模式`为`update`模式
+3. 设置默认第二启动项为`onl`(从0开始索引): `/usr/sbin/grub-set-default --boot-directory=/mnt/onl/boot/  1`
+4. 自动重启
+5. 进入onie的update模式，自动发现更新
+
+
+
+#### onie firmware updater of platform customization in ONL
+
+packages/base/all/vendor-config-onl/src/boot.d/61.upgrade-firmware
+
+
+**`onie-firmware-updater`存放目录**: `sysconfig.upgrade.onie.package.dir`, 即`/lib/platform-config/$current/onl/upgrade/firmware/`, 参考路径存放位置`packages/base/all/vendor-config-onl/src/etc/onl/sysconfig/00-defaults.yml`
+
+- /lib/platform-config/$current/onl/upgrade/firmware/
+  - manifest.json       # 配置文件及清单
+  - `*`                 # `onie-updater文件名`，也可以多个并在清单上指定，`fwpkg`为False时将存放到ONL-IMAGES来自动发现，需注意命名。建议单项且文件名必须是onie-updater，这样升级后重启进入onl时自动删除！
+
+
+**manifest.json**:
+```json
+{
+  "next_version": "2021.11.1.0.0",  # 需要安装的onie版本, 以此为比对确定是否需要升级
+  "updater": "onie-updater",        # onie-updater文件名，也可以是列表，`fwpkg`为False时将存放到ONL-IMAGES来自动发现，需注意命名。建议单项且文件名必须是onie-updater，这样升级后重启进入onl时自动删除！
+  "fwpkg": true                     # 是否使用`onie-fwpkg`来添加，若使用则不用存放到ONL-IMAGES，建议使用。
+}
+```
+
+
+**实现方式**:
+
+1. 在平台的`platform-config/r0/src/lib/`下创建相关目录和文件`upgrade/onl/`，`PKG.yml`中`src/lib: /lib/platform-config/$PLATFORM/onl`将自动映射到目录`onl/upgrade/firmware/`: 
+
+- platform-config/r0/src/lib/upgrade/firmware/
+  - manifest.json
+  - `*`             # onie-updater
+
+2. 也可通过`自定义Package`，然后通过`platform-config`的`PKG.yml`来关联产生依赖。
+
+
+**升级步骤**:
+
+1. 通过`onie-fwpgk`添加到onie的`pending`目录或拷贝到`/mnt/onl/images`, 即`ONL-IMAGES`分区。
+2. 通过`onie-boot`中的`onie/tools/bin/onie-boot-mode -o `修改`默认onie模式`为`update`模式
+3. 设置默认第二启动项为`onl`(从0开始索引): `/usr/sbin/grub-set-default --boot-directory=/mnt/onl/boot/  1`
+4. 自动重启
+5. 进入onie的update模式，自动发现更新
+
+
+
+#### loader upgrade of platform customization
+
+packages/base/all/vendor-config-onl/src/boot.d/15.upgrade-loader
+
+**`loader`存放目录**: `sysconfig.loader.package.dir`, 即`/etc/onl/upgrade/$arch/`, 参考路径存放位置`packages/base/all/vendor-config-onl/src/etc/onl/sysconfig/00-defaults.yml`
+
+
+**实现方法**:
+
+- 手动拷贝新的loader相关文件到`/etc/onl/upgrade/$arch/`目录，手动重启(然后触发升级后自动再重新启动一次)，或手动执行`onl-upgrade-onie`后自动重启
+  - onl-loader-initrd-$arch.cpio.gz
+  - manifest.json
+  - kernel-*
+- 使用下方`boot interface during initrd-loader for platform customization`接口`/lib/platform-config/${platform}/onl/boot/${platform}`实现实现新的initrd-loader文件拷贝，但此处无法输出到控制台，然后手动重启，或在平台`baseconfig`处检测重启
+
+
+**升级步骤**:
+
+1. 当前版本`/etc/onl/loader/versions.json` (from loader-initrd)
+2. 最新版本`/etc/onl/upgrade/$arch/manifest.json` (from real-rootfs)
+3. 若版本不一样，将`/etc/onl/upgrade/$arch/`目录下的`kernel-*`及`$PLATFORM.cpio.gz|onl-loader-initrd-$PARCH.cpio.gz`拷贝到`ONL-BOOT`，然后更新grub，升级后自动重启生效。
+
+
+
+
+#### system upgrade of platform customization
+
+packages/base/all/vendor-config-onl/src/boot.d/10.upgrade-system
+
+- 版本升级触发条件, 以下版本不等时:
+  - 当前loader的兼容版本(`SYSTEM_COMPATIBILITY_VERSION` of `/etc/onl/loader/versions.json`) (from loader-initrd)
+  - upgrade的loader中的兼容版本(`SYSTEM_COMPATIBILITY_VERSION` of `/etc/onl/upgrade/$PLATFORM_ARCH/manifest.json`) (from real-rootfs)
+- 实现方法: 
+  1. 文件准备，存放新版本相关的文件到系统目录`/etc/onl/upgrade/$PLATFORM_ARCH/`:
+    - onl-loader-initrd-$arch.cpio.gz
+    - manifest.json
+    - kernel-*
+  2. 手动重启两次，或手动执行`onl-upgrade-system`后手动重启
+  3. 使用下方`boot interface during initrd-loader for platform customization`接口`/lib/platform-config/${platform}/onl/boot/${platform}`实现实现新的initrd-loader文件拷贝，但此处无法输出到控制台，然后手动重启，或在平台`baseconfig`处检测重启
+- **升级命令实际上跟`onie`下安装类似！因为执行安装更新时会清除磁盘，缺失文件如`*.swi`！这个需要实践验证一下！** 可以通过优化此处升级逻辑，拷贝所有upgrade目录下的文件作为installer_dir的内容去查找，这样只要将相关文件放到该目录即可升级。
+
+
+
+#### swi upgrade of platform customization
+
+packages/base/all/vendor-config-onl/src/boot.d/64.upgrade-swi
+
+- 该项功能默认是禁用的，且启用后功能也不完善，无法适配与升级！
+- 升级逻辑: packages/base/all/vendor-config-onl/src/boot.d/64.upgrade-swi
+- 实现方向: 
+  - 由于已经切换到真实的initrd环境，且已运行一部分启动脚本，若需重新运行，必然需要重启。
+  - 由于原始设计`64.upgrade-swi`并不完善可用，因此若是*特定平台*需要实现，可在`baseconfig`时覆盖`64.upgrade-swi`？
+  - `loader`根据`/mnt/onl/data/etc/onl/SWI`文件*是否存在或非空*来判断是否是*安装后首次启动*，首次启动需要解压真实的`*swi`中的`rootfs-$arch.sqsh`到`ONL-DATA`分区，并且解压前删除`ONL-DATA`中的数据。
+    - 因此可以先替换`ONL-IMAGES`分区中的`*.swi`，然后删除`/etc/onl/SWI`即`/mnt/onl/data/etc/onl/SWI`然后重启来重新解压! 
+    - 由于解压前会删除数据，因此需要考虑如何保留数据，此处为难点! 若为首次启动时，数据也无关紧要，平台一开始第一版就适配的话，似乎也可以？这样做的目的是？使用自定义的`rootfs`根文件系统吗？
+  - 若直接解压根文件系统来覆盖，似乎有可能会导致不可预测的fail？
+
+
+
+#### rc.boot of ONL-* Partition
+
+**SWI真正的initrd启动过程中，即`si0::sysinit:/etc/boot.d/boot`，若ONL相关分区中(按顺序: `boot config images data`)存在可执行的`rc.boot`，逐项执行**: `packages/base/all/boot.d/src/52.rc.boot`
+
+- 可通过插件`${PY_INSTALL}/onl/install/plugins/*.py`来产生这些文件。
+
+
+
+#### install-debs of ONL-DATA Partition
+
+**SWI真正的initrd启动过程中，即`si0::sysinit:/etc/boot.d/boot`，若`/mnt/onl/data/install-debs`下存在`list`以及list中每行存在的`deb`包，逐行安装**: `packages/base/all/boot.d/src/53.install-debs`
+
+```md
+- /
+  - install-debs/
+    - list    (each line: xx.deb)
+    - *.deb
+```
+
+- 可通过插件`src/python/$platform.replace('-','_').replace('.','_')/__init__.py`来产生这些文件。
+- 也可通过手动建立文件，每次重启就能自动安装。
+
+
+
+### onlp
+
+```markdown
+- packages/platforms/vendor/
+  - x86-64/
+    - machinename1/         # onl的platform应和onie中的platform-name保持一致，但字符`_`和`.`应使用`-`代替。ARCH=amd64 VENDOR=kvm BASENAME=x86-64-machinename1 KERNELS="onl-kernel-5.4-lts-x86-64-all:amd64"`
+      - onlp/               # 实现package：`onlp-%(platform)s`
+        - builds/
+          - lib/
+            - Makefile
+            - x86_64_machinename1.mk
+          - onlpdump/
+            - Makefile
+          - x86_64_machinename1/
+            - auto/
+              - make.mk
+              - x86_64_machinename1.yml
+            - inc/
+              - x86_64_machinename1/
+                - *
+            - src/
+              - make.mk
+              - Makefile
+              - *
+          - Makefile        
+        - Makefile
+        - PKG.yml
+```
+
+**实现**:
+
+- 参考代码: 
+  - 完整项目: packages/platforms/kvm/x86-64/x86-64-kvm-x86-64/onlp/builds
+  - onlp: packages/base/any/onlp/src/onlp_platform_defaults
+  - onlp: packages/base/any/onlp/src/onlpie
+  - onlp: packages/base/any/onlp/src/onlplib
+
+- 主要实现:
+  - 在`x86_64_machinename1/`下实现平台接口`packages/base/any/onlp/src/onlp/module/inc/onlp/platformi/`:
+    - fani.h
+    - ledi.h
+    - psui.h
+    - sfpi.h
+    - sysi.h
+    - thermali.h
+
+- 代码生成:
+  - 原理参考:
+    - sm/infra/builder/unix/auto.mk
+    - sm/infra/sourcegen/sg.py
+  - 注意需要生成代码时的起始和结束标志，如: 
+    - `<auto.start.cdefs(ONLPSIM_CONFIG_HEADER).header>`
+    - `<auto.end.cdefs(ONLPSIM_CONFIG_HEADER).header>`
+    - `r'(.*)<auto.start.(?P<expr>.*)>'`
+    - `r'(.*)<auto.end.(?P<expr>.*)>'`
 
 
 

@@ -1,0 +1,1 @@
+x86_64_machinename_BASEDIR := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
