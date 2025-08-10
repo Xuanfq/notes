@@ -76,14 +76,17 @@ ONL-master_ONL-OS10_2025-06-28.1721-28f52e6_AMD64_INSTALLED_INSTALLER: correctin
     - onl-loader-initrd-amd64.cpio.gz
 - ONL-CONFIG
   - README
+  - key.pem          (第一次启动时生成)
+  - certificate      (第一次启动时生成)
 - ONL-IMAGES
   - ONL-master_ONL-OS10_2025-06-28.1721-28f52e6_AMD64.swi (.zip)
     - rootfs-$(ARCH).sqsh (initrd, squashfs, readonly filesystem)
     - manifest.json (os-release, platforms, version)
+  - onie-updater           (ONL下触发onie升级时临时存放于此，命名不限于此，包括非onie-fwpkg下的onie-firmware)
 - ONL-DATA (default is none after installing and without boot) (below is after booting)
   - /
     - *                    (rootfs-$(ARCH).sqsh/`*`)
-    - etc/
+    - etc/                 ($PLATFORM.cpio.gz/etc/`*`, except sysconfig/)
       - onl/
         - loader/          ($PLATFORM.cpio.gz/etc/onl/loader/`*`，当前loader对应的ONL-OS的版本信息)
           - manifest.json
