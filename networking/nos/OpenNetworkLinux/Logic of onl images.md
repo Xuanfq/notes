@@ -76,8 +76,9 @@ ONL-master_ONL-OS10_2025-06-28.1721-28f52e6_AMD64_INSTALLED_INSTALLER: correctin
     - onl-loader-initrd-amd64.cpio.gz
 - ONL-CONFIG
   - README
-  - key.pem          (第一次启动时生成)
-  - certificate      (第一次启动时生成)
+  - pki/
+    - key.pem          (第一次启动时生成)
+    - certificate      (第一次启动时生成)
 - ONL-IMAGES
   - ONL-master_ONL-OS10_2025-06-28.1721-28f52e6_AMD64.swi (.zip)
     - rootfs-$(ARCH).sqsh (initrd, squashfs, readonly filesystem)
