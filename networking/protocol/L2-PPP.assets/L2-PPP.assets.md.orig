@@ -1,0 +1,82 @@
+# L2-PPP
+
+PPP（Point to Point Protocol，点到点协议）
+
+RFC1661
+
+
+----
+
+### 概述
+
+现在全世界使用得最多的数据链路层协议是PPP（Point to Point Protocol，点到点协议） 。
+
+PPP为点对点连接上传输多种协议的数据包提供了一种标准的方法，其最初的设计目的，是为两个对等结点之间的IP传输提供一种封装协议，除了IP以外，PPP还可以封装其它协议，包括Novell的IPX协议（Internetwork Packet Exchange，网间分组交换）等。
+
+
+
+----
+
+### 工作流程
+
+在建立、保持和终止PPP链路的过程中，PPP链路需要经过5个阶段，除认证阶段外，其它4个阶段都是必要过程。 5个阶段如下：
+
+1. 链路不可用阶段（Dead）
+2. 链路建立阶段（Establish）
+3. 认证阶段（Authenticate）[Option]
+4. 网络层协议阶段（Network）
+5. 链路终止阶段（Terminate）
+
+![](https://i-blog.csdnimg.cn/blog_migrate/f972ae7392c769308ff3827a62a87bfe.png)
+
+
+
+----
+
+### 帧格式
+
+| *Field* | Flag | Address | Control | Protocol | Information | FCS | Flag |
+| -- | -- | -- | -- | -- | -- | -- | -- |
+| *Value* | 7E | FF | 03 | -- | -- | -- | 7E |
+| *Length* | 1 | 1 | 1 | 2 | max 1500 | 2 | 1 |
+| *Part* | Header | Header | Header | Header | Data | Tail | Tail |
+| *Order* | Send First | -- | -- | -- | -- | -- | Send End |
+
+
+- **Flag字段**为帧定界标志，用来标识PPP帧的开始与结束，长度为1字节，取值固定为0x7E。
+
+- **Address字段**为地址字段，用来标识接收方的地址，长度为1字节，由于点到点链路的接收方是唯一的，故此字段取值固定为0xFF，表示只有对端才能接受到数据。
+
+- **Control字段**为控制字段，长度为1字节，取值固定为0x03，表示无序号信息（Unnumbered Information）。
+
+- **Protocol字段**为协议字段，用来标识PPP帧封装的协议数据类型，长度为2字节。此字段使PPP得以封装不同的协议。
+
+
+    | 字段值	| 协 议 |
+    | -- | -- |
+    | 0x0021	| IP(Internet Protocol) |
+    | 0x0029	| Appletalk |
+    | 0x8021	| IPCP(Internet Protocol Control Protocol) |
+    | 0xC021	| LCP(Link Control Protocol) |
+    | 0xC023	| PAP(Password Authentication Protocol) |
+    | 0xC025	| LQR(Link Quality Report) |
+    | 0xC223	| CHAP(Challenge Handshake Authentication Protocol) |
+
+- **Information字段**为信息字段，该字段长度不固定，最大长度等于MRU（Maximum Receive Unit）值，默认为1500字节。此字段存放承载的协议数据，包括LCP、NCP等。
+
+- **FCS(Frame Checksum)字段**为帧校验和字段，用来检测PPP帧的完整性，长度为2字节。
+
+
+
+
+
+
+
+
+
+
+
+
+----
+
+> [Reference Doc 1](https://blog.csdn.net/HinsCoder/article/details/130454920)
