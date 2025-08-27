@@ -16,7 +16,7 @@ LLDP提供了一种标准的链路层发现方式。通过LLDP获取的设备二
 
 单邻居组网应用场景是指交换机设备的接口之间或者交换机与媒体终端ME（Media Endpoint）的接口之间是直接相连，中间没有跨任何的设备，而且接口只有一个邻居设备的情况。单邻居组网如下图所示，SwitchA和SwitchB之间以及SwitchA和ME之间均是直接相连，SwitchA和SwitchB的每一个接口都只有一个邻居。
 
-![单邻居组网应用场景](./L2-LLDP.assets/e013db8f95c2a6333076e3378eea55f3.png)
+![单邻居组网应用场景](https://download.huawei.com/mdl/image/download?uuid=ea44990f96a14b70ae41f207da0cfbfd)
 
 
 
@@ -24,7 +24,7 @@ LLDP提供了一种标准的链路层发现方式。通过LLDP获取的设备二
 
 多邻居组网应用场景是指交换机设备的接口之间不是直接相连，这时每个接口的邻居不止一个。多邻居组网如下图所示，SwitchA、SwitchB和SwitchC之间通过Switch连接（Switch需要支持LLDP报文透传）。这样SwitchA、SwitchB和SwitchC的接口都不止有一个邻居。
 
-![多邻居组网应用场景](./L2-LLDP.assets/3d49c16d48a2be85a208ff573873dfd8.png)
+![多邻居组网应用场景](https://download.huawei.com/mdl/image/download?uuid=5006a1cc505742e89194058d4003a60b)
 
 
 
@@ -32,7 +32,7 @@ LLDP提供了一种标准的链路层发现方式。通过LLDP获取的设备二
 
 链路聚合组网应用场景是指交换机设备的接口之间存在链路聚合，接口之间是直接相连，链路聚合之间的每个接口只有一个邻居设备。如下图所示SwitchA和SwitchB之间存在链路聚合，SwitchA和SwitchB的每一个接口都只有一个邻居。
 
-![链路聚合组网应用场景](./L2-LLDP.assets/4de30ecdfdc4dda44d4877672165366b.png)
+![链路聚合组网应用场景](https://download.huawei.com/mdl/image/download?uuid=6fd4260d9f454ea8b05657523ce9036c)
 
 
 
@@ -189,7 +189,7 @@ MED TLV为VoIP（Voice over IP）提供了许多高级的应用，包括基本�
 
 LLDP可以将本地设备的信息组织起来并发布给自己的远端设备，本地设备将收到的远端设备信息以标准MIB的形式保存起来。工作原理如下：
 
-![LLDP原理框图](./L2-LLDP.assets/d9b6bd513b5de836af8901da9ad465f9.png)
+![LLDP原理框图](https://download.huawei.com/mdl/image/download?uuid=7ebd198003e24073b6bf421c684ad8c0)
 
 
 LLDP本地系统MIB用来保存本地设备信息。包括设备ID、接口ID、系统名称、系统描述、接口描述、网络管理地址等信息。
