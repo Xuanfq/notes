@@ -83,10 +83,10 @@ onl启动逻辑
                   若匹配成功且定义的接口名(如`ma1`)不存在，则通过命令`ip link set $oldname name $newname`重命名网络接口
          2. 文件系统检查和挂载: 
             1. 执行文件系统检查并自动修复: `onl-mounts fsck all`
-               1. 分区包括`ONL-*`所有分区, 参照packages/base/all/initrds/loader-initrd-files/src/etc/mtab.yml
+               1. 分区包括`ONL-*`（Label）所有分区, 参照packages/base/all/initrds/loader-initrd-files/src/etc/mtab.yml
                2. 检查修复命令: `fsck.ext4 -p $device`
             2. 挂载所有必要的文件系统: `onl-mounts -q mount all`
-               1. 分区包括`EFI`及`ONL-*`所有分区, 参照packages/base/all/initrds/loader-initrd-files/src/etc/mtab.yml
+               1. 分区包括`EFI`及`ONL-*`（Label）所有分区, 参照packages/base/all/initrds/loader-initrd-files/src/etc/mtab.yml
                2. EFI-BOOT: /boot/efi/, ro
                3. ONL-BOOT: /mnt/onl/boot/, rw
                4. ONL-CONFIG: /mnt/onl/config/, ro
@@ -257,7 +257,7 @@ onl启动逻辑
             3. /run/sysctl.d/*.conf（运行时生成的临时配置）
             4. /usr/lib/sysctl.d/*.conf（系统默认提供的配置）
          2. 挂载所有必要的文件系统: `onl-mounts -q mount all`
-            1. 分区包括`EFI`及`ONL-*`所有分区, 参照packages/base/all/initrds/loader-initrd-files/src/etc/mtab.yml
+            1. 分区包括`EFI`及`ONL-*`（Label）所有分区, 参照packages/base/all/initrds/loader-initrd-files/src/etc/mtab.yml
             2. EFI-BOOT: /boot/efi/, ro
             3. ONL-BOOT: /mnt/onl/boot/, rw
             4. ONL-CONFIG: /mnt/onl/config/, ro

@@ -215,6 +215,18 @@ Reference Below: `src/lib/$platform.yml`
 
 packages/base/all/vendor-config-onl/src/python/onl/sysconfig/__init__.py
 
+**配置项用于**:
+
+- 配置Grub引导
+  - 菜单名称`menu_name`：grub中显示的菜单名称
+  - OS名称`os_name`：选中启动项后输出OS名称
+  - Loader内核：配置ONL进入真实系统前的引导阶段所用的内核 (优先$PLATFORM.itb/$PLATFORM.cpio.gz)
+- 配置onie/onie-firmware/loader/system/swi升级
+  - 升级存放目录
+  - 启用/禁用
+- 配置X.509公钥证书用于加密通讯
+
+
 **配置来源于**:
 
 - /                               # 按以下顺序依次加载
@@ -285,6 +297,10 @@ packages/base/all/vendor-config-onl/src/python/onl/sysconfig/__init__.py
 - 初始化接口(磁盘分区已挂载，网络未初始化): `for s in $(ls /etc/sysinit.d/* | sort); do [ -x "$s" ] && "$s" done`
   - 实现方法: 由于`/etc/sysinit.d/`下的文件为空且其相关代码处于`onl-loader-initrd-files:all`，虽然可以通过platform-config的`PKG.yml`进行映射文件，但这并不优雅，且会导致真实的SWI的rootfs也会存在该文件且该文件对其无用。建议通过`/lib/platform-config/${platform}/onl/boot/${platform}`脚本的方式生成这些文件。
 
+- 自定义Banner(自定义bootup阶段显示的横幅/版本信息)：`. /lib/customize.sh` (位于`onl-loader-initrd-files:all`) --+--> `. /etc/onl/loader/versions.sh`
+  - `/etc/onl/loader/versions.sh`为通用统一的版本信息，不能覆盖`customize.sh`中的某些参数，如`LOADER_SYSTEM_NAME="Open Network Linux"`。同时，`version.sh`中也有`Open Network Linux`字眼，是由源码中`/tools/onlvi.py`硬编码设置的。该部分也可以通过上方接口进行临时修改，但治标不治本。
+  - `/lib/customize.sh`会调用上方的`version.sh`获取更多版本参数，但其专用的参数如`LOADER_SYSTEM_NAME="Open Network Linux"`需要通过上方的接口来修改`/lib/customize.sh`文件。
+
 
 **存放位置**:
 
@@ -301,7 +317,7 @@ packages/base/all/vendor-config-onl/src/python/onl/sysconfig/__init__.py
 
 
 
-#### onie updater of platform customization in ONL
+#### onie upgrade of platform customization in ONL
 
 packages/base/all/vendor-config-onl/src/boot.d/60.upgrade-onie
 
@@ -344,7 +360,7 @@ packages/base/all/vendor-config-onl/src/boot.d/60.upgrade-onie
 
 
 
-#### onie firmware updater of platform customization in ONL
+#### onie firmware upgrade of platform customization in ONL
 
 packages/base/all/vendor-config-onl/src/boot.d/61.upgrade-firmware
 
@@ -467,6 +483,58 @@ packages/base/all/vendor-config-onl/src/boot.d/64.upgrade-swi
 
 - 可通过插件`src/python/$platform.replace('-','_').replace('.','_')/__init__.py`来产生这些文件。
 - 也可通过手动建立文件，每次重启就能自动安装。
+
+
+
+#### used as DIAG on ONIE
+
+1. Version配置：`tools/onlvi.py`
+   1. `V_OS_NAME`: `"Open Network Linux OS"`改为`XXX-DIAG`
+
+2. sysconfig配置：参照[#sysconfig of platform customization]
+   1. `os_name`以及`menu_name`改为`XXX-DIAG`
+
+3. Loader中banner配置：参照[#boot interface during initrd-loader...]
+   1. `LOADER_SYSTEM_NAME`改为`XXX-DIAG`
+
+4. 安装前：`builds/any/installer/sample-preinstall.sh` or `install plugins`
+   1. 所有*分区名*通过sgdisk命令重命名为正常的ONL分区*Label名*
+      
+      `sgdisk --change-name=$(sgdisk -p ${DEV_DISK} | grep "ONL-BOOT-DIAG" | awk '{print $1}'):"ONL-BOOT" ${DEV_DISK}`
+    
+   2. 所有*分区属性Attribute flags*通过sgdisk命令`清除第0bit`
+
+      `sgdisk -A $(sgdisk -p ${DEV_DISK} | grep "ONL-BOOT" | awk '{print $1}'):clear:0 ${DEV_DISK}`
+
+   3. 修改*DIAG的EFI引导*为正常的*ONL EFI引导*
+
+      `[ -d /boot/efi/EFI/XXX-DIAG ] && mv /boot/efi/EFI/XXX-DIAG /boot/efi/EFI/ONL`
+
+
+2. 安装后：`builds/any/installer/sample-postinstall.sh` or `install plugins`
+   1. *分区名*通过sgdisk命令重命名为`*-DIAG`，Label会保持不变
+
+      `sgdisk --change-name=$(sgdisk -p ${DEV_DISK} | grep "ONL-BOOT" | awk '{print $1}'):"ONL-BOOT-DIAG" ${DEV_DISK}`
+
+   2. 所有*分区属性Attribute flags*通过sgdisk命令`设置第0bit`，设置后其值为1，意味着ONIE会在卸载时跳过该分区的擦除
+
+      `sgdisk -A $(sgdisk -p ${DEV_DISK} | grep "ONL-BOOT" | awk '{print $1}'):set:0 ${DEV_DISK}`
+
+   3. 改*ONL的EFI引导*为*DIAG EFI引导*
+      1. 删除ONL EFI引导项：`efibootmgr -b $ONL_BOOT_NUM -B`
+      2. 移动ONL引导配置为DIAG引导配置：`mv /boot/efi/EFI/ONL /boot/efi/EFI/XXX-DIAG`
+      3. 添加DIAG EFI引导项：`efibootmgr -c -d ${DEV_DISK} -p $(sgdisk -p ${DEV_DISK} | grep "ONL-BOOT" | awk '{print $1}') -L XXX-DIAG -l \\EFI\\XXX-DIAG\\GRUBX64.EFI`
+      4. 添加DIAG引导项到onie-grub：通过`/mnt/onie-boot/onie/grub.d/50_onie_grub`刷新onie下的grub配置`/mnt/onie-boot/onie/grub/diag-bootcmd.cfg`
+
+
+3. 原理：
+   1. onie-uninstall时
+      1. 对于目录项`ls -d $uefi_esp_mnt/EFI/*`，跳过目录名`*/onie|*-DIAG|*/BOOT`的EFI启动项
+      2. 对于msdos：`分区Label`中存在关键字`ONIE-BOOT|-DIAG`的分区，跳过擦除；
+      3. 对于uefi下分区：通过`GUID`识别跳过`ESP/BOOT/ONIE`分区；通过识别`分区名`存在关键字`-DIAG`以及`分区属性Attribute flags`中仅第`0bit为1`时，为`DIAG分区`，跳过擦除。
+   2. 进入ONL-loader引导后，是根据*分区Label*来挂在ONL相关分区的，所以修改*分区名*并不影响
+
+
 
 
 

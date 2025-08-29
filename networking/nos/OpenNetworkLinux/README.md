@@ -4,18 +4,18 @@
 
 ## Source Code
 
-[GitHub](https://github.com/opencomputeproject/OpenNetworkLinux)
+- [GitHub](https://github.com/opencomputeproject/OpenNetworkLinux)
 
 ## Documentation
 
-[Source Code Doc](https://github.com/opencomputeproject/OpenNetworkLinux/tree/master/docs)
-[Wiki](https://github.com/opencomputeproject/OpenNetworkLinux/wiki)
-[GitHub IO](https://opencomputeproject.github.io/OpenNetworkLinux/)
-[ONL/OCP](https://opennetlinux.org/index.html)
+- [Source Code Doc](https://github.com/opencomputeproject/OpenNetworkLinux/tree/master/docs)
+- [Wiki](https://github.com/opencomputeproject/OpenNetworkLinux/wiki)
+- [GitHub IO](https://opencomputeproject.github.io/OpenNetworkLinux/)
+- [ONL/OCP](https://opennetlinux.org/index.html)
 
 ## Building
 
-[Building](https://github.com/opencomputeproject/OpenNetworkLinux/blob/master/docs/Building.md)
+- [Building](https://github.com/opencomputeproject/OpenNetworkLinux/blob/master/docs/Building.md)
 
 ## Release
 
