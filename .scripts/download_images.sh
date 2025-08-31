@@ -2,6 +2,7 @@
 
 # This script downloads images from a URL and saves them to a mapping assert directory.
 
+SCRIPT_NAME=$(basename $0)
 BASE_PATH=$(cd `dirname $0`; pwd)
 ROOT_PATH=$(cd `dirname $0`; cd ..; pwd)
 
@@ -163,16 +164,16 @@ download_image_for_markdown() {
 
 print_usage() {
     echo 
-    echo "Usage: dlimages.sh -p <path>"
+    echo "Usage: $SCRIPT_NAME -p <path>"
     echo "  -a           Download all notes' third-lib images."
     echo "  -b           Do not skip backup and replacement if no image downloaded."
     echo "  -f           Force download all the links."
     echo "  -h           Display this help message."
     echo "  -p <path>    The path to the note directory/filepath."
     echo
-    echo "Example: dlimages.sh -p /path/to/note.md"
-    echo "         dlimages.sh -p /path/to/notedir"
-    echo "         dlimages.sh -a"
+    echo "Example: $SCRIPT_NAME -p /path/to/note.md"
+    echo "         $SCRIPT_NAME -p /path/to/notedir"
+    echo "         $SCRIPT_NAME -a"
     echo 
 }
 
