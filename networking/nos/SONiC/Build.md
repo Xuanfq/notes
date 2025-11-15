@@ -76,6 +76,63 @@ make SONIC_BUILD_JOBS=4 all
 
 
 
+
+
+## Makefile
+
+
+### 通用目标规则
+
+- 使用%::模式规则匹配任意目标
+  - 根据版本开关变量决定是否构建对应debian环境下的版本：
+    - 默认构建buster、bullseye、bookworm
+    - 默认不构建：jessie、stretch
+  - 对于设置的debian环境的版本进行逐个构建：
+    - 重试次数为0，但pipeline下默认为3
+    - 主要命令为`./scripts/run_with_retry $(MAKE) EXTRA_DOCKER_TARGETS=$(notdir $@) BLDENV=$debianname -f Makefile.work $debianname`
+      - `EXTRA_DOCKER_TARGETS=$(notdir $@)` 用于传递额外目标到docker编译环境
+      - 在`jessie`时不存在参数`BLDENV=$debianname`，且默认不编译`jessie`
+
+
+### make init
+
+```bash
+make init
+```
+
+- 实际调用: `$(MAKE) -f Makefile.work init`
+- 实际功能: 
+  - 克隆所有子模块代码: `$(Q)git submodule update --init --recursive`
+  - 修复子模块中的 .git 文件，使其使用相对路径而不是绝对路径指向 Git 目录: `$(Q)git submodule foreach --recursive '[ -f .git ] && echo "gitdir: $$(realpath --relative-to=. $$(cut -d" " -f2 .git))" > .git'`
+    - 当项目被克隆到不同的位置时，绝对路径可能会失效，而相对路径则能保持有效。
+    - 在某些 CI/CD 环境或容器化部署中，使用相对路径可以避免因路径变化导致的问题。
+- 隐藏依赖项：Makefile.work:sonic-build-hooks
+  - 执行`sonic-build-hooks`构建`src/sonic-build-hooks`生成`sonic-build-hooks_1.0_all.deb`
+  - 存放到`sonic-slave-*/buildinfo/`下用于docker构建时使用
+
+
+### make configure
+
+```bash
+make configure PLATFORM=[ASIC_VENDOR]
+```
+
+- 依赖项: 
+  - `ASIC_VENDOR` 私有代码克隆
+    - `ASIC_VENDOR` 私有代码配置位于`platform/checkout/`目录下的：
+      - 文件`$(PLATFORM).ini`
+      - 文件`$(PLATFORM)-smartswitch.ini`: 需配置参数`SMARTSWITCH=1`, e.g. `make configure PLATFORM=[ASIC_VENDOR] SMARTSWITCH=1`
+    - 当前(202508)仅存在以下`ASIC_VENDOR`存在私有代码：
+      - cisco-8000
+      - pensando
+    - 这些代码一般会被克隆到`platform/$(PLATFORM)`获其子目录
+- 对于设置的需要编译的不同的debian版本进行逐个配置：
+  - 实际调用`BLDENV=$debianname $(MAKE) -f Makefile.work $@`
+
+
+
+
+
 ## Makefile.work
 
 在 Makefile.work 中，执行顺序如下：
@@ -281,62 +338,6 @@ make SONIC_BUILD_JOBS=4 all
 
 
 
-
-
-
-
-
-
-## Makefile
-
-
-### 通用目标规则
-
-- 使用%::模式规则匹配任意目标
-  - 根据版本开关变量决定是否构建对应debian环境下的版本：
-    - 默认构建buster、bullseye、bookworm
-    - 默认不构建：jessie、stretch
-  - 对于设置的debian环境的版本进行逐个构建：
-    - 重试次数为0，但pipeline下默认为3
-    - 主要命令为`./scripts/run_with_retry $(MAKE) EXTRA_DOCKER_TARGETS=$(notdir $@) BLDENV=$debianname -f Makefile.work $debianname`
-      - `EXTRA_DOCKER_TARGETS=$(notdir $@)` 用于传递额外目标到docker编译环境
-      - 在`jessie`时不存在参数`BLDENV=$debianname`，且默认不编译`jessie`
-
-
-### make init
-
-```bash
-make init
-```
-
-- 实际调用: `$(MAKE) -f Makefile.work init`
-- 实际功能: 
-  - 克隆所有子模块代码: `$(Q)git submodule update --init --recursive`
-  - 修复子模块中的 .git 文件，使其使用相对路径而不是绝对路径指向 Git 目录: `$(Q)git submodule foreach --recursive '[ -f .git ] && echo "gitdir: $$(realpath --relative-to=. $$(cut -d" " -f2 .git))" > .git'`
-    - 当项目被克隆到不同的位置时，绝对路径可能会失效，而相对路径则能保持有效。
-    - 在某些 CI/CD 环境或容器化部署中，使用相对路径可以避免因路径变化导致的问题。
-- 隐藏依赖项：Makefile.work:sonic-build-hooks
-  - 执行`sonic-build-hooks`构建`src/sonic-build-hooks`生成`sonic-build-hooks_1.0_all.deb`
-  - 存放到`sonic-slave-*/buildinfo/`下用于docker构建时使用
-
-
-### make configure
-
-```bash
-make configure PLATFORM=[ASIC_VENDOR]
-```
-
-- 依赖项: 
-  - ASIC_VENDOR 私有代码克隆
-    - ASIC_VENDOR 私有代码配置位于`platform/checkout/`目录下的：
-      - 文件`$(PLATFORM).ini`
-      - 文件`$(PLATFORM)-smartswitch.ini`: 需配置参数`SMARTSWITCH=1`, e.g. `make configure PLATFORM=[ASIC_VENDOR] SMARTSWITCH=1`
-    - 当前(202508)仅存在以下ASIC_VENDOR存在私有代码：
-      - cisco-8000
-      - pensando
-    - 这些代码一般会被克隆到`platform/$(PLATFORM)`获其子目录
-- 对于设置的需要编译的不同的debian版本进行逐个配置：
-  - 实际调用`BLDENV=$debianname $(MAKE) -f Makefile.work $@`
 
 
 
