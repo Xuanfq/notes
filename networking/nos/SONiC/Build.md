@@ -449,9 +449,9 @@ make configure PLATFORM=[ASIC_VENDOR]
 
 
 
-### 3. slave.mk 源码分析
+### 源码分析
 
-#### 1. 预设设置 - Presettings
+#### 1. 预设设置
 
 主要包含了构建环境的基本设置：
 
@@ -482,7 +482,7 @@ make configure PLATFORM=[ASIC_VENDOR]
 
 
 
-#### 2. 通用定义 - General definitions
+#### 2. 通用定义
 
 - **各种目录路径**: 
   - `TARGET_PATH` = target
@@ -528,185 +528,263 @@ make configure PLATFORM=[ASIC_VENDOR]
 #### 3. 规则定义
 
 
-- 安装钩子deb包: `sonic-build-hooks_1.0_all.deb`
+- **安装钩子deb包**: `sonic-build-hooks_1.0_all.deb`
 
-- 规则`.platform`: 检测是否配置平台 CONFIGURED_PLATFORM
+- **定义`.platform`规则**: 检测是否配置平台 CONFIGURED_PLATFORM
 
-- 规则`configure`: 
+- **定义`configure`规则**: 
   - 创建相关目录
   - 生成平台标志文件 - `echo $(PLATFORM) > .platform`
   - 生成架构标准文件 - `echo $(PLATFORM_ARCH) > .arch`
 
-- 规则`distclean`: 
+- **定义`distclean`规则**: 
   - 清理平台标志文件 - `rm -f .platform`
   - 清理架构标志文件 - `rm -f .arch`
 
-- 规则`list`: 列出所有SONiC目标规则
+- **定义`list`规则**: 列出所有SONiC目标规则
   - `$(Q)$(foreach target,$(SONIC_TARGET_LIST),echo $(target);)`
 
+- **导入默认配置规则**: `$(RULES_PATH)/config`
+
+- **导入用户配置规则**: `$(RULES_PATH)/config.user`
 
 
-#### 目标组定义与实现
+#### 4. 编译配置
 
-slave.mk的核心是定义各种目标组，从400-800行可以看到这些实现：
+- **版本控制相关变量导出**
 
-```make
-# 构建配置信息打印
-.PHONY: print_build_config
-print_build_config:
-    @echo "Build Configuration:"
-    @echo "  PLATFORM=$(PLATFORM)"
-    @echo "  ARCH=$(CONFIGURED_ARCH)"
-    @echo "  JOBS=$(SONIC_BUILD_JOBS)"
-    # ...更多配置信息
+- **根据`Makefile.work`以及`rules/config`的设定enable一些Feature及include一些Component**
 
-# RFS目标定义
-SONIC_RFS_TARGETS += $(addprefix rfs-,$(foreach target,$(SONIC_RFS_TARGET_NAMES),$(target)))
+- **导入`rules`目录下的函数`functions`规则**: `include $(RULES_PATH)/functions`
 
-# Docker相关函数定义
-docker-get-tag = $(shell echo $(1) | sed 's/\.gz//g' | sed 's/docker-//g')
-docker-image-save = docker save $(1) | gzip > $(2)
-docker-image-load = docker load -i $(1)
+- **导入`rules`目录下的所有`*.mk`规则**: `include $(RULES_PATH)/*.mk`
+
+- **导入`PDDF`框架规则**: `include $(PLATFORM_PDDF_PATH=platfrom/pddf)/rules.mk`
+
+- **导入指定平台`platfrom`规则**: `include $(PLATFORM_PATH=platform/xxx)/rules.mk`
+
+- **设定交叉编译等编译相关环境**
+
+- **输出关键的编译配置属性**
+
+- **定义`SONIC_RFS_TARGETS`相关目标规则**
+
+
+
+
+#### 5. 构建目标类型与分组
+
+> Reference [README.buildsystem.md](https://github.com/sonic-net/sonic-buildimage/blob/master/README.buildsystem.md)
+
+**关键术语解析**  
+
+- **.deb 包**：Debian 系列操作系统（如 Ubuntu）的标准软件包格式，此处指 SONIC 系统中需构建或安装的软件包。  
+- **buildimage**：SONIC 构建流程中的核心镜像，用于提供编译、打包所需的环境和工具链。  
+- **Python wheels（.whl）**：Python 的二进制包格式，可直接安装，无需编译源码，此处用于向 Docker 镜像中添加 Python 依赖。  
+- **运行时依赖（RDEPENDS）vs 构建依赖（DEPENDS）**：  
+  - 构建依赖：仅在软件包**编译构建阶段**需要（如编译器、依赖的源码库）；  
+  - 运行时依赖：软件包**安装运行阶段**必须存在的依赖（如依赖的库文件、其他软件）。 
+
+
+##### **SONIC_DPKG_DEBS**
+
+构建 .deb 软件包的主要目标组。  
+
+定义方式如下：
+
+```makefile
+SOME_NEW_DEB = some_new_deb.deb # 你的软件包名称
+$(SOME_NEW_DEB)_SRC_PATH = $(SRC_PATH)/project_name # 源代码所在目录的路径
+$(SOME_NEW_DEB)_DEPENDS = $(SOME_OTHER_DEB1) $(SOME_OTHER_DEB2) ... # 构建依赖（编译时所需依赖）
+$(SOME_NEW_DEB)_RDEPENDS = $(SOME_OTHER_DEB1) $(SOME_OTHER_DEB2) ... # 运行时依赖（软件运行时所需依赖）
+SONIC_DPKG_DEBS += $(SOME_NEW_DEB) # 将软件包添加到该目标组
 ```
-<mcfile name="slave.mk" path="/home/aiden/workspace/sonic/sonic-buildimage/slave.mk"></mcfile>
 
-这部分代码实现了：
-- 构建配置信息打印功能
-- RFS（Root File System）目标定义
-- Docker镜像处理函数
-- BuildKit配置优化
 
-#### 4 包构建规则
+##### **SONIC_PYTHON_STDEB_DEBS**
 
-从600-800行可以看到不同类型包的构建规则：
+与上述目标组功能相同，区别在于：它不使用 `dpkg-buildpackage` 工具构建软件包，而是执行 `python setup.py --command-packages=stdeb.command bdist_deb` 命令（适用于 Python 项目的 .deb 包构建）。
 
-```make
-# 本地文件复制目标
-$(SONIC_COPY_DEBS):
-    @mkdir -p $(DEBS_DIR)
-    $(Q)cp $(@)_PATH $(DEBS_DIR)/$(notdir $@)
-    $(Q)touch $@
+定义方式如下：
 
-# 在线文件下载目标
-$(SONIC_ONLINE_DEBS):
-    @mkdir -p $(DEBS_DIR)
-    $(Q)if [ ! -e $(DEBS_DIR)/$(notdir $@) ] || [ "$($(@)_REGET)" = "y" ]; then \
-        curl -sL $($(@)_URL) -o $(DEBS_DIR)/$(notdir $@); \
-    fi
-    $(Q)touch $@
+```makefile
+SOME_NEW_DEB = some_new_deb.deb # 你的软件包名称
+$(SOME_NEW_DEB)_SRC_PATH = $(SRC_PATH)/project_name # 源代码所在目录的路径
+$(SOME_NEW_DEB)_DEPENDS = $(SOME_OTHER_DEB1) $(SOME_OTHER_DEB2) ... # 构建依赖
+$(SOME_NEW_DEB)_RDEPENDS = $(SOME_OTHER_DEB1) $(SOME_OTHER_DEB2) ... # 运行时依赖
+SONIC_PYTHON_STDEB_DEBS += $(SOME_NEW_DEB) # 将软件包添加到该目标组
 ```
-<mcfile name="slave.mk" path="/home/aiden/workspace/sonic/sonic-buildimage/slave.mk"></mcfile>
 
-这部分定义了：
-- 本地文件复制目标（SONIC_COPY_DEBS/SONIC_COPY_FILES）
-- 在线文件下载目标（SONIC_ONLINE_DEBS/SONIC_ONLINE_FILES）
-- 使用build.sh脚本的构建目标（SONIC_MAKE_FILES）
-- Debian包构建目标（SONIC_MAKE_DEBS/SONIC_DPKG_DEBS）
 
-#### 5 Python包处理
+##### **SONIC_PYTHON_WHEELS**
 
-从1000-1200行可以看到Python包的处理逻辑：
+与上述目标组功能相同，区别在于：它不使用 `--command-packages=stdeb.command bdist_deb` 构建Python包，而是执行 `python setup.py bdist_wheel` 命令（适用于 Python 项目的 .deb 包构建）。
 
-```make
-# Python包安装规则
-$(PYTHON_WHEELS_DIR)/%.whl:
-    @mkdir -p $(PYTHON_WHEELS_DIR)
-    $(Q)cd $(@:$(PYTHON_WHEELS_DIR)/%.whl=$(SRC_PATH)/%) && \
-    $(if $(filter $(CONFIGURED_ARCH),amd64), \
-        python setup.py bdist_wheel, \
-        CC=$(CROSS_COMPILE)gcc CXX=$(CROSS_COMPILE)g++ \
-        python setup.py bdist_wheel --plat-name $(CONFIGURED_ARCH) \
-    )
-    $(Q)cp $(@:$(PYTHON_WHEELS_DIR)/%.whl=$(SRC_PATH)/%)/dist/*.whl $(PYTHON_WHEELS_DIR)/
-    $(Q)touch $@
+定义方式如下：
+
+```makefile
+SOME_NEW_WHL = some_new_whl.whl # 你的软件包名称
+$(SOME_NEW_WHL)_SRC_PATH = $(SRC_PATH)/project_name # 源代码所在目录的路径
+$(SOME_NEW_WHL)_PYTHON_VERSION = 2 (or 3)
+$(SOME_NEW_WHL)_DEPENDS = $(SOME_OTHER_WHL1) $(SOME_OTHER_WHL2) ... # 构建依赖
+SONIC_PYTHON_WHEELS += $(SOME_NEW_WHL)
 ```
-<mcfile name="slave.mk" path="/home/aiden/workspace/sonic/sonic-buildimage/slave.mk"></mcfile>
 
-这部分实现了：
-- Python包的构建规则
-- 交叉编译环境下的Python包处理
-- 缓存机制优化
 
-#### 6 Docker镜像构建
 
-从1000-1400行详细定义了Docker镜像构建过程：
+##### **SONIC_MAKE_DEBS**
 
-```make
-# 启动Docker守护进程
-.PHONY: start-docker
-start-docker:
-    @echo "Starting docker daemon..."
-    $(Q)sudo service docker start
+此目标组灵活性更高。
 
-# 简单Docker镜像构建规则
-$(SONIC_SIMPLE_DOCKER_IMAGES):
-    @mkdir -p $(DOCKERS_DIR)
-    $(Q)cd $($(@)_PATH) && \
-        docker build -t $(call docker-get-tag,$@) .
-    $(Q)$(call docker-image-save,$(call docker-get-tag,$@),$(DOCKERS_DIR)/$(@F))
-    $(Q)touch $@
+若你需要执行特定类型的构建操作，或在构建前对路径进行自定义配置，只需定义自己的 Makefile 并将其添加到 `buildimage`（SONIC 构建镜像流程）中即可。
+
+定义方式如下：
+
+```makefile
+SOME_NEW_DEB = some_new_deb.deb # 你的软件包名称
+$(SOME_NEW_DEB)_SRC_PATH = $(SRC_PATH)/project_name # 源代码所在目录的路径
+$(SOME_NEW_DEB)_DEPENDS = $(SOME_OTHER_DEB1) $(SOME_OTHER_DEB2) ... # 构建依赖
+$(SOME_NEW_DEB)_RDEPENDS = $(SOME_OTHER_DEB1) $(SOME_OTHER_DEB2) ... # 运行时依赖
+SONIC_MAKE_DEBS += $(SOME_NEW_DEB) # 将软件包添加到该目标组
 ```
-<mcfile name="slave.mk" path="/home/aiden/workspace/sonic/sonic-buildimage/slave.mk"></mcfile>
 
-这部分实现了：
-- Docker镜像构建的完整流程
-- 不同构建环境（jessie/stretch/buster/bullseye）的处理
-- 镜像缓存和标签管理
-- 调试镜像构建逻辑
 
-#### 7 安装程序构建
 
-从1400-1600行定义了最终SONiC安装程序的构建过程：
+##### **SONIC_COPY_DEBS**
 
-```make
-# 安装程序构建规则
-sonic-installer: $(DOCKERS_DIR)/$(DOCKER_PLATFORM_DB) $(PYTHON_WHEELS_DIR)/$(PYTHON_SWSSCOMMON) \
-    $(PYTHON_WHEELS_DIR)/$(PYTHON_SONIC_DB_CLI) $(PYTHON_WHEELS_DIR)/$(PYTHON_SONIC_PY_COMMON) \
-    $(PYTHON_WHEELS_DIR)/$(PYTHON_SONIC_CONFIG_ENGINE) \
-    # ...更多依赖
-    $(Q)mkdir -p target
-    $(Q)SONIC_DOCKER_REGISTRY_MIRROR=$(SONIC_DOCKER_REGISTRY_MIRROR) \
-        ./build_debian.sh $(SONIC_DISTRO) \
-        # ...更多环境变量
-    $(Q)SONIC_DOCKER_REGISTRY_MIRROR=$(SONIC_DOCKER_REGISTRY_MIRROR) \
-        ./build_image.sh \
-        # ...更多环境变量
-    @echo "Build completed. Image available at target/sonic-$(CONFIGURED_PLATFORM)-$(CONFIGURED_ARCH).bin"
+此类软件包将直接从你机器上的指定位置复制（无需构建）。
+
+若部分软件包因法律问题需在本地构建，或已预先构建完成且可从网络获取，可使用这种方式。
+
+定义方式如下：
+
+```makemakefile
+SOME_NEW_DEB = some_new_deb.deb # 你的软件包名称
+$(SOME_NEW_DEB)_PATH = path/to/some_new_deb.deb # 软件包文件的路径
+SONIC_COPY_DEBS += $(SOME_NEW_DEB) # 将软件包添加到该目标组
 ```
-<mcfile name="slave.mk" path="/home/aiden/workspace/sonic/sonic-buildimage/slave.mk"></mcfile>
 
-这部分代码实现了：
-- 安装程序构建的完整依赖链
-- 环境变量配置
-- Docker服务模板生成
-- 安装脚本生成
+
+##### **SONIC_COPY_FILES**
+
+与上述目标组功能相同，区别在于：它适用于普通文件（非 .deb 包）。当你需要将普通文件复制到 Docker 容器中进行安装时，可使用此目标组。
+
+若部分软件包因法律问题需在本地构建，或已预先构建完成且可从网络获取，可使用这种方式。
+
+定义方式如下：  
+
+```makefile
+SOME_NEW_FILE = some_new_file # 你的文件名称
+$(SOME_NEW_FILE)_PATH = path/to/some_new_file # 文件的路径
+SONIC_COPY_FILES += $(SOME_NEW_FILE) # 将文件添加到该目标组
+```
+
+
+##### **SONIC_ONLINE_DEBS**
+
+用于从在线源获取 .deb 软件包的目标组。
+
+若部分软件包因法律问题需在本地构建，或已预先构建完成且可从网络获取，可使用这种方式。
+
+定义方式如下：
+
+```makefile
+SOME_NEW_DEB = some_new_deb.deb # 你的软件包名称
+$(SOME_NEW_DEB)_URL = https://url/to/this/deb.deb # 软件包的下载链接（URL）
+SONIC_ONLINE_DEBS += $(SOME_NEW_DEB) # 将软件包添加到该目标组
+```
+
+
+##### **SONIC_ONLINE_FILES**
+
+用于从在线源获取普通文件的目标组。
+
+若部分软件包因法律问题需在本地构建，或已预先构建完成且可从网络获取，可使用这种方式。
+
+定义方式如下：
+
+```makefile
+SOME_NEW_FILE = some_new_file # 你的文件名称
+$(SOME_NEW_FILE)_URL = https://url/to/this/file # 文件的下载链接（URL）
+SONIC_ONLINE_FILES += $(SOME_NEW_FILE) # 将文件添加到该目标组
+```
+
+
+
+##### **SONIC_SIMPLE_DOCKER_IMAGES**
+
+从名称可看出，此目标组用于通过常规 Dockerfile 构建 Docker 镜像（流程简单直接）。
+
+定义方式如下：
+
+```makefile
+SOME_DOCKER = some_docker.gz # 你的 Docker 镜像名称（通常以 .gz 压缩格式存储）
+$(SOME_DOCKER)_PATH = path/to/your/docker # 你的 Dockerfile 所在路径
+SONIC_SIMPLE_DOCKER_IMAGES += $(SOME_DOCKER) # 将 Docker 镜像添加到该组
+```
+
+
+##### **SONIC_DOCKER_IMAGES**
+
+此目标组功能更复杂灵活。你可以指定从 `buildimage` 中获取并安装到当前镜像的 .deb 软件包，且对应的 Dockerfile 会从模板动态生成（适用于需自定义镜像内容的场景）。
+
+定义方式如下：
+
+```makefile
+SOME_DOCKER = some_docker.gz # 你的 Docker 镜像名称
+$(SOME_DOCKER)_PATH = path/to/your/docker # 你的 Dockerfile 所在路径
+$(SOME_DOCKER)_DEPENDS += $(SOME_DEB1) $(SOME_DEB2) # 需安装到镜像中的 .deb 软件包
+$(SOME_DOCKER)_PYTHON_WHEELS += $(SOME_WHL1) $(SOME_WHL2) # 需安装到镜像中的 Python 轮包（.whl 格式）
+$(SOME_DOCKER)_LOAD_DOCKERS += $(SOME_OTHER_DOCKER) # 构建当前镜像所基于的基础 Docker 镜像
+SONIC_DOCKER_IMAGES += $(SOME_DOCKER) # 将 Docker 镜像添加到该组
+```
+
+
+
+#### 7. 安装程序构建
+
+##### 根文件系统构建
+
+./build_debian.sh
+
+
+##### 安装器构建
+
+./build_debian.sh
+./build_image.sh
+
 
 #### 8 清理与通用目标
 
-从1600-1750行定义了清理和通用目标：
+```makefile
+# 清理 Debian 包
+SONIC_CLEAN_DEBS = $(addsuffix -clean,$(addprefix $(DEBS_PATH)/, \
+	   $(SONIC_ONLINE_DEBS) \
+	   $(SONIC_COPY_DEBS) \
+	   $(SONIC_MAKE_DEBS) \
+	   $(SONIC_DPKG_DEBS)))
 
-```make
-# 清理目标定义
-SONIC_CLEAN_DEBS := $(addprefix clean-,$(SONIC_DPKG_DEBS) $(SONIC_MAKE_DEBS))
-SONIC_CLEAN_FILES := $(addprefix clean-,$(SONIC_COPY_FILES) $(SONIC_ONLINE_FILES))
-SONIC_CLEAN_TARGETS := $(SONIC_CLEAN_DEBS) $(SONIC_CLEAN_FILES)
+# 清理文件
+SONIC_CLEAN_FILES = $(addsuffix -clean,$(addprefix $(FILES_PATH)/, \
+	   $(SONIC_ONLINE_FILES) \
+	   $(SONIC_COPY_FILES)))
 
-# 标准目标声明
-.PHONY: $(SONIC_CLEAN_TARGETS) clean print_build_config
-.INTERMEDIATE: $(SONIC_COPY_DEBS) $(SONIC_ONLINE_DEBS)
+# 清理目标文件
+SONIC_CLEAN_TARGETS += $(addsuffix -clean,$(addprefix $(TARGET_PATH)/, \
+		   $(SONIC_DOCKER_IMAGES) \
+		   $(SONIC_INSTALLERS)))
 
-# 所有目标的入口点
-all: $(SONIC_TARGET_LIST)
+# 清理日志和版本文件
+clean-logs :: .platform
+	$(Q)rm -f $(TARGET_PATH)/*.log $(DEBS_PATH)/*.log
+
+# 主清理目标
+clean :: .platform clean-logs clean-versions $$(SONIC_CLEAN_DEBS) $$(SONIC_CLEAN_FILES) $$(SONIC_CLEAN_TARGETS)
 ```
-<mcfile name="slave.mk" path="/home/aiden/workspace/sonic/sonic-buildimage/slave.mk"></mcfile>
 
-这部分代码定义了：
-- 各种清理目标
-- all目标作为入口点
-- 平台相关目标定义
-- 标准目标声明
 
-## 4. 构建系统工作流程
+
+### 工作流程
 
 结合Makefile.work和slave.mk的源码分析，构建系统的工作流程可以概括为：
 
@@ -725,27 +803,15 @@ all: $(SONIC_TARGET_LIST)
 4. **输出产物**：
    - 在target目录下生成最终镜像和中间产物
 
-## 5. 目标组设计与实现
 
-根据源码分析，slave.mk实现了多种目标组，每种目标组针对不同类型的构建需求：
 
-| 目标组 | 用途 | 实现文件 |
-|-------|------|--------|
-| SONIC_DPKG_DEBS | 使用dpkg-buildpackage构建的包 | <mcfile name="slave.mk" path="/home/aiden/workspace/sonic/sonic-buildimage/slave.mk"></mcfile> |
-| SONIC_PYTHON_STDEB_DEBS | 使用python setup.py构建的包 | <mcfile name="slave.mk" path="/home/aiden/workspace/sonic/sonic-buildimage/slave.mk"></mcfile> |
-| SONIC_MAKE_DEBS | 使用自定义Makefile构建的包 | <mcfile name="slave.mk" path="/home/aiden/workspace/sonic/sonic-buildimage/slave.mk"></mcfile> |
-| SONIC_COPY_DEBS/SONIC_COPY_FILES | 从本地复制的包和文件 | <mcfile name="slave.mk" path="/home/aiden/workspace/sonic/sonic-buildimage/slave.mk"></mcfile> |
-| SONIC_ONLINE_DEBS/SONIC_ONLINE_FILES | 从在线源获取的包和文件 | <mcfile name="slave.mk" path="/home/aiden/workspace/sonic/sonic-buildimage/slave.mk"></mcfile> |
-| SONIC_SIMPLE_DOCKER_IMAGES | 简单Docker镜像 | <mcfile name="slave.mk" path="/home/aiden/workspace/sonic/sonic-buildimage/slave.mk"></mcfile> |
-| SONIC_DOCKER_IMAGES | 复杂Docker镜像 | <mcfile name="slave.mk" path="/home/aiden/workspace/sonic/sonic-buildimage/slave.mk"></mcfile> |
+### 关键技术与设计思路
 
-## 6. 关键技术点与设计思路
-
-### 6.1 容器化构建环境
+#### 容器化构建环境
 
 slave.mk的核心设计理念是使用容器化环境确保构建的一致性和可重复性：
 
-```make
+```makefile
 # Docker镜像构建参数
 DOCKER_BUILD_OPTS += --build-arg http_proxy=$(http_proxy)
 DOCKER_BUILD_OPTS += --build-arg https_proxy=$(https_proxy)
@@ -754,18 +820,18 @@ DOCKER_BUILD_OPTS += --build-arg HTTP_PROXY=$(HTTP_PROXY)
 DOCKER_BUILD_OPTS += --build-arg HTTPS_PROXY=$(HTTPS_PROXY)
 DOCKER_BUILD_OPTS += --build-arg NO_PROXY=$(NO_PROXY)
 ```
-<mcfile name="slave.mk" path="/home/aiden/workspace/sonic/sonic-buildimage/slave.mk"></mcfile>
 
 这种设计确保了：
 - 构建环境与主机环境隔离
 - 构建过程可重现
 - 跨平台构建支持
 
-### 6.2 多架构支持
+
+#### 多架构支持
 
 slave.mk实现了对多种架构的支持，特别是通过交叉编译环境和QEMU模拟：
 
-```make
+```makefile
 # 交叉编译环境配置
 ifeq ($(CONFIGURED_ARCH),$(COMPILE_HOST_ARCH))
 SLAVE_BASE_IMAGE = $(SLAVE_DIR)
@@ -782,18 +848,18 @@ CROSS_BUILD_ENVIRON = n
 endif
 endif
 ```
-<mcfile name="slave.mk" path="/home/aiden/workspace/sonic/sonic-buildimage/slave.mk"></mcfile>
 
 这种设计支持：
 - amd64原生构建
 - arm64/armhf交叉编译
 - 通过QEMU进行多架构模拟构建
 
-### 6.3 缓存机制
+
+#### 缓存机制
 
 slave.mk实现了多种缓存机制来加速构建过程：
 
-```make
+```makefile
 # 版本缓存设置
 SONIC_VERSION_CACHE := $(filter-out none,$(SONIC_VERSION_CACHE_METHOD))
 SONIC_OVERRIDE_BUILD_VARS += SONIC_VERSION_CACHE=$(SONIC_VERSION_CACHE)
@@ -802,7 +868,6 @@ export SONIC_VERSION_CACHE SONIC_VERSION_CACHE_SOURCE
 $(shell test -d $(SONIC_VERSION_CACHE_SOURCE) || \
     mkdir -p $(SONIC_VERSION_CACHE_SOURCE) && chmod -f 777 $(SONIC_VERSION_CACHE_SOURCE) 2>/dev/null )
 ```
-<mcfile name="slave.mk" path="/home/aiden/workspace/sonic/sonic-buildimage/slave.mk"></mcfile>
 
 这些缓存机制包括：
 - 版本缓存
