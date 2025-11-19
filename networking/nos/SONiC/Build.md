@@ -569,6 +569,7 @@ make configure PLATFORM=[ASIC_VENDOR]
 
 - **定义`SONIC_RFS_TARGETS`相关目标规则**
 
+- **导入`Makefile.cache`**: 通过`$(RULES_PATH)/*.dep`识别依赖和缓存。
 
 
 
@@ -741,7 +742,7 @@ SONIC_DOCKER_IMAGES += $(SOME_DOCKER) # 将 Docker 镜像添加到该组
 
 
 
-#### 7. 安装程序构建
+#### 6. 安装程序构建
 
 ##### 根文件系统构建
 
@@ -754,7 +755,7 @@ SONIC_DOCKER_IMAGES += $(SOME_DOCKER) # 将 Docker 镜像添加到该组
 ./build_image.sh
 
 
-#### 8 清理与通用目标
+#### 7. 清理与通用目标
 
 ```makefile
 # 清理 Debian 包
