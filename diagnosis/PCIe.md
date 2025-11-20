@@ -1,6 +1,5 @@
 # PCIe
 
-RTC, Real Time Clock, 实时时钟
 
 
 ## Diagnosis
