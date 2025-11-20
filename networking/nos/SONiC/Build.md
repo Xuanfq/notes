@@ -562,6 +562,31 @@ make configure PLATFORM=[ASIC_VENDOR]
 - **导入`PDDF`框架规则**: `include $(PLATFORM_PDDF_PATH=platfrom/pddf)/rules.mk`
 
 - **导入指定平台`platfrom`规则**: `include $(PLATFORM_PATH=platform/xxx)/rules.mk`
+  - **终极目标`SONIC_ALL`**: `SONIC_ALL += $(SONIC_ONE_IMAGE) $(SONIC_ONE_ABOOT_IMAGE) $(DOCKER_FPM)`
+  - **通用导入**: Example broadcom
+    ```makefile
+    include $(PLATFORM_PATH)/sai-modules.mk
+    include $(PLATFORM_PATH)/sai.mk
+    include $(PLATFORM_PATH)/sswsyncd.mk
+    include $(PLATFORM_PATH)/docker-syncd-brcm.mk
+    include $(PLATFORM_PATH)/docker-syncd-brcm-rpc.mk
+    include $(PLATFORM_PATH)/docker-saiserver-brcm.mk
+    include $(PLATFORM_PATH)/one-image.mk
+    include $(PLATFORM_PATH)/raw-image.mk
+    include $(PLATFORM_PATH)/one-aboot.mk
+    include $(PLATFORM_PATH)/libsaithrift-dev.mk
+    include $(PLATFORM_PATH)/docker-syncd-brcm-dnx.mk
+    include $(PLATFORM_PATH)/docker-syncd-brcm-dnx-rpc.mk
+    include $(PLATFORM_PATH)/docker-pde.mk [Option by INCLUDE_PDE]
+    include $(PLATFORM_PATH)/sonic-pde-tests.mk [Option by INCLUDE_PDE]
+    include $(PLATFORM_PATH)/../components/docker-gbsyncd-credo.mk [Option by INCLUDE_GBSYNCD]
+    include $(PLATFORM_PATH)/../components/docker-gbsyncd-broncos.mk [Option by INCLUDE_GBSYNCD]
+    include $(PLATFORM_PATH)/../components/docker-gbsyncd-milleniob.mk [Option by INCLUDE_GBSYNCD]
+    ```
+  - **平台实现导入**:
+    ```makefile
+    include $(PLATFORM_PATH)/platform-modules-*.mk
+    ```
 
 - **设定交叉编译等编译相关环境**
 
@@ -570,6 +595,9 @@ make configure PLATFORM=[ASIC_VENDOR]
 - **定义`SONIC_RFS_TARGETS`相关目标规则**
 
 - **导入`Makefile.cache`**: 通过`$(RULES_PATH)/*.dep`识别依赖和缓存。
+  - **导入`rules`目录下的所有依赖**: `include $(RULES_PATH)/*.dep`
+  - **导入`PDDF`框架依赖**: `include $(PLATFORM_PDDF_PATH)/rules.dep`
+  - **导入指定平台`platfrom`依赖**: `-include $(PLATFORM_PATH)/rules.dep`
 
 
 
@@ -601,6 +629,17 @@ $(SOME_NEW_DEB)_RDEPENDS = $(SOME_OTHER_DEB1) $(SOME_OTHER_DEB2) ... # 运行时
 SONIC_DPKG_DEBS += $(SOME_NEW_DEB) # 将软件包添加到该目标组
 ```
 
+构建原理: `slave.mk`
+```makefile
+# Build project with dpkg-buildpackage
+# ...
+		$(if $($*_DPKG_TARGET),
+			${$*_BUILD_ENV} DEB_BUILD_OPTIONS="${DEB_BUILD_OPTIONS_GENERIC} ${$*_DEB_BUILD_OPTIONS}" DEB_BUILD_PROFILES="${$*_DEB_BUILD_PROFILES}" $(ANT_DEB_CONFIG) $(CROSS_COMPILE_FLAGS) timeout --preserve-status -s 9 -k 10 $(BUILD_PROCESS_TIMEOUT) dpkg-buildpackage -rfakeroot -b $(ANT_DEB_CROSS_OPT) -us -uc -tc -j$(SONIC_CONFIG_MAKE_JOBS) --as-root -T$($*_DPKG_TARGET) --admindir $$mergedir $(LOG),
+			${$*_BUILD_ENV} DEB_BUILD_OPTIONS="${DEB_BUILD_OPTIONS_GENERIC} ${$*_DEB_BUILD_OPTIONS}" DEB_BUILD_PROFILES="${$*_DEB_BUILD_PROFILES}" $(ANT_DEB_CONFIG) $(CROSS_COMPILE_FLAGS) timeout --preserve-status -s 9 -k 10 $(BUILD_PROCESS_TIMEOUT) dpkg-buildpackage -rfakeroot -b $(ANT_DEB_CROSS_OPT) -us -uc -tc -j$(SONIC_CONFIG_MAKE_JOBS) --admindir $$mergedir $(LOG)
+		)
+```
+
+
 
 ##### **SONIC_PYTHON_STDEB_DEBS**
 
@@ -616,6 +655,14 @@ $(SOME_NEW_DEB)_RDEPENDS = $(SOME_OTHER_DEB1) $(SOME_OTHER_DEB2) ... # 运行时
 SONIC_PYTHON_STDEB_DEBS += $(SOME_NEW_DEB) # 将软件包添加到该目标组
 ```
 
+构建原理: `slave.mk`
+```makefile
+# Build project with python setup.py --command-packages=stdeb.command
+# ...
+		python setup.py --command-packages=stdeb.command bdist_deb $(LOG)
+```
+
+
 
 ##### **SONIC_PYTHON_WHEELS**
 
@@ -630,6 +677,32 @@ $(SOME_NEW_WHL)_PYTHON_VERSION = 2 (or 3)
 $(SOME_NEW_WHL)_DEPENDS = $(SOME_OTHER_WHL1) $(SOME_OTHER_WHL2) ... # 构建依赖
 SONIC_PYTHON_WHEELS += $(SOME_NEW_WHL)
 ```
+
+构建原理: `slave.mk`
+```makefile
+# Build project using python setup.py bdist_wheel
+# Projects that generate python wheels
+# ...
+ifneq ($(CROSS_BUILD_ENVIRON),y)
+		# Use pip instead of later setup.py to install dependencies into user home, but uninstall self
+		{ pip$($*_PYTHON_VERSION) install . && pip$($*_PYTHON_VERSION) uninstall --yes `python$($*_PYTHON_VERSION) setup.py --name`; } $(LOG)
+ifeq ($(BLDENV),bookworm)
+		if [ ! "$($*_TEST)" = "n" ]; then pip$($*_PYTHON_VERSION) install ".[testing]" && pip$($*_PYTHON_VERSION) uninstall --yes `python$($*_PYTHON_VERSION) setup.py --name` && timeout --preserve-status -s 9 -k 10 $(BUILD_PROCESS_TIMEOUT) python$($*_PYTHON_VERSION) -m pytest; fi $(LOG)
+		python$($*_PYTHON_VERSION) -m build -n $(LOG)
+else
+		if [ ! "$($*_TEST)" = "n" ]; then timeout --preserve-status -s 9 -k 10 $(BUILD_PROCESS_TIMEOUT) python$($*_PYTHON_VERSION) setup.py test $(LOG); fi
+		python$($*_PYTHON_VERSION) setup.py bdist_wheel $(LOG)
+endif
+else
+		{
+			export PATH=$(VIRTENV_BIN_CROSS_PYTHON$($*_PYTHON_VERSION)):${PATH}
+			python$($*_PYTHON_VERSION) setup.py build $(LOG)
+			if [ ! "$($*_TEST)" = "n" ]; then timeout --preserve-status -s 9 -k 10 $(BUILD_PROCESS_TIMEOUT) python$($*_PYTHON_VERSION) setup.py test $(LOG); fi
+			python$($*_PYTHON_VERSION) setup.py bdist_wheel $(LOG)
+		}
+endif
+```
+
 
 
 
@@ -649,6 +722,41 @@ $(SOME_NEW_DEB)_RDEPENDS = $(SOME_OTHER_DEB1) $(SOME_OTHER_DEB2) ... # 运行时
 SONIC_MAKE_DEBS += $(SOME_NEW_DEB) # 将软件包添加到该目标组
 ```
 
+构建原理: `slave.mk`
+```makefile
+# Build project using build.sh script
+# They are essentially a one-time build projects that get sources from some URL
+# and compile them
+# ...
+		DEB_BUILD_OPTIONS="${DEB_BUILD_OPTIONS_GENERIC}" $(ANT_DEB_CONFIG) $(CROSS_COMPILE_FLAGS) make -j$(SONIC_CONFIG_MAKE_JOBS) DEST=$(shell pwd)/$(DEBS_PATH) -C $($*_SRC_PATH) $(shell pwd)/$(DEBS_PATH)/$* $(LOG)
+```
+
+
+
+##### **SONIC_MAKE_FILES**
+
+此目标组灵活性更高。
+
+若你需要执行特定类型的构建操作，或在构建前对路径进行自定义配置，只需定义自己的 Makefile 并将其添加到 `buildimage`（SONIC 构建镜像流程）中即可。
+
+定义方式如下：
+
+```makefile
+SOME_NEW_FILE = some_new_deb.deb
+$(SOME_NEW_FILE)_SRC_PATH = $(SRC_PATH)/project_name
+$(SOME_NEW_FILE)_DEPENDS = $(SOME_OTHER_DEB1) $(SOME_OTHER_DEB2) ...
+SONIC_MAKE_FILES += $(SOME_NEW_FILE)
+```
+
+构建原理: `slave.mk`
+```makefile
+# Build project using build.sh script
+# They are essentially a one-time build projects that get sources from some URL
+# and compile them
+# ...
+		make DEST=$(shell pwd)/$(FILES_PATH) -C $($*_SRC_PATH) $(shell pwd)/$(FILES_PATH)/$* $(LOG)
+```
+
 
 
 ##### **SONIC_COPY_DEBS**
@@ -659,11 +767,20 @@ SONIC_MAKE_DEBS += $(SOME_NEW_DEB) # 将软件包添加到该目标组
 
 定义方式如下：
 
-```makemakefile
+```makefile
 SOME_NEW_DEB = some_new_deb.deb # 你的软件包名称
 $(SOME_NEW_DEB)_PATH = path/to/some_new_deb.deb # 软件包文件的路径
 SONIC_COPY_DEBS += $(SOME_NEW_DEB) # 将软件包添加到该目标组
 ```
+
+构建原理: `slave.mk`
+```makefile
+# Copy debian packages from local directory
+# ...
+		$(foreach deb,$* $($*_DERIVED_DEBS), \
+			{ cp $($(deb)_PATH)/$(deb) $(DEBS_PATH)/ $(LOG) || exit 1 ; } ; )
+```
+
 
 
 ##### **SONIC_COPY_FILES**
@@ -680,6 +797,14 @@ $(SOME_NEW_FILE)_PATH = path/to/some_new_file # 文件的路径
 SONIC_COPY_FILES += $(SOME_NEW_FILE) # 将文件添加到该目标组
 ```
 
+构建原理: `slave.mk`
+```makefile
+# Copy regular files from local directory
+# ...
+	cp $($*_PATH)/$* $(FILES_PATH)/ $(LOG) || exit 1
+```
+
+
 
 ##### **SONIC_ONLINE_DEBS**
 
@@ -694,6 +819,15 @@ SOME_NEW_DEB = some_new_deb.deb # 你的软件包名称
 $(SOME_NEW_DEB)_URL = https://url/to/this/deb.deb # 软件包的下载链接（URL）
 SONIC_ONLINE_DEBS += $(SOME_NEW_DEB) # 将软件包添加到该目标组
 ```
+
+构建原理: `slave.mk`
+```makefile
+# Download debian packages from online location
+# ...
+		$(foreach deb,$* $($*_DERIVED_DEBS), \
+			{ SKIP_BUILD_HOOK=$($*_SKIP_VERSION) curl -L -f -o $(DEBS_PATH)/$(deb) $($(deb)_CURL_OPTIONS) $($(deb)_URL) $(LOG) || { exit 1 ; } } ; )
+```
+
 
 
 ##### **SONIC_ONLINE_FILES**
@@ -710,6 +844,14 @@ $(SOME_NEW_FILE)_URL = https://url/to/this/file # 文件的下载链接（URL）
 SONIC_ONLINE_FILES += $(SOME_NEW_FILE) # 将文件添加到该目标组
 ```
 
+构建原理: `slave.mk`
+```makefile
+# Download regular files from online location
+# Files are stored in deb packages directory for convenience
+# ...
+	SKIP_BUILD_HOOK=$($*_SKIP_VERSION) curl -L -f -o $@ $($*_CURL_OPTIONS) $($*_URL) $(LOG)
+```
+
 
 
 ##### **SONIC_SIMPLE_DOCKER_IMAGES**
@@ -723,6 +865,36 @@ SOME_DOCKER = some_docker.gz # 你的 Docker 镜像名称（通常以 .gz 压缩
 $(SOME_DOCKER)_PATH = path/to/your/docker # 你的 Dockerfile 所在路径
 SONIC_SIMPLE_DOCKER_IMAGES += $(SOME_DOCKER) # 将 Docker 镜像添加到该组
 ```
+
+构建原理: `slave.mk`
+```makefile
+# targets for building simple docker images that do not depend on any debian packages
+# ...
+	# Prepare docker build info
+	SONIC_ENFORCE_VERSIONS=$(SONIC_ENFORCE_VERSIONS) \
+	TRUSTED_GPG_URLS=$(TRUSTED_GPG_URLS) \
+	SONIC_VERSION_CACHE=$(SONIC_VERSION_CACHE) \
+	DBGOPT='$(DBGOPT)' \
+	scripts/prepare_docker_buildinfo.sh $* $($*.gz_PATH)/Dockerfile $(CONFIGURED_ARCH) $(TARGET_DOCKERFILE)/Dockerfile.buildinfo $(LOG)
+	docker info $(LOG)
+	docker build --squash --no-cache \
+		--build-arg http_proxy=$(HTTP_PROXY) \
+		--build-arg https_proxy=$(HTTPS_PROXY) \
+		--build-arg no_proxy=$(NO_PROXY) \
+		--build-arg user=$(USER) \
+		--build-arg uid=$(UID) \
+		--build-arg guid=$(GUID) \
+		--build-arg docker_container_name=$($*.gz_CONTAINER_NAME) \
+		--label Tag=$(SONIC_IMAGE_VERSION) \
+		-f $(TARGET_DOCKERFILE)/Dockerfile.buildinfo \
+		-t $(DOCKER_IMAGE_REF) $($*.gz_PATH) $(LOG)
+
+	if [ x$(SONIC_CONFIG_USE_NATIVE_DOCKERD_FOR_BUILD) == x"y" ]; then docker tag $(DOCKER_IMAGE_REF) $*; fi
+	SONIC_VERSION_CACHE=$(SONIC_VERSION_CACHE) ARCH=${CONFIGURED_ARCH} \
+		DBGOPT='$(DBGOPT)' \
+		scripts/collect_docker_version_files.sh $* $(TARGET_PATH) $(DOCKER_IMAGE_REF) $($*.gz_PATH) $(LOG)
+```
+
 
 
 ##### **SONIC_DOCKER_IMAGES**
@@ -740,6 +912,44 @@ $(SOME_DOCKER)_LOAD_DOCKERS += $(SOME_OTHER_DOCKER) # 构建当前镜像所基�
 SONIC_DOCKER_IMAGES += $(SOME_DOCKER) # 将 Docker 镜像添加到该组
 ```
 
+构建原理: `slave.mk`
+```makefile
+# Targets for building docker images
+# ...
+		# Prepare docker build info
+		PACKAGE_URL_PREFIX=$(PACKAGE_URL_PREFIX) \
+		SONIC_ENFORCE_VERSIONS=$(SONIC_ENFORCE_VERSIONS) \
+		TRUSTED_GPG_URLS=$(TRUSTED_GPG_URLS) \
+		SONIC_VERSION_CACHE=$(SONIC_VERSION_CACHE) \
+		DBGOPT='$(DBGOPT)' \
+		scripts/prepare_docker_buildinfo.sh $* $($*.gz_PATH)/Dockerfile $(CONFIGURED_ARCH) $(LOG)
+		docker info $(LOG)
+		docker build --no-cache $$( [[ "$($*.gz_SQUASH)" != n ]] && echo --squash)\
+			--build-arg http_proxy=$(HTTP_PROXY) \
+			--build-arg https_proxy=$(HTTPS_PROXY) \
+			--build-arg no_proxy=$(NO_PROXY) \
+			--build-arg user=$(USER) \
+			--build-arg uid=$(UID) \
+			--build-arg guid=$(GUID) \
+			--build-arg docker_container_name=$($*.gz_CONTAINER_NAME) \
+			--build-arg frr_user_uid=$(FRR_USER_UID) \
+			--build-arg frr_user_gid=$(FRR_USER_GID) \
+			--build-arg SONIC_VERSION_CACHE=$(SONIC_VERSION_CACHE) \
+			--build-arg SONIC_VERSION_CACHE_SOURCE=$(SONIC_VERSION_CACHE_SOURCE) \
+			--build-arg image_version=$(SONIC_IMAGE_VERSION) \
+			--label com.azure.sonic.manifest="$$(cat $($*.gz_PATH)/manifest.json)" \
+			--label Tag=$(SONIC_IMAGE_VERSION) \
+		        $($(subst -,_,$(notdir $($*.gz_PATH)))_labels) \
+			-t $(DOCKER_IMAGE_REF) $($*.gz_PATH) $(LOG)
+
+		if [ x$(SONIC_CONFIG_USE_NATIVE_DOCKERD_FOR_BUILD) == x"y" ]; then docker tag $(DOCKER_IMAGE_REF) $*; fi
+		SONIC_VERSION_CACHE=$(SONIC_VERSION_CACHE) ARCH=${CONFIGURED_ARCH}\
+			DBGOPT='$(DBGOPT)' \
+			scripts/collect_docker_version_files.sh $* $(TARGET_PATH) $(DOCKER_IMAGE_REF) $($*.gz_PATH) $($*.gz_PATH)/Dockerfile $(LOG)
+		if [ ! -z $(filter $*.gz,$(SONIC_PACKAGES_LOCAL)) ]; then docker tag $(DOCKER_IMAGE_REF) $*:$(SONIC_IMAGE_VERSION); fi
+```
+
+
 
 
 #### 6. 安装程序构建
@@ -755,7 +965,65 @@ SONIC_DOCKER_IMAGES += $(SOME_DOCKER) # 将 Docker 镜像添加到该组
 ./build_image.sh
 
 
-#### 7. 清理与通用目标
+#### 7. 通用目标
+
+##### all
+
+**目标**:
+
+- `all` (main) : Depend on `$$(SONIC_ALL)`
+- bullseye
+- buster
+- stretch
+- jessie
+
+```makefile
+all : .platform $$(addprefix $(TARGET_PATH)/,$$(SONIC_ALL))
+
+bullseye : $$(addprefix $(TARGET_PATH)/,$$(BULLSEYE_DOCKER_IMAGES)) \
+          $$(addprefix $(TARGET_PATH)/,$$(BULLSEYE_DBG_DOCKER_IMAGES))
+
+buster : $$(addprefix $(TARGET_PATH)/,$$(BUSTER_DOCKER_IMAGES)) \
+          $$(addprefix $(TARGET_PATH)/,$$(BUSTER_DBG_DOCKER_IMAGES))
+
+stretch : $$(addprefix $(TARGET_PATH)/,$$(STRETCH_DOCKER_IMAGES)) \
+          $$(addprefix $(TARGET_PATH)/,$$(STRETCH_DBG_DOCKER_IMAGES))
+
+jessie : $$(addprefix $(TARGET_PATH)/,$$(JESSIE_DOCKER_IMAGES)) \
+         $$(addprefix $(TARGET_PATH)/,$$(JESSIE_DBG_DOCKER_IMAGES))
+```
+
+
+##### clean
+
+**目标**:
+
+- `clean`
+  - `clean-logs`
+  - `clean-versions`
+- `vclean`
+- SONIC_CACHE_CLEAN_DEBS: `$(*_DEBS)-clean`
+  - SONIC_ONLINE_DEBS
+  - SONIC_COPY_DEBS
+  - SONIC_MAKE_DEBS
+  - SONIC_DPKG_DEBS
+  - SONIC_DERIVED_DEBS
+  - SONIC_EXTRA_DEBS
+- SONIC_CACHE_CLEAN_FILES: `$(*_FILES)-clean`
+  - SONIC_ONLINE_FILES
+  - SONIC_COPY_FILES
+  - SONIC_MAKE_FILES
+- SONIC_CACHE_CLEAN_IMAGES: `$(*_FILES)-clean`
+  - SONIC_DOCKER_IMAGES
+  - SONIC_DOCKER_DBG_IMAGES
+  - SONIC_SIMPLE_DOCKER_IMAGES
+  - SONIC_RFS_TARGETS
+  - SONIC_INSTALLERS
+- SONIC_CACHE_CLEAN_STDEB_DEBS: `$(*_DEBS)-clean`
+  - SONIC_PYTHON_STDEB_DEBS
+- SONIC_CACHE_CLEAN_WHEELS: `$(*_WHEELS)-clean`
+  - SONIC_PYTHON_WHEELS
+
 
 ```makefile
 # 清理 Debian 包
@@ -779,9 +1047,80 @@ SONIC_CLEAN_TARGETS += $(addsuffix -clean,$(addprefix $(TARGET_PATH)/, \
 clean-logs :: .platform
 	$(Q)rm -f $(TARGET_PATH)/*.log $(DEBS_PATH)/*.log
 
+clean-versions :: .platform
+	@rm -rf target/versions/*
+
+vclean:: .platform
+	@sudo rm -rf target/vcache/* target/baseimage*
+
 # 主清理目标
-clean :: .platform clean-logs clean-versions $$(SONIC_CLEAN_DEBS) $$(SONIC_CLEAN_FILES) $$(SONIC_CLEAN_TARGETS)
+clean :: .platform clean-logs clean-versions $$(SONIC_CLEAN_DEBS) $$(SONIC_CLEAN_FILES) $$(SONIC_CLEAN_TARGETS) $$(SONIC_CLEAN_STDEB_DEBS) $$(SONIC_CLEAN_WHEELS)
 ```
+
+
+
+##### lib-packages
+
+**目标**:
+
+- `lib-packages` (main)
+
+```makefile
+## To build some commonly used libs. Some submodules depend on these libs.
+## It is used in component pipelines. For example: swss needs libnl, libyang
+lib-packages: $(addprefix $(DEBS_PATH)/,$(LIBNL3) $(LIBYANG) $(PROTOBUF) $(LIB_SONIC_DASH_API))
+```
+
+
+
+##### listall
+
+**目标**:
+
+- `listall`: 列出所有主要目标及其衍生目标，衍生目标需缩进显示。
+
+```makefile
+# Makefile.cache
+listall :
+	@$(foreach target,$(SONIC_TARGET_LIST),\
+        $(eval DPKG:=$(lastword $(subst /, ,$(target)))) \
+        $(eval PATH:= $(subst $(DPKG),,$(target))) \
+        $(if $($(DPKG)_MAIN_DEB),,
+			echo "[$(target)] "; \
+            $(foreach pkg,$($(DPKG)_DERIVED_DEBS) $($(DPKG)_EXTRA_DEBS),\
+				echo "     $(PATH)$(pkg)"; \
+             )\
+         )\
+      )
+```
+
+
+
+##### show-*
+
+**目标**:
+
+- `show-*`: 显示主要目标(见listall)的相关信息
+
+```makefile
+# Makefile.cache
+#$(addprefix show-,$(SONIC_TARGET_LIST)):show-%:
+show-%:
+	@$(foreach target,$(SONIC_TARGET_LIST),\
+        $(eval DPKG:=$(lastword $(subst /, ,$(target)))) \
+        $(eval PATH:= $(subst $(DPKG),,$(target))) \
+        $(if $(findstring $*,$(target)),
+		$(info ) \
+		$(eval MDPKG:=$(if $($(DPKG)_MAIN_DEB),$($(DPKG)_MAIN_DEB),$(DPKG))) \
+			$(info  [$(PATH)$(MDPKG)]  ) \
+            $(foreach pkg,$($(MDPKG)_DERIVED_DEBS) $($(MDPKG)_EXTRA_DEBS),\
+				$(info $(SPACE)$(SPACE)$(SPACE)$(SPACE) $(PATH)$(pkg)) \
+             )\
+         )\
+      )
+	$(info )
+```
+
 
 
 
