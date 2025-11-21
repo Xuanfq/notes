@@ -559,7 +559,7 @@ make configure PLATFORM=[ASIC_VENDOR]
 
 - **导入`rules`目录下的所有`*.mk`规则**: `include $(RULES_PATH)/*.mk`
 
-- **导入`PDDF`框架规则**: `include $(PLATFORM_PDDF_PATH=platfrom/pddf)/rules.mk`
+- **导入`PDDF`框架规则**: `include $(PLATFORM_PDDF_PATH=platfrom/pddf)/rules.mk` (Platform Driver Development Framework)
 
 - **导入指定平台`platfrom`规则**: `include $(PLATFORM_PATH=platform/xxx)/rules.mk`
   - **终极目标`SONIC_ALL`**: `SONIC_ALL += $(SONIC_ONE_IMAGE) $(SONIC_ONE_ABOOT_IMAGE) $(DOCKER_FPM)`
@@ -631,7 +631,7 @@ SONIC_DPKG_DEBS += $(SOME_NEW_DEB) # 将软件包添加到该目标组
 
 构建原理: `slave.mk`
 ```makefile
-# Build project with dpkg-buildpackage
+# Build project with dpkg-buildpackage, can define debian/rules to set the build method
 # ...
 		$(if $($*_DPKG_TARGET),
 			${$*_BUILD_ENV} DEB_BUILD_OPTIONS="${DEB_BUILD_OPTIONS_GENERIC} ${$*_DEB_BUILD_OPTIONS}" DEB_BUILD_PROFILES="${$*_DEB_BUILD_PROFILES}" $(ANT_DEB_CONFIG) $(CROSS_COMPILE_FLAGS) timeout --preserve-status -s 9 -k 10 $(BUILD_PROCESS_TIMEOUT) dpkg-buildpackage -rfakeroot -b $(ANT_DEB_CROSS_OPT) -us -uc -tc -j$(SONIC_CONFIG_MAKE_JOBS) --as-root -T$($*_DPKG_TARGET) --admindir $$mergedir $(LOG),
