@@ -3,7 +3,7 @@
 PDDF, Platform Driver Development Framework.
 
 - platform/pddf/
-  - platform-api-pddf-base/sonic_platform_pddf_base/  # python package
+  - platform-api-pddf-base/sonic_platform_pddf_base/  # platform-api python package
   - i2c/  # driver module
     - modules/
       - pddf_client_module
@@ -316,5 +316,294 @@ S3IP项目(Simplified Switch System Integration Program)，旨在通过软硬件
   3. 切换平台组件
   4. 创建/删除模式标记文件
   5. 重启相关服务
+
+
+
+#### pddfparse.py
+
+`pddfparse.py` 是 SONiC 平台上的 PDDF (Platform Device Discovery Framework) 核心工具，负责设备的发现、创建、管理和验证。该脚本主要通过操作 Linux sysfs 接口与内核交互，实现对各种硬件设备的统一管理。
+
+##### 命令行接口
+
+- `--create`: 创建 I2C 拓扑
+  - python pddfparse.py --create
+- `--delete`: 删除所有创建的 I2C 客户端
+  - python pddfparse.py --delete
+- `--sysfs`: 显示访问属性 sysfs
+  - python pddfparse.py --sysfs all
+  - python pddfparse.py --sysfs print psu
+  - python pddfparse.py --sysfs validate fan
+  - python pddfparse.py --sysfs verify temp_sensor
+- `--dsysfs`: 显示数据属性 sysfs
+  - python pddfparse.py --dsysfs all
+  - python pddfparse.py --dsysfs validate system
+  - python pddfparse.py --dsysfs print sysstatus
+  - python pddfparse.py --dsysfs psu1 status
+- `--validate`: 验证设备特定属性
+  - python pddfparse.py --validate all [设备类型...]
+- `--schema`: 模式验证
+  - python pddfparse.py --schema <all|mismatch|missing|empty|$device_type>
+- `--modules`: 加载模块验证
+  - python pddfparse.py --modules <bmc|$pddf_kos|pddf...>
+
+
+##### 核心功能模块
+
+**初始化与配置加载**
+
+- 初始化时创建平台符号链接
+- 从 `/usr/share/sonic/platform/pddf/pddf-device.json` 加载设备配置 (`pddf-device.json`)
+- 初始化内部数据结构用于存储设备信息
+
+
+**设备创建功能**
+
+- 创建设备的入口函数
+- 首先创建 LED 设备
+- 然后通过 dev_parse 递归创建系统中所有设备
+- 最后创建系统状态设备（如果存在）
+
+
+**设备类型处理**
+
+
+**设备解析系统**
+
+- 设备解析的核心分发函数
+- 根据设备类型调用对应的处理方法
+- 支持递归处理设备拓扑结构
+- 对删除操作有特殊的反向处理逻辑
+
+
+**BMC接口功能**
+
+- 支持 raw 和 non-raw 类型的 IPMI 请求
+- 实现了命令缓存机制提高性能
+- 支持各种数据格式转换（ASCII、掩码、原始值等）
+
+
+**验证和调试功能**
+
+- schema_validation() : 验证设备 JSON 配置是否符合模式
+- modules_validation() : 验证所需内核模块是否已加载
+- validate_pddf_devices() : 验证设备属性
+- dump_sysfs_obj() : 显示 sysfs 对象信息
+
+
+##### 核心工作流程
+
+1. 配置加载: 从 JSON 文件加载设备拓扑和属性信息
+2. 命令解析: 通过命令行参数确定要执行的操作
+3. 设备处理: 根据命令类型执行相应的设备操作
+   - 创建：按拓扑顺序创建所有设备
+   - 删除：按反向拓扑顺序删除所有设备
+   - 查询：获取设备属性和状态
+   - 验证：检查设备配置和功能
+
+
+
+
+## Platform API
+
+
+- sonic_platform_pddf_common-$(PDDF_PLATFORM_API_BASE_VERSION)-py3-none-any.whl
+- sonic_platform_pddf_common-$(PDDF_PLATFORM_API_BASE_VERSION)-py2-none-any.whl (ENABLE_PY2_MODULES=y)
+
+- 用途: 
+  - 提供设备抽象层: 实现了SONiC平台设备的抽象类，为不同硬件平台提供统一的API接口
+    - 平台设备可以**继承该API/Class**进行定制化实现 (一般pddfapi.py除外)
+  - JSON配置驱动(**`pddfapi.py`**): 基于JSON配置文件（ `pddf-device.json` 和 `pd-plugin.json` ）动态发现和管理平台设备，避免硬编码
+
+- 模块:
+  - pddfapi.py: 核心API实现，负责读取PDDF配置文件、提供路径查找、命令执行等基础功能
+  - pddf_platform.py: 实现平台抽象，继承自PlatformBase
+  - pddf_chassis.py: 实现机箱抽象，继承自ChassisBase，管理所有平台组件
+  - pddf_psu.py: 电源管理实现，支持读取PSU状态、功率、温度等属性
+  - pddf_fan.py: 风扇管理实现，支持读取风扇状态、速度、方向等属性
+  - pddf_thermal.py: 温度传感器实现，支持读取温度值和阈值设置
+  - pddf_eeprom.py: 系统EEPROM解析，继承自TlvInfoDecoder
+
+
+### 模块结构
+
+`sonic_platform_pddf_base`
+
+- `__init__.py`
+- `pddf_chassis.py`
+- `pddf_eeprom.py`
+- `pddf_fan.py`
+- `pddf_fan_drawer.py`
+- `pddf_platform.py`
+- `pddf_psu.py`
+- `pddf_sfp.py`
+- `pddf_thermal.py`
+- `pddfapi.py`
+
+
+### 通用依赖
+
+#### sonic-platform-common
+
+- 源码位置: src/sonic-platform-common
+
+src/sonic-platform-common
+├── `sonic_eeprom` -> sonic_platform_base/sonic_eeprom
+├── `sonic_fan`
+├── `sonic_led`
+├── `sonic_platform_base`
+│   ├── sonic_eeprom
+│   ├── sonic_pcie
+│   ├── sonic_sfp
+│   ├── sonic_storage
+│   ├── sonic_thermal_control
+│   └── sonic_xcvr
+├── `sonic_psu`
+├── `sonic_sfp` -> ./sonic_platform_base/sonic_sfp/
+├── `sonic_thermal`
+├── `sonic_y_cable`
+│   ├── broadcom
+│   ├── credo
+│   └── microsoft
+
+#### sonic-py-common
+
+- 源码位置: src/sonic-py-common
+
+sonic-py-common/`sonic_py_common`
+├── __init__.py
+├── daemon_base.py
+├── device_info.py
+├── general.py
+├── interface.py
+├── logger.py
+├── multi_asic.py
+├── port_util.py
+├── sonic_db_dump_load.py
+├── syslogger.py
+├── task_base.py
+└── util.py
+
+
+### 模块详解
+
+#### pddf_chassis.py *
+
+- 主类: `class PddfChassis(ChassisBase)`
+
+- 依赖: 
+  - `sonic_platform_base`: 通用Platform基础类 - src/sonic-platform-common
+    - chassis_base.py:
+      - `class ChassisBase`
+  - `sonic_platform`: **具体Platform实现类**
+    - sfp.py:
+      - `class Sfp`
+    - psu.py:
+      - `class Psu`
+    - fan_drawer.py:
+      - `class FanDrawer`
+    - thermal.py:
+      - `class Thermal`
+    - eeprom.py:
+      - `class Eeprom`
+
+
+#### pddf_eeprom.py
+
+- 主类: `class PddfEeprom(eeprom_tlvinfo.TlvInfoDecoder)`
+
+- 依赖: 
+  - `sonic_eeprom`: 通用Platform基础类 - src/sonic-platform-common
+    - eeprom_tlvinfo.py:
+      - `class TlvInfoDecoder`
+
+
+#### pddf_fan.py
+
+- 主类: `class PddfFan(FanBase)`
+
+- 依赖: 
+  - `sonic_platform_base`: 通用Platform基础类 - src/sonic-platform-common
+    - fan_base.py:
+      - `class FanBase`
+
+
+#### pddf_fan_drawer.py *
+
+- 主类: `class PddfFanDrawer(FanDrawerBase)`
+
+- 依赖: 
+  - `sonic_platform_base`: 通用Platform基础类 - src/sonic-platform-common
+    - fan_drawer_base.py:
+      - `class FanDrawerBase`
+  - `sonic_platform`: **具体Platform实现类**
+    - fan.py:
+      - `class Fan`
+
+
+#### pddf_platform.py *
+
+- 主类: `class PddfPlatform(PlatformBase)`
+
+- 依赖: 
+  - `sonic_platform_base`: 通用Platform基础类 - src/sonic-platform-common
+    - platform_base.py:
+      - `class PlatformBase`
+  - `sonic_platform`: **具体Platform实现类**
+    - chassis.py:
+      - `class Chassis`
+
+
+#### pddf_psu.py *
+
+- 主类: `class PddfPsu(PsuBase)`
+
+- 依赖: 
+  - `sonic_platform_base`: 通用Platform基础类 - src/sonic-platform-common
+    - psu_base.py:
+      - `class PsuBase`
+  - `sonic_platform`: **具体Platform实现类**
+    - fan.py:
+      - `class Fan`
+    - thermal.py:
+      - `class Thermal`
+
+
+#### pddf_sfp.py
+
+- 主类: `class PddfSfp(SfpOptoeBase)`
+
+- 依赖: 
+  - `sonic_platform_base`: 通用Platform基础类 - src/sonic-platform-common
+    - sonic_xcvr/sfp_optoe_base.py:
+      - `class SfpOptoeBase`
+
+
+#### pddf_thermal.py
+
+- 主类: `class PddfThermal(ThermalBase)`
+
+- 依赖: 
+  - `sonic_platform_base`: 通用Platform基础类 - src/sonic-platform-common
+    - thermal_base.py:
+      - `class ThermalBase`
+
+
+#### pddfapi.py
+
+- 主类: `class PddfApi`
+
+- 依赖: 
+  - `sonic_py_common`: 通用Python基础类 - src/sonic-py-common
+    - device_info.py:
+      - `def get_platform_and_hwsku()`
+
+
+
+
+
+
+
+
+
 
 
