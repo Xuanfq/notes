@@ -506,6 +506,17 @@ sonic-py-common/`sonic_py_common`
     - eeprom.py:
       - `class Eeprom`
 
+- 类成员:
+  - `pddf_data`: class PddfApi
+  - `pddf_plugin_data`: {}
+
+- 初始化:
+  - 父类初始化: ChassisBase.__init__(self)
+  - 若无传入参数, 加载API及Plugin数据 (见pddf_platform.py)
+    - 加载PDDF API: self.pddf_data = `pddfapi.PddfApi()`
+    - 加载Plugin数据: self.pddf_plugin_data = json.load(open("`/usr/share/sonic/platform/pddf/pd-plugin.json`"))
+  - 获取平台清单`platform_inventory`: `pddfapi.get_platform()['PLATFORM']`
+
 
 #### pddf_eeprom.py
 
@@ -516,6 +527,13 @@ sonic-py-common/`sonic_py_common`
     - eeprom_tlvinfo.py:
       - `class TlvInfoDecoder`
 
+- 类成员:
+  - `pddf_data`: class PddfApi
+  - `pddf_plugin_data`: {}
+  - `_TLV_INFO_MAX_LEN`: 256
+
+
+
 
 #### pddf_fan.py
 
@@ -525,6 +543,12 @@ sonic-py-common/`sonic_py_common`
   - `sonic_platform_base`: 通用Platform基础类 - src/sonic-platform-common
     - fan_base.py:
       - `class FanBase`
+
+- 类成员:
+  - `pddf_data`: class PddfApi
+  - `pddf_plugin_data`: {}
+
+
 
 
 #### pddf_fan_drawer.py *
@@ -539,8 +563,17 @@ sonic-py-common/`sonic_py_common`
     - fan.py:
       - `class Fan`
 
+- 类成员:
+  - `pddf_data`: class PddfApi
+  - `pddf_plugin_data`: {}
+
+
+
 
 #### pddf_platform.py *
+
+平台PDDF抽象类, 主要提供平台`Chassis`实例的获取。
+
 
 - 主类: `class PddfPlatform(PlatformBase)`
 
@@ -551,6 +584,16 @@ sonic-py-common/`sonic_py_common`
   - `sonic_platform`: **具体Platform实现类**
     - chassis.py:
       - `class Chassis`
+
+- 类成员:
+  - `pddf_data`: class PddfApi
+  - `pddf_plugin_data`: {}
+
+- 初始化:
+  - 加载PDDF API: self.pddf_data = `pddfapi.PddfApi()`
+  - 加载Plugin数据: self.pddf_plugin_data = json.load(open("`/usr/share/sonic/platform/pddf/pd-plugin.json`"))
+  - PlatformBase.__init__(self)
+  - 初始化机箱: self._chassis = `Chassis(self.pddf_data, self.pddf_plugin_data)`
 
 
 #### pddf_psu.py *
@@ -567,6 +610,12 @@ sonic-py-common/`sonic_py_common`
     - thermal.py:
       - `class Thermal`
 
+- 类成员:
+  - `pddf_data`: class PddfApi
+  - `pddf_plugin_data`: {}
+
+
+
 
 #### pddf_sfp.py
 
@@ -576,6 +625,14 @@ sonic-py-common/`sonic_py_common`
   - `sonic_platform_base`: 通用Platform基础类 - src/sonic-platform-common
     - sonic_xcvr/sfp_optoe_base.py:
       - `class SfpOptoeBase`
+
+- 类成员:
+  - `pddf_data`: class PddfApi
+  - `pddf_plugin_data`: {}
+  - `_port_start`:
+  - `_port_end`:
+
+
 
 
 #### pddf_thermal.py
@@ -587,6 +644,12 @@ sonic-py-common/`sonic_py_common`
     - thermal_base.py:
       - `class ThermalBase`
 
+- 类成员:
+  - `pddf_data`: class PddfApi
+  - `pddf_plugin_data`: {}
+
+
+
 
 #### pddfapi.py
 
@@ -596,8 +659,17 @@ sonic-py-common/`sonic_py_common`
   - `sonic_py_common`: 通用Python基础类 - src/sonic-py-common
     - device_info.py:
       - `def get_platform_and_hwsku()`
+        - platform: device's platform identifier, e.g. x84_64-cls_dsxxx-r0
+          1. 优先从环境变量中获取: `os.getenv("PLATFORM")`
+          2. 其次从机器配置中获取: `/host/machine.conf`, 字段为`onie_platform`/`aboot_platform`
+          3. Docker环境中的ConfigDB获取: `ConfigDBConnector().get_table('DEVICE_METADATA')['localhost']['platform']`
+        - hwsku: device's hardware SKU identifier, e.g. "DS2000 t1" in device/$platform/default_sku
+          1. Docker环境中的ConfigDB获取: `ConfigDBConnector().get_table('DEVICE_METADATA')['localhost']['hwsku']`
+  - `/usr/share/sonic/platform/pddf/pddf-device.json`
 
-
+- 初始化:
+  - 检查是否存在平台设备数据路径`/usr/share/sonic/platform`, 若无, 创建链接`"/usr/share/sonic/device/"+self.platform`到`/usr/share/sonic/platform`
+  - 从平台设备数据路径中加载`pddf-device.json`PDDF设备数据: `/usr/share/sonic/platform/pddf/pddf-device.json`
 
 
 
