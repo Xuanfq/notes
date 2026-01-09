@@ -516,6 +516,32 @@ sonic-py-common/`sonic_py_common`
     - 加载PDDF API: self.pddf_data = `pddfapi.PddfApi()`
     - 加载Plugin数据: self.pddf_plugin_data = json.load(open("`/usr/share/sonic/platform/pddf/pd-plugin.json`"))
   - 获取平台清单`platform_inventory`: `pddfapi.get_platform()['PLATFORM']`
+  - 实例化EEPROM(TLV): `self._eeprom = Eeprom(self.pddf_obj, self.plugin_data)`
+  - 实例化所有FanDrawer(不包括PSU的Fan): 
+    ```py
+        for i in range(self.platform_inventory['num_fantrays']):
+            fandrawer = FanDrawer(i, self.pddf_obj, self.plugin_data)
+            self._fan_drawer_list.append(fandrawer)
+            self._fan_list.extend(fandrawer._fan_list)
+    ```
+  - 实例化所有PSU: 
+    ```py
+        for i in range(self.platform_inventory['num_psus']):
+            psu = Psu(i, self.pddf_obj, self.plugin_data)
+            self._psu_list.append(psu)
+    ```
+  - 实例化所有SFP(光模块设备): 
+    ```py
+        for index in range(self.platform_inventory['num_ports']):
+            sfp = Sfp(index, self.pddf_obj, self.plugin_data)
+            self._sfp_list.append(sfp)
+    ```
+  - 实例化所有Thermal(温度传感器抽象实例): 
+    ```py
+        for i in range(self.platform_inventory['num_temps']):
+            thermal = Thermal(i, self.pddf_obj, self.plugin_data)
+            self._thermal_list.append(thermal)
+    ```
 
 
 #### pddf_eeprom.py
@@ -532,12 +558,20 @@ sonic-py-common/`sonic_py_common`
   - `pddf_plugin_data`: {}
   - `_TLV_INFO_MAX_LEN`: 256
 
+- 初始化:
+  - 父类初始化: PddfEeprom.__init__(self, pddf_data, pddf_plugin_data)
+    - 创建缓存目录(读取EEPROM数据成功后设置缓存文件):
+      - CACHE_ROOT = '/var/cache/sonic/decode-syseeprom'
+      - CACHE_FILE = 'syseeprom_cache'
+    - 尝试读取EEPROM数据: `self.eeprom_data = self.read_eeprom()`
+    - 解析EEPROM字段TLV: `self.eeprom_tlv_dict[code] = value`
 
 
 
 #### pddf_fan.py
 
 - 主类: `class PddfFan(FanBase)`
+  - 管理每一个带转速的风扇设备。一个风扇整体模块中可能包含多个风扇转子，每一个转子都抽象成一个风扇设备PddfFan类。
 
 - 依赖: 
   - `sonic_platform_base`: 通用Platform基础类 - src/sonic-platform-common
@@ -548,12 +582,19 @@ sonic-py-common/`sonic_py_common`
   - `pddf_data`: class PddfApi
   - `pddf_plugin_data`: {}
 
+- 初始化:
+  - 父类初始化: FanBase.__init__(self)
+  - 加载Platfrom设备的设置(pddf-device.json): `self.platform = self.pddf_obj.get_platform()`
+  - 判断当前风扇的 tray_idx (风扇托盘) 是否超出设置设定的数量 num_fantrays
+  - 判断当前风扇的 fan_idx (风扇托盘中的风扇索引, 一个风扇托盘可能有多个风扇, 如前后rear/front) 是否超出设置设定的数量 num_fans_pertray
+  - 是否是PSU Fan, 所在哪个索引的PSU等
 
 
 
 #### pddf_fan_drawer.py *
 
 - 主类: `class PddfFanDrawer(FanDrawerBase)`
+  - 风扇抽屉，即一个风扇整体模块或FRU设备，也即上方所述的“风扇托盘”的抽象。管理多个风扇设备class PddfFan。
 
 - 依赖: 
   - `sonic_platform_base`: 通用Platform基础类 - src/sonic-platform-common
@@ -567,6 +608,11 @@ sonic-py-common/`sonic_py_common`
   - `pddf_data`: class PddfApi
   - `pddf_plugin_data`: {}
 
+- 初始化:
+  - 父类初始化: FanDrawerBase.__init__(self)
+  - 加载Platfrom设备的设置(pddf-device.json): `self.platform = self.pddf_obj.get_platform()`
+  - 判断当前风扇的 tray_idx (风扇托盘) 是否超出设置设定的数量 num_fantrays
+  - 根据设置设定的每个风扇托盘里的风扇数量 num_fans_pertray 创建其应管理的风扇设备Fan
 
 
 
@@ -614,6 +660,12 @@ sonic-py-common/`sonic_py_common`
   - `pddf_data`: class PddfApi
   - `pddf_plugin_data`: {}
 
+- 初始化:
+  - 父类初始化: PsuBase.__init__(self)
+  - 加载Platfrom设备的设置(pddf-device.json): `self.platform = self.pddf_obj.get_platform()`
+  - 获取PSU风扇数量: `self.num_psu_fans = int(self.pddf_obj.get_num_psu_fans('PSU{}'.format(index+1)))`
+  - 根据PSU风扇数量逐个创建其所带的所有风扇实例: `self._fan_list.append(Fan(0, psu_fan_idx, pddf_data, pddf_plugin_data, True, self.psu_index))`
+  - 根据设定的Thermal数量创建所有Thermal实例(实际固定为1个, 实际上是温度TEMP): `self._thermal_list.append(Thermal(psu_thermal_idx, pddf_data, pddf_plugin_data, True, self.psu_index))`
 
 
 
@@ -632,6 +684,13 @@ sonic-py-common/`sonic_py_common`
   - `_port_start`:
   - `_port_end`:
 
+- 初始化:
+  - 加载Platfrom设备的设置(pddf-device.json): `self.platform = self.pddf_obj.get_platform()`
+  - 判断当前的实例是否超过端口设定范围(`[0,num_ports)`): `self._port_end = int(self.platform['num_ports']); if index < self._port_start or index >= self._port_end`
+  - 初始化设备名(从1开始): `self.device = 'PORT{}'.format(self.port_index)`
+  - 获取SFP设备类型(如QSFP-DD等): `self.sfp_type = self.pddf_obj.get_device_type(self.device)`
+  - 获取SFP设备EEPROM映射文件所在路径: `self.eeprom_path = self.pddf_obj.get_path(self.device, 'eeprom')`
+  - 父类初始化: SfpOptoeBase.__init__(self)
 
 
 
@@ -648,6 +707,11 @@ sonic-py-common/`sonic_py_common`
   - `pddf_data`: class PddfApi
   - `pddf_plugin_data`: {}
 
+- 初始化:
+  - 加载Platfrom设备的设置(pddf-device.json): `self.platform = self.pddf_obj.get_platform()`
+  - 设置对象名(从1开始): `self.thermal_obj_name = "TEMP{}".format(self.thermal_index)`
+  - 获取对象属性: `self.thermal_obj = self.pddf_obj.data[self.thermal_obj_name]`
+  - 设置是否是PSU的Thermal, 若是则继续设置其所属的PSU索引(从1开始)
 
 
 
@@ -673,6 +737,17 @@ sonic-py-common/`sonic_py_common`
 
 
 
+
+### 模块关系
+
+python package: `sonic_platform` (Platform Implementation: `class ***()`)
+    |
+    |
+    | 1. `sonic_platform` 继承自 `sonic_platform_pddf_base`, 并重命名所有类, 即使其类名不再包含`Pddf`关键字
+    | 2. `sonic_platform_pddf_base` 会导入 `sonic_platform`  的具体实现类进行机器设备管理
+    |
+    ↓
+python package: `sonic_platform_pddf_base` (Generic Base Class: `class Pddf***()`)
 
 
 
