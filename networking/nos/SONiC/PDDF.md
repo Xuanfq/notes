@@ -424,7 +424,7 @@ S3IP项目(Simplified Switch System Integration Program)，旨在通过软硬件
   - pddf_eeprom.py: 系统EEPROM解析，继承自TlvInfoDecoder
 
 
-### 模块结构
+### 模块结构 sonic_platform_pddf_base
 
 `sonic_platform_pddf_base`
 
@@ -486,7 +486,12 @@ sonic-py-common/`sonic_py_common`
 
 ### 模块详解
 
+> 带 `*` 号表示会调用具体Platform实现类: sonic_platform package
+
+
 #### pddf_chassis.py *
+
+PddfChassis 是 SONiC 平台中实现的机架（Chassis）基础 API 的具体实现，基于平台设备驱动框架（PDDF）构建，负责管理和提供整个设备机架的信息。该类继承自 ChassisBase ，提供了标准化的接口来访问和管理设备的各个组件。
 
 - 主类: `class PddfChassis(ChassisBase)`
 
@@ -543,8 +548,40 @@ sonic-py-common/`sonic_py_common`
             self._thermal_list.append(thermal)
     ```
 
+- 功能概述:
+  1. 初始化与资源管理
+    - 配置加载 ：加载 PDDF 设备配置和插件数据
+    - EEPROM 初始化 ：初始化系统 EEPROM，用于获取设备基本信息
+    - 组件枚举 ：自动根据平台配置初始化所有硬件组件，包括：
+      - 风扇抽屉（FanDrawer）和风扇（Fan）
+      - 电源模块（PSU）
+      - 光纤模块（SFP）
+      - 温度传感器（Thermal）
+  2. 基本信息获取
+    - 名称与型号 ：通过 get_name() 和 get_model() 获取机架名称和型号
+    - 存在性与状态 ：通过 get_presence() 和 get_status() 确认机架存在性和运行状态
+    - 标识信息 ：通过 get_service_tag() 、 get_serial() 获取服务标签和序列号
+    - 网络信息 ：通过 get_base_mac() 获取基础 MAC 地址
+    - EEPROM 信息 ：通过 get_system_eeprom_info() 获取完整的系统 EEPROM 信息
+  3. 组件管理接口
+    - 风扇系统 ：管理风扇抽屉和风扇，提供标准化访问方法
+    - 电源系统 ：管理电源模块，监控其状态和参数
+    - 光纤模块 ：管理所有 SFP/QSFP 等光模块
+    - 温度监控 ：管理所有温度传感器，监控系统温度
+  4. LED 控制功能
+    - LED 颜色设置 ：通过 set_system_led() 设置指定 LED 设备的颜色
+    - LED 状态获取 ：通过 get_system_led() 获取指定 LED 设备的当前颜色
+    - 底层集成 ：与 PDDF API 集成，支持不同类型 LED 设备的控制
+  5. 平台集成
+    - PDDF 集成 ：利用 PddfApi 访问底层硬件信息和操作
+    - 插件支持 ：通过插件数据扩展功能
+    - 配置驱动 ：基于 JSON 配置文件动态适应不同平台
+
+
 
 #### pddf_eeprom.py
+
+PddfEeprom 是 SONiC 平台中实现的系统 EEPROM 管理类，继承自 TlvInfoDecoder ，负责读取、解析和提供系统 EEPROM 中的信息。该类基于平台设备驱动框架（PDDF）构建，为上层应用提供标准化的硬件信息访问接口。
 
 - 主类: `class PddfEeprom(eeprom_tlvinfo.TlvInfoDecoder)`
 
@@ -566,9 +603,31 @@ sonic-py-common/`sonic_py_common`
     - 尝试读取EEPROM数据: `self.eeprom_data = self.read_eeprom()`
     - 解析EEPROM字段TLV: `self.eeprom_tlv_dict[code] = value`
 
+- 功能概述:
+  1. 初始化与配置
+    - 参数验证 ：验证 PDDF JSON 数据的有效性
+    - 路径获取 ：通过 PDDF API 获取系统 EEPROM 设备路径
+    - 父类初始化 ：初始化 TlvInfoDecoder 父类，设置 EEPROM 路径和相关参数
+    - 缓存管理 ：创建缓存目录，设置缓存文件路径，提高读取性能
+  2. EEPROM 数据读取与解析
+    - 数据读取 ：从硬件 EEPROM 中读取原始数据
+    - 数据缓存 ：将读取的数据更新到缓存中，减少重复读取
+    - TLV 解析 ：解析符合 ONIE（Open Network Install Environment）标准的 TLV（Type-Length-Value）格式数据
+    - 字典构建 ：将解析后的数据构建成字典，方便快速访问
+  3. 标准化信息获取
+    - 序列号 ：通过 serial_number_str() 获取设备序列号
+    - MAC 地址 ：通过 base_mac_addr() 获取基础 MAC 地址
+    - 型号信息 ：通过 modelstr() 获取设备型号
+    - 部件号 ：通过 part_number_str() 获取部件号
+    - 服务标签 ：通过 serial_str() 获取服务标签
+    - 版本信息 ：通过 revision_str() 获取设备版本
+    - 完整信息 ：通过 system_eeprom_info() 获取完整的 EEPROM 信息字典
+
 
 
 #### pddf_fan.py
+
+PddfFan 是 SONiC 平台中实现的风扇管理类，继承自 FanBase ，负责管理和监控设备中的风扇。该类基于平台设备驱动框架（PDDF）构建，支持管理两种类型的风扇：普通风扇（位于风扇抽屉中）和 PSU 风扇（位于电源模块中），为上层应用提供标准化的风扇管理接口。
 
 - 主类: `class PddfFan(FanBase)`
   - 管理每一个带转速的风扇设备。一个风扇整体模块中可能包含多个风扇转子，每一个转子都抽象成一个风扇设备PddfFan类。
@@ -589,9 +648,35 @@ sonic-py-common/`sonic_py_common`
   - 判断当前风扇的 fan_idx (风扇托盘中的风扇索引, 一个风扇托盘可能有多个风扇, 如前后rear/front) 是否超出设置设定的数量 num_fans_pertray
   - 是否是PSU Fan, 所在哪个索引的PSU等
 
+- 功能概述:
+  1. 初始化与配置
+    - 参数验证 ：验证 PDDF JSON 数据有效性，确保必要参数存在
+    - 索引检查 ：检查风扇抽屉和风扇索引是否在有效范围内
+    - 类型识别 ：区分普通风扇和 PSU 风扇，应用不同管理策略
+  2. 基本信息获取
+    - 名称获取 ：根据风扇类型和配置生成风扇名称 get_name()
+    - 存在性检测 ：检查风扇是否存在 get_presence()
+    - 状态检查 ：基于风扇速度判断风扇运行状态 get_status()
+    - 方向获取 ：获取风扇气流方向（进气/排气） get_direction()
+    - 位置信息 ：获取风扇在父设备中的物理位置 get_position_in_parent()
+    - 可更换性 ：指示风扇是否可单独更换 is_replaceable()
+  3. 风扇速度管理
+    - 速度百分比 ：获取风扇当前速度占最大速度的百分比 get_speed()
+    - 速度 RPM ：获取风扇当前速度的实际 RPM 值 get_speed_rpm()
+    - 目标速度 ：获取风扇的目标速度设置 get_target_speed()
+    - 速度容差 ：获取风扇速度的允许偏差范围 get_speed_tolerance()
+    - 速度设置 ：设置风扇速度为指定百分比 set_speed()
+  4. LED 控制功能
+    - 状态 LED 获取 ：获取风扇状态 LED 颜色 get_status_led()
+    - 状态 LED 设置 ：设置风扇状态 LED 颜色 set_status_led()
+  5. 系统文件操作
+    - 系统文件转储 ：获取风扇相关的系统文件系统信息 dump_sysfs()
+
 
 
 #### pddf_fan_drawer.py *
+
+PddfFanDrawer 是 SONiC 平台中实现的风扇抽屉、风扇托盘（Fan Drawer）管理类，继承自 FanDrawerBase ，负责管理和监控设备中的风扇抽屉及其包含的风扇。该类基于平台设备驱动框架（PDDF）构建，为上层应用提供标准化的风扇抽屉管理接口。
 
 - 主类: `class PddfFanDrawer(FanDrawerBase)`
   - 风扇抽屉，即一个风扇整体模块或FRU设备，也即上方所述的“风扇托盘”的抽象。管理多个风扇设备class PddfFan。
@@ -613,6 +698,28 @@ sonic-py-common/`sonic_py_common`
   - 加载Platfrom设备的设置(pddf-device.json): `self.platform = self.pddf_obj.get_platform()`
   - 判断当前风扇的 tray_idx (风扇托盘) 是否超出设置设定的数量 num_fantrays
   - 根据设置设定的每个风扇托盘里的风扇数量 num_fans_pertray 创建其应管理的风扇设备Fan
+
+- 功能概述:
+  1. 初始化与配置
+    - 参数验证 ：验证 PDDF JSON 数据的有效性
+    - 平台信息获取 ：从 PDDF API 获取平台配置信息
+    - 风扇抽屉索引验证 ：检查风扇抽屉索引是否在有效范围内
+    - 风扇初始化 ：根据平台配置，为每个风扇抽屉初始化相应数量的风扇对象
+  2. 基本信息获取
+    - 名称获取 ：通过 get_name() 获取风扇抽屉名称，格式为 "Fantray{索引}"
+    - 存在性检测 ：通过 get_presence() 检查风扇抽屉是否存在，基于第一个风扇的存在状态
+    - 状态检查 ：通过 get_status() 检查风扇抽屉整体状态，基于所有风扇的状态
+    - 可更换性 ：通过 is_replaceable() 指示风扇抽屉是否可更换
+    - 位置信息 ：通过 get_position_in_parent() 获取风扇抽屉在父设备中的物理位置
+  3. LED 控制功能
+    - 状态 LED 获取 ：通过 get_status_led() 获取风扇抽屉状态 LED 颜色
+      - 支持从 PDDF 配置的 LED 设备获取实际状态
+      - 当没有配置 LED 设备时，提供基于状态的默认颜色方案
+    - 状态 LED 设置 ：通过 set_status_led() 设置风扇抽屉状态 LED 颜色
+  4. 风扇管理
+    - 风扇列表维护 ：维护风扇抽屉内的所有风扇对象列表
+    - 风扇状态聚合 ：通过聚合所有风扇的状态来推断风扇抽屉的整体状态
+    - 层次化管理 ：实现了从风扇到风扇抽屉的层次化管理结构
 
 
 
@@ -641,8 +748,14 @@ sonic-py-common/`sonic_py_common`
   - PlatformBase.__init__(self)
   - 初始化机箱: self._chassis = `Chassis(self.pddf_data, self.pddf_plugin_data)`
 
+- 功能概述:
+  1. 获取机箱抽象实例 get_chassis()
+
+
 
 #### pddf_psu.py *
+
+PddfPsu 是 SONiC 平台中实现的电源模块（PSU）管理类，继承自 PsuBase ，负责管理和监控设备中的电源模块。该类基于平台设备驱动框架（PDDF）构建，为上层应用提供标准化的电源模块管理接口。
 
 - 主类: `class PddfPsu(PsuBase)`
 
@@ -667,9 +780,52 @@ sonic-py-common/`sonic_py_common`
   - 根据PSU风扇数量逐个创建其所带的所有风扇实例: `self._fan_list.append(Fan(0, psu_fan_idx, pddf_data, pddf_plugin_data, True, self.psu_index))`
   - 根据设定的Thermal数量创建所有Thermal实例(实际固定为1个, 实际上是温度TEMP): `self._thermal_list.append(Thermal(psu_thermal_idx, pddf_data, pddf_plugin_data, True, self.psu_index))`
 
+- 功能概述:
+  1. 初始化与配置
+    - 参数验证 ：验证 PDDF JSON 数据的有效性
+    - 平台信息获取 ：从 PDDF API 获取平台配置信息
+    - PSU 索引设置 ：设置 PSU 索引（从 1 开始）
+    - 风扇初始化 ：根据平台配置，为每个 PSU 初始化相应数量的风扇对象
+    - 温度传感器初始化 ：为每个 PSU 初始化温度传感器对象
+  2. 基本信息获取
+    - 名称获取 ：通过 get_name() 获取 PSU 名称，支持从插件配置或默认格式生成
+    - 存在性检测 ：通过 get_presence() 检查 PSU 是否存在，基于系统文件中的 psu_present 属性
+    - 状态检查 ：通过 get_status() 检查 PSU 运行状态，基于系统文件中的 psu_power_good 属性
+    - 型号获取 ：通过 get_model() 获取 PSU 型号，从系统文件中的 psu_model_name 属性读取
+    - 序列号获取 ：通过 get_serial() 获取 PSU 序列号，从系统文件中的 psu_serial_num 属性读取
+    - 制造商 ID 获取 ：通过 get_mfr_id() 获取 PSU 制造商 ID，从系统文件中的 psu_mfr_id 属性读取
+    - 位置信息 ：通过 get_position_in_parent() 获取 PSU 在父设备中的物理位置
+    - 可更换性 ：通过 is_replaceable() 指示 PSU 是否可更换
+  3. 电气参数监控
+    - 输出电压 ：通过 get_voltage() 获取 PSU 输出电压
+    - 输出电流 ：通过 get_current() 获取 PSU 输出电流
+    - 输出功率 ：通过 get_power() 获取 PSU 输出功率
+    - 输入电压 ：通过 get_input_voltage() 获取 PSU 输入电压
+    - 输入电流 ：通过 get_input_current() 获取 PSU 输入电流
+    - 输入功率 ：通过 get_input_power() 获取 PSU 输入功率
+    - 电压阈值 ：通过 get_voltage_high_threshold() 和 get_voltage_low_threshold() 获取电压阈值
+    - 最大功率 ：通过 get_maximum_supplied_power() 获取 PSU 最大输出功率
+  4. 温度监控
+    - 温度获取 ：通过 get_temperature() 获取 PSU 温度
+    - 温度阈值 ：通过 get_temperature_high_threshold() 获取 PSU 温度高阈值
+  5. LED 控制功能
+    - 状态 LED 获取 ：通过 get_status_led() 获取 PSU 状态 LED 颜色
+      - 支持从 PDDF 配置的 LED 设备获取实际状态
+      - 当没有配置 LED 设备时，提供基于状态的默认颜色方案
+    - 状态 LED 设置 ：通过 set_status_led() 设置 PSU 状态 LED 颜色
+      - 支持颜色映射转换，确保使用正确的颜色值
+  6. 风扇管理
+    - 风扇数量获取 ：通过 get_num_fans() 获取 PSU 风扇数量
+    - 风扇对象管理 ：维护 PSU 风扇对象列表，支持访问每个风扇的详细信息
+    - 温度传感器管理 ：维护 PSU 温度传感器对象列表，支持访问每个温度传感器的详细信息
+  7. 系统文件操作
+    - 系统文件转储 ：通过 dump_sysfs() 方法获取 PSU 相关的系统文件系统信息
+
 
 
 #### pddf_sfp.py
+
+PddfSfp 是 SONiC 平台中实现的光纤模块（SFP）管理类，继承自 SfpOptoeBase ，负责管理和监控设备中的光纤模块。该类基于平台设备驱动框架（PDDF）构建，为上层应用提供标准化的光纤模块管理接口。
 
 - 主类: `class PddfSfp(SfpOptoeBase)`
 
@@ -692,9 +848,37 @@ sonic-py-common/`sonic_py_common`
   - 获取SFP设备EEPROM映射文件所在路径: `self.eeprom_path = self.pddf_obj.get_path(self.device, 'eeprom')`
   - 父类初始化: SfpOptoeBase.__init__(self)
 
+- 功能概述:
+  1. 初始化与配置
+    - 参数验证 ：验证 PDDF JSON 数据的有效性
+    - 平台信息获取 ：从 PDDF API 获取平台配置信息
+    - 端口索引验证 ：检查端口索引是否在有效范围内
+    - 设备初始化 ：设置设备名称、类型和 EEPROM 路径
+  2. 基本信息获取
+    - 名称获取 ：通过 get_name() 获取光纤模块名称，格式为 "PORT{索引}"
+    - 存在性检测 ：通过 get_presence() 检查光纤模块是否存在，基于系统文件中的 xcvr_present 属性
+    - 位置信息 ：通过 get_position_in_parent() 获取光纤模块在父设备中的物理位置
+    - 可更换性 ：通过 is_replaceable() 指示光纤模块是否可更换
+    - EEPROM 路径 ：通过 get_eeprom_path() 获取光纤模块 EEPROM 路径
+  3. 状态监控功能
+    - 复位状态 ：通过 get_reset_status() 获取光纤模块复位状态
+    - 接收信号丢失 ：通过 get_rx_los() 获取光纤模块接收信号丢失状态
+    - 发送故障 ：通过 get_tx_fault() 获取光纤模块发送故障状态
+    - 发送禁用 ：通过 get_tx_disable() 获取光纤模块发送禁用状态
+    - 低功耗模式 ：通过 get_lpmode() 获取光纤模块低功耗模式状态
+    - 中断状态 ：通过 get_intr_status() 获取光纤模块中断状态
+  4. 控制功能
+    - 复位操作 ：通过 reset() 复位光纤模块，恢复默认设置
+    - 发送禁用控制 ：通过 tx_disable() 控制光纤模块发送禁用状态
+    - 低功耗模式控制 ：通过 set_lpmode() 设置光纤模块低功耗模式状态
+  5. 系统文件操作
+    - 系统文件转储 ：通过 dump_sysfs() 方法获取光纤模块相关的系统文件系统信息
+
 
 
 #### pddf_thermal.py
+
+PddfThermal 是 SONiC 平台中实现的温度传感器管理类，继承自 ThermalBase ，负责管理和监控设备中的温度传感器。该类基于平台设备驱动框架（PDDF）构建，为上层应用提供标准化的温度传感器管理接口。
 
 - 主类: `class PddfThermal(ThermalBase)`
 
@@ -713,9 +897,38 @@ sonic-py-common/`sonic_py_common`
   - 获取对象属性: `self.thermal_obj = self.pddf_obj.data[self.thermal_obj_name]`
   - 设置是否是PSU的Thermal, 若是则继续设置其所属的PSU索引(从1开始)
 
+- 功能概述:
+  1. 初始化与配置
+    - 参数验证 ：验证 PDDF JSON 数据的有效性
+    - 平台信息获取 ：从 PDDF API 获取平台配置信息
+    - 温度传感器索引设置 ：设置温度传感器索引（从 1 开始）
+    - 对象初始化 ：初始化温度传感器对象，区分主板温度传感器和 PSU 温度传感器
+  2. 基本信息获取
+    - 名称获取 ：通过 get_name() 获取温度传感器名称，PSU 温度传感器和主板温度传感器有不同的命名规则
+    - 存在性检测 ：通过 get_presence() 检查温度传感器是否存在，PSU 温度传感器基于 PSU 的存在状态
+    - 位置信息 ：通过 get_position_in_parent() 获取温度传感器在父设备中的物理位置
+    - 可更换性 ：通过 is_replaceable() 指示温度传感器是否可更换（通常不可更换）
+    - 温度标签 ：通过 get_temp_label() 获取温度传感器的标签信息
+  3. 温度监控功能
+    - 当前温度 ：通过 get_temperature() 获取温度传感器的当前温度值
+      - 支持从不同类型的设备（主板和 PSU）获取温度
+      - 处理不同单位的温度值转换（毫摄氏度转摄氏度）
+  4. 阈值管理功能
+    - 高温阈值 ：通过 get_high_threshold() 获取温度传感器的高温阈值
+    - 低温阈值 ：通过 get_low_threshold() 获取温度传感器的低温阈值
+    - 高温临界阈值 ：通过 get_high_critical_threshold() 获取温度传感器的高温临界阈值
+    - 低温临界阈值 ：通过 get_low_critical_threshold() 获取温度传感器的低温临界阈值
+    - 设置高温阈值 ：通过 set_high_threshold() 设置温度传感器的高温阈值
+    - 设置低温阈值 ：通过 set_low_threshold() 设置温度传感器的低温阈值
+    - PSU 温度传感器特殊处理 ：PSU 温度传感器通常不支持阈值设置，会抛出 NotImplementedError
+  5. 系统文件操作
+    - 系统文件转储 ：通过 dump_sysfs() 方法获取温度传感器相关的系统文件系统信息
+
 
 
 #### pddfapi.py
+
+PddfApi 是一个平台设备驱动框架（Platform Device Driver Framework，PDDF）的核心 API 实现类，提供了一套完整的设备管理和监控功能。该类位于 SONiC 网络操作系统的平台抽象层，负责与硬件设备进行交互。
 
 - 主类: `class PddfApi`
 
@@ -730,25 +943,66 @@ sonic-py-common/`sonic_py_common`
         - hwsku: device's hardware SKU identifier, e.g. "DS2000 t1" in device/$platform/default_sku
           1. Docker环境中的ConfigDB获取: `ConfigDBConnector().get_table('DEVICE_METADATA')['localhost']['hwsku']`
   - `/usr/share/sonic/platform/pddf/pddf-device.json`
+  - 与pddfparse.py并不直接交互
 
 - 初始化:
   - 检查是否存在平台设备数据路径`/usr/share/sonic/platform`, 若无, 创建链接`"/usr/share/sonic/device/"+self.platform`到`/usr/share/sonic/platform`
   - 从平台设备数据路径中加载`pddf-device.json`PDDF设备数据: `/usr/share/sonic/platform/pddf/pddf-device.json`
 
+- 功能概述:
+  1. 初始化与配置管理
+    - 加载 pddf-device.json 配置文件，构建设备信息数据库
+    - 处理平台链接和设备路径设置
+    - 维护系统文件系统对象缓存
+  2. 通用设备操作
+    - 命令执行 ：通过 runcmd 执行系统命令
+    - 设备索引 ：通过 get_dev_idx 获取设备索引
+    - 路径管理 ：通过 get_paths / get_path 获取设备属性路径
+    - 设备类型识别 ：通过 get_device_type 确定设备类型
+    - 平台信息 ：通过 get_platform 获取平台基本信息
+  3. LED 设备管理
+    - 颜色获取 ：支持从 GPIO、CPLD 和 BMC 等不同类型设备获取 LED 颜色
+    - 颜色设置 ：提供 LED 颜色设置功能
+    - 系统 LED 控制 ：封装了系统级 LED 操作接口
+  4. 设备属性访问
+    - 属性路径解析 ：为不同类型设备（PSU、FAN、温度传感器等）提供属性路径解析
+    - 设备特定属性 ：支持访问各种设备的特定属性，如风扇转速、温度值等
+    - GPIO 操作 ：提供 GPIO 属性路径计算和访问
+  5. 系统验证与测试
+    - 设备验证 ：通过 verify_attr / verify_device 验证设备属性值
+    - Sysfs 验证 ：检查系统文件系统节点创建情况
+    - 模块验证 ：验证必要内核模块加载状态
+  6. 设备解析系统
+    - 类型化解析 ：为不同设备类型（CPU、MUX、EEPROM、光纤模块等）提供专门的解析方法
+    - 层次化处理 ：支持设备树层次结构的解析
+    - 动态操作 ：根据命令类型动态调用相应处理方法
+  7. BMC集成 (Baseboard Management Controller) 
+    - BMC 命令执行 ：通过 IPMI 工具与 BMC 交互
+    - 缓存机制 ：维护 BMC 响应缓存，提高性能
+    - 属性转换 ：将 BMC 原始数据转换为系统可用格式
+  8. 属性读写接口
+    - 统一属性访问 ：封装了不同类型设备的属性读写操作
+    - 多模式支持 ：同时支持 I2C 和 BMC 两种访问模式
+    - 错误处理 ：提供属性访问错误处理机制
 
 
 
 ### 模块关系
 
-python package: `sonic_platform` (Platform Implementation: `class ***()`)
+python package: `sonic_platform` (Platform Implementation: `class ***()`) (can --call--> `sonic_py_common`)
     |
     |
     | 1. `sonic_platform` 继承自 `sonic_platform_pddf_base`, 并重命名所有类, 即使其类名不再包含`Pddf`关键字
     | 2. `sonic_platform_pddf_base` 会导入 `sonic_platform`  的具体实现类进行机器设备管理
     |
     ↓
-python package: `sonic_platform_pddf_base` (Generic Base Class: `class Pddf***()`)
-
+python package: `sonic_platform_pddf_base` (Generic Base Class: `class Pddf***()`) (--call--> `sonic_py_common`)
+    |
+    |
+    | 1. `sonic_platform_pddf_base` 继承自 `sonic_platform_common` 中的某个基类
+    |
+    ↓
+python package: `sonic_platform_common` (sonic-platform-common) (--call--> `sonic_py_common`)
 
 
 
