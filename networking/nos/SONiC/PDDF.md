@@ -212,6 +212,11 @@ S3IP项目(Simplified Switch System Integration Program)，旨在通过软硬件
 
 `pddf_util.py` 是 SONiC 网络操作系统中用于管理平台设备驱动框架 (PDDF) 的核心工具脚本，主要负责驱动安装卸载、设备管理以及模式切换功能。
 
+##### 依赖说明
+
+- 需要调用 `pddfparse.py` 解析 `pddf-device.json` 数据。
+
+
 ##### 命令行接口
 
 - `install`: 安装 PDDF 驱动并生成相关 sysfs 节点
@@ -322,6 +327,33 @@ S3IP项目(Simplified Switch System Integration Program)，旨在通过软硬件
 #### pddfparse.py
 
 `pddfparse.py` 是 SONiC 平台上的 PDDF (Platform Device Discovery Framework) 核心工具，负责设备的发现、创建、管理和验证。该脚本主要通过操作 Linux sysfs 接口与内核交互，实现对各种硬件设备的统一管理。
+
+
+##### 主要实际用途
+
+1. 由`pddf_util.py`调用, 用于解析`pddf-device.json`
+2. 由`device/common/pddf/plugins/*.py`(*util.py & eeprom.py)调用, 用于解析`pddf-device.json`
+
+
+##### 设备配置格式 pddf-device.json
+
+`platform/pddf/i2c/utils/schema`
+├── CPLD.schema
+├── CPU.schema
+├── EEPROM.schema
+├── FAN.schema
+├── FAN_BMC.schema
+├── LED.schema
+├── MUX.schema
+├── PSU-PMBUS.schema
+├── PSU.schema
+├── PSU_BMC.schema
+├── QSFP.schema
+├── SMBUS.schema
+├── SYSSTAT.schema
+├── TEMP_SENSOR.schema
+└── TEMP_SENSOR_BMC.schema
+
 
 ##### 命令行接口
 
@@ -442,7 +474,7 @@ S3IP项目(Simplified Switch System Integration Program)，旨在通过软硬件
 
 ### 通用依赖
 
-#### sonic-platform-common
+#### sonic-platform-common (sonic_platform_base pkg)
 
 - 源码位置: src/sonic-platform-common
 
@@ -465,7 +497,7 @@ src/sonic-platform-common
 │   ├── credo
 │   └── microsoft
 
-#### sonic-py-common
+#### sonic-py-common (sonic_py_common pkg)
 
 - 源码位置: src/sonic-py-common
 
@@ -989,6 +1021,7 @@ PddfApi 是一个平台设备驱动框架（Platform Device Driver Framework，P
 
 ### 模块关系
 
+```
 python package: `sonic_platform` (Platform Implementation: `class ***()`) (can --call--> `sonic_py_common`)
     |
     |
@@ -999,12 +1032,13 @@ python package: `sonic_platform` (Platform Implementation: `class ***()`) (can -
 python package: `sonic_platform_pddf_base` (Generic Base Class: `class Pddf***()`) (--call--> `sonic_py_common`)
     |
     |
-    | 1. `sonic_platform_pddf_base` 继承自 `sonic_platform_common` 中的某个基类
+    | 1. `sonic_platform_pddf_base` 继承自 `sonic_platform_base` 中的某个基类
     |
     ↓
-python package: `sonic_platform_common` (sonic-platform-common) (--call--> `sonic_py_common`)
+python package: `sonic_platform_base` (位于sonic-platform-common) (--call--> `sonic_py_common`)
+```
 
 
-
+- **实际上`sonic_platform`必须直接或间接继承自`sonic_platform_base`!**
 
 
