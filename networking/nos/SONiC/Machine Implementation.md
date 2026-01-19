@@ -16,8 +16,8 @@
 ## Content
 
 
-- device/`@VENDOR-FULL-L@`/
-  - `@PLATFORM-FULL-L@`/      # platform, e.g. x86_64-dellemc_s52xx-r0, 将在src/sonic-device-data/处被编译
+- device/`@VENDOR-FULL-L@`/   # 将在src/sonic-device-data/处被编译成 `sonic-device-data_${version:-1.0-1}_all.deb` 
+  - `@PLATFORM-FULL-L@`/      # platform, e.g. x86_64-dellemc_s52xx-r0
     - 
 - platform/`@SWITCH-CHIP-VENDOR-FULL-L@`/
   - sonic-platform-modules-`@VENDOR-FULL-L@`/
@@ -54,6 +54,33 @@
 
 
 ## 安装包结构
+
+### sonic-device-data_`1.0-1`_all.deb
+
+- usr/share/
+  - doc/sonic-device-data/
+    - changelog.Debian.gz
+    - copyright
+  - sonic/device/
+    - pddf/plugins/           # from `device/common/`
+      - eeprom.py
+      - fanutil.py
+      - ledutil.py
+      - psuutil.py
+      - sfputil.py
+      - sysstatutil.py
+      - thermalutil.py
+    - profiles/               # from `device/common/`
+      - td2/
+      - th/
+      - th2/
+      - th4/
+      - th5/
+    - *`@PLATFORM-FULL-L@`*/  # all platfrom from `device/*/*`
+      - *
+
+
+
 
 ### platform-modules-`@MACHINE-NAME-FULL-L@`_`1.0`_amd64.deb
 

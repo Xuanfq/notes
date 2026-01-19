@@ -98,7 +98,7 @@ Description: Kernel modules for ABC8000 platform
 | `$(uname -r)`      | 动态获取当前内核版本                  |
 
 ### 3.2 debian/rules（构建规则）
-Makefile 格式脚本，核心是 `dh $@` 调用 debhelper 工具链，支持自定义覆盖默认逻辑。
+Makefile 格式脚本，核心是 `dh $@` 调用 debhelper 工具链，支持自定义覆盖默认逻辑。**默认逻辑会自动中dh_auto_build会自动执行debian同级目录中的Makefile。**
 
 #### 最简通用版（适配分包）
 ```makefile
