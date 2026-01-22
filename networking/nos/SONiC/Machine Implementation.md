@@ -18,7 +18,9 @@
 
 - device/`@VENDOR-FULL-L@`/   # 将在src/sonic-device-data/处被编译成 `sonic-device-data_${version:-1.0-1}_all.deb` 
   - `@PLATFORM-FULL-L@`/      # platform, e.g. x86_64-dellemc_s52xx-r0
-    - 
+    - pddf/
+      - pd-plugin.json        # pddf 插件数据
+      - pddf-device.json      # pddf 设备相关如驱动API的拓扑管理与配置
 - platform/`@SWITCH-CHIP-VENDOR-FULL-L@`/
   - sonic-platform-modules-`@VENDOR-FULL-L@`/
     - debian/     # 参照[Debian软件包打包完全指南](./Reference/Debian软件包打包完全指南.md)
@@ -76,8 +78,11 @@
       - th2/
       - th4/
       - th5/
-    - *`@PLATFORM-FULL-L@`*/  # all platfrom from `device/*/*`
+    - *`@PLATFORM-FULL-L@`*/  # all platfrom from `device/*/*`, e.g. x86_64-dellemc_s5248f_c3538-r0
       - *
+
+
+1. 进入系统后，将自动根据platform自动链接device路径到`/user/share/sonic/platform` (`os.symlink("/usr/share/sonic/device/" + platform, "/usr/share/sonic/platform")`)
 
 
 
@@ -96,6 +101,8 @@
   - etc/udev/rules.d/       # 管理设备节点
     - *.conf
   - usr/local/bin/          # 扩展的bin可执行文件
+    - pre_pddf_init.sh      # platform/pddf/i2c/service/`pddf-platform-init.service` 运行前执行, 可由此使用不同的pddf相关配置
+    - pre_pddf_s3ip.sh      # platform/pddf/i2c/service/`pddf-s3ip-init.service` 运行前执行, 可由此执行相关预设
   - **usr/share/sonic/device/`@PLATFORM-FULL-L@`/**     # 设备文件
     - sonic_platform-1.0-py3-none-any.whl     # pddf api 的实现与python模块适配 sonic_platform
 

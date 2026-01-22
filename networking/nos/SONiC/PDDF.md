@@ -268,7 +268,7 @@ S3IP项目(Simplified Switch System Integration Program)，旨在通过软硬件
 
 ##### Platform API管理
 
-- 支持 API 1.0 (插件文件管理) 和 2.0 (Python wheel 包管理) 
+- 支持 API 1.0 (插件文件管理) 和 2.0 (Python wheel 包管理) 同时管理
   - 基于wheel包的实现 (API 2.0) :
     - 文件位置: `device_path/pddf/sonic_platform-1.0-py3-none-any.whl`
     - 实现特点: 完全封装的Python包，基于PDDF 2.0参考API类
