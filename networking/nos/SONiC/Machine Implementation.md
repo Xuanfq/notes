@@ -87,24 +87,33 @@
 
 
 
+### sonic-platform-`@MACHINE-NAME-FULL-L@`_`1.0`_amd64.deb
+
+同下方: **[platform-modules-`@MACHINE-NAME-FULL-L@`_`1.0`_amd64.deb](#platform-modules-`@MACHINE-NAME-FULL-L@`_`1.0`_amd64.deb)**
+
+
+
 ### platform-modules-`@MACHINE-NAME-FULL-L@`_`1.0`_amd64.deb
 
-- platform-modules-`@MACHINE-NAME-FULL-L@`/      # 不同sku会创建不同的子package目录并存放需要安装的文件，通过 platform-modules-`@MACHINE-NAME-FULL-L@`.install 指定需要安装的文件和对应目录
-  - **lib/modules/`$(shell uname -r)`/extra/**   # rules编译时在执行安装时创建: `dh_installdirs -pplatform-modules-$${mod} $(KERNEL_SRC)/$INSTALL_MOD_DIR);`
-    - *.ko
-  - lib/systemd/system/     # 存放相关服务
-    - *.service
-  - etc/init.d/             # 存放用于*.service调用的脚本
-    - *.sh                 
-  - etc/modules-load.d/     # 目录下的*.conf根据名称的字典顺序自动被systemd-modules-load.service获取并自动根据配置加载定义的所需的模块
-    - *.conf                # 配置所需的模块列表，一行一个模块
-  - etc/udev/rules.d/       # 管理设备节点
-    - *.conf
-  - usr/local/bin/          # 扩展的bin可执行文件
-    - pre_pddf_init.sh      # platform/pddf/i2c/service/`pddf-platform-init.service` 运行前执行, 可由此使用不同的pddf相关配置
-    - pre_pddf_s3ip.sh      # platform/pddf/i2c/service/`pddf-s3ip-init.service` 运行前执行, 可由此执行相关预设
-  - **usr/share/sonic/device/`@PLATFORM-FULL-L@`/**     # 设备文件
-    - sonic_platform-1.0-py3-none-any.whl     # pddf api 的实现与python模块适配 sonic_platform
+- platform-modules-`@MACHINE-NAME-FULL-L@`/     # 不同sku会创建不同的子package目录并存放需要安装的文件，通过 platform-modules-`@MACHINE-NAME-FULL-L@`.install 指定需要安装的文件和对应目录
+  - lib/
+    - **modules/`$(shell uname -r)`/extra/**    # rules编译时在执行安装时创建: `dh_installdirs -pplatform-modules-$${mod} $(KERNEL_SRC)/$INSTALL_MOD_DIR);`
+      - *.ko
+    - systemd/system/       # 存放相关服务
+      - *.service
+  - etc/
+    - init.d/               # 存放用于*.service调用的脚本
+      - *.sh                 
+    - modules-load.d/       # 目录下的*.conf根据名称的字典顺序自动被systemd-modules-load.service获取并自动根据配置加载定义的所需的模块
+      - *.conf              # 配置所需的模块列表，一行一个模块
+    - udev/rules.d/         # 管理设备节点
+      - *.conf
+  - usr/
+    - local/bin/            # 扩展的bin可执行文件
+      - pre_pddf_init.sh    # platform/pddf/i2c/service/`pddf-platform-init.service` 运行前执行, 可由此使用不同的pddf相关配置
+      - pre_pddf_s3ip.sh    # platform/pddf/i2c/service/`pddf-s3ip-init.service` 运行前执行, 可由此执行相关预设
+    - **share/sonic/device/`@PLATFORM-FULL-L@`/[pddf]**   # 设备文件
+      - sonic_platform-1.0-py3-none-any.whl     # pddf api 的实现与python模块适配 sonic_platform
 
 
 
