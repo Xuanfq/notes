@@ -74,8 +74,9 @@ Image的类型有多种, e.g. onie (最多), raw, kvm etc.
 3. onie-image-*.conf
 4. /etc/machine.conf
 5. /host/machine.conf
-6. default_platform.conf
-7. platform.conf
+6. installer.conf
+7. default_platform.conf
+8. platform.conf
 
 
 **SONiC分区中/host/machine.conf来源顺序**:
@@ -103,10 +104,113 @@ Image的类型有多种, e.g. onie (最多), raw, kvm etc.
 
 ### 磁盘分区结构
 
+- /host/
+  - image-202505.1022539-92b55b412/
+    - boot/
+      - vmlinuz-6.1.0-29-2-amd64        # 内核文件
+      - initrd.img-6.1.0-29-2-amd64     # 文件系统
+      - config-6.1.0-29-2-amd64         # 内核编译配置
+      - System.map-6.1.0-29-2-amd64     # 内核编译时生成, 记录文件内核中的符号列表, 实际上并不是真正的System.map, 真正的在linux-image-<version>-dbg
+    - docker/                   # -> dockerfs.tar.gz
+    - platform/                 # platform/
+      - common/
+        - Packages.gz                                                   # debian control file for all the *.deb
+        - sonic-platform-`@MACHINE-NAME-FULL-L@`_`1.0`_amd64.deb        # -> platform/sw-chip-name/device-vendor/device-name/
+        - platform-modules-`@MACHINE-NAME-FULL-L@`_`1.0`_amd64.deb      # -> platform/sw-chip-name/device-vendor/device-name/
+      - grub/
+        - grub-pc-bin_2.06-13+deb12u1_amd64.deb                         # 
+      - `$platform-name`/
+        - sonic-platform-`@MACHINE-NAME-FULL-L@`_`1.0`_amd64.deb        # -> ../common/*.deb
+        - platform-modules-`@MACHINE-NAME-FULL-L@`_`1.0`_amd64.deb      # -> ../common/*.deb 同上, 二选一, 或其他自定义deb名
+    - fs.squashfs               # 只读文件系统, 包括device数据
+  - machine.conf
 
 
 
 ### Image安装
+
+
+
+1. 自解压image到临时目录`/tmp/tmp.xxx/`
+2. 执行解压后的脚本`installer/install.sh`
+   1. 检测所在的安装环境: `install_env=sonic|onie|build`
+      - sonic: `[ -d "/etc/sonic" ]`
+      - onie: `grep -Fxqs "DISTRIB_ID=onie" /etc/lsb-release > /dev/null`
+      - build: 上诉都不符合时
+   2. 切换工作目录到install.sh所在的目录: `cd $(dirname $0)`
+   3. 依次加载配置文件:
+      - machine.conf: `[ -r ./machine.conf ] && read_conf_file "./machine.conf"`
+      - onie-image.conf: `[ -r ./onie-image.conf ] && . ./onie-image.conf`
+      - onie-image-*.conf: `[ -r ./onie-image-*.conf ]; . ./onie-image-*.conf`
+   4. 检测运行权限, 需为root用户
+   5. 尝试从安装环境的配置中获取机器信息:
+      1. 尝试`/etc/machine.conf`(onie): `[ -r /etc/machine.conf ] && read_conf_file "/etc/machine.conf"`
+      2. 尝试`/host/machine.conf`(sonic): `[ -r /host/machine.conf ] && read_conf_file "/host/machine.conf"`
+      3. build的安装环境则跳过
+   6. 预设所需变量:
+      1. `ONIE_PLATFORM_EXTRA_CMDLINE_LINUX`=""
+      2. `ONIE_IMAGE_PART_SIZE`="%%ONIE_IMAGE_PART_SIZE%%" (Ref: ONIE_IMAGE_PART_SIZE="32768")
+      3. `VAR_LOG_SIZE`=4096
+   7. 加载设备平台安装配置, 可覆盖上述配置或变量值: `[ -r platforms/$onie_platform ] && . platforms/$onie_platform` (即`installer.conf`)
+   8. 若为onie安装环境, 检测onie平台名是否在image所支持的设备列表中, 若不支持则询问是否强制安装: `! grep -Fxq "$onie_platform" platforms_asic`
+   9. 若为onie安装环境, 预设所需变量:
+      1. `onie_bin`=
+      2. `onie_root_dir`=/mnt/onie-boot/onie
+      3. `onie_initrd_tmp`=/
+   10. 其他参数:
+       1. `arch`="%%ARCH%%" (Ref: ="amd64")
+       2. `demo_type`="%%DEMO_TYPE%%" (Ref: ="OS", or DIAG)
+       3. `demo_part_size`=$ONIE_IMAGE_PART_SIZE (Ref: 见上方)
+       4. `image_version`="%%IMAGE_VERSION%%" (Ref: ="202505.1022539-92b55b412")
+       5. `timestamp`="$(date -u +%Y%m%d)"
+       6. `demo_volume_label`="SONiC-${demo_type}"
+       7. `demo_volume_revision_label`="SONiC-${demo_type}-${image_version}"
+   11. 加载默认平台配置: `. ./default_platform.conf`
+   12. 加载芯片平台配置, 可覆盖默认平台配置: `[ -r ./platform.conf ] && . ./platform.conf`
+   13. 预设镜像存放目录名`image_dir`="image-$image_version"
+   14. 准备安装环境:
+       1. onie:
+          1. 创建分区: `create_partition` (default_platform.conf or platform.conf)
+             1. 若安装目标盘参数`blk_dev`为空, 查找onie所在磁盘作为SONiC安装目标盘: `blk_dev=$(echo $onie_dev | sed -e 's/[1-9][0-9]*$//' | sed -e 's/\([0-9]\)\(p\)/\1/'; cur_part=$(cat /proc/mounts | awk "{ if(\$2==\"/\") print \$1 }" | grep $blk_dev || true)`
+             2. 若为uefi, 删除所有`$demo_volume_label`(SONiC-OS|SONiC-DIAG|ACS-OS(legacy_volume_label))相关分区和efi启动项, 查找第一个可用的分区编号`demo_part`并创建分区: `create_demo_uefi_partition $blk_dev`
+             3. 若onie分区类型(`${onie_bin} onie-sysinfo -t`)为gpt分区类型, 删除所有`$demo_volume_label`(SONiC-OS|SONiC-DIAG|ACS-OS(legacy_volume_label))相关分区, 查找第一个可用的分区编号`demo_part`并创建分区: `create_demo_gpt_partition $blk_dev`
+             4. 若onie分区类型(`${onie_bin} onie-sysinfo -t`)为msdos分区类型, 删除所有`$demo_volume_label`(SONiC-OS|SONiC-DIAG|ACS-OS(legacy_volume_label))相关分区, 查找第一个可用的分区编号`demo_part`并创建分区: `create_demo_msdos_partition $blk_dev`
+          2. 挂载分区: `mount_partition` (default_platform.conf or platform.conf)
+             1. 记录分区: `demo_dev=$(echo $blk_dev | sed -e 's/\(mmcblk[0-9]\)/\1p/')$demo_part; echo $blk_dev | grep -q nvme0 && demo_dev=$(echo $blk_dev | sed -e 's/\(nvme[0-9]n[0-9]\)/\1p/')$demo_part`
+             2. 制作分区的文件系统ext4: `mkfs.ext4 -L $demo_volume_label $demo_dev`
+             3. 创建临时目录`demo_mnt`并挂载该分区`demo_dev`到目录
+       2. sonic:
+          1. 预设挂载点为`demo_mnt`: /host
+          2. 获取当前SONiC版本`running_sonic_revision`=`"$(cat /proc/cmdline | sed -n 's/^.*loop=\/*image-\(\S\+\)\/.*$/\1/p')"` (i.e. 202505.1022539-92b55b412)
+          3. 校验当前SONiC镜像是否损坏: `[ ! -d "$demo_mnt/image-$running_sonic_revision" ] && exit 1`
+          4. 校验正在安装的SONiC镜像是否已经安装: `[ "$image_dir" = "image-$running_sonic_revision" ] && exit 0`
+          5. 删除其他SONiC镜像, 当前SONiC除外: `for f in $demo_mnt/image-* ; do [ -d $f ] && [ "$f" != "$demo_mnt/image-$running_sonic_revision" ] && [ "$f" != "$demo_mnt/$image_dir" ] && rm -rf $f done`
+       3. build:
+          1. 预设挂载点为`demo_mnt`: build_raw_image_mnt
+          2. 预设目标镜像`demo_dev`: $cur_wd/"target/sonic-broadcom.raw" (cur_wd=$pwd)
+          3. 格式化目标镜像: `mkfs.ext4 -L $demo_volume_label $demo_dev`
+          4. 创建挂载点并挂载: `mkdir $demo_mnt; mount -t auto -o loop $demo_dev $demo_mnt`
+   15. 创建镜像存放目录并确保为空目录: `([ -d $demo_mnt/$image_dir ] && rm -rf $demo_mnt/$image_dir/*) || mkdir $demo_mnt/$image_dir`
+   16. 解压文件到镜像存放目录:
+       1. 若配置`docker_inram=on`, 则不对`dockerfs.tar.gz`进一步解压, 解压fs.zip: `unzip -o $INSTALLER_PAYLOAD -x "platform.tar.gz" -d $demo_mnt/$image_dir` (fs.zip -> platform.tar.gz)
+       2. 否则对`dockerfs.tar.gz`及`platform.tar.gz`进一步解压, 解压fs.zip及dockerfs.tar.gz: `unzip -o $INSTALLER_PAYLOAD -x "$FILESYSTEM_DOCKERFS" "platform.tar.gz" -d $demo_mnt/$image_dir; mkdir -p $demo_mnt/$image_dir/$DOCKERFS_DIR; unzip -op $INSTALLER_PAYLOAD "$FILESYSTEM_DOCKERFS" | tar xz $TAR_EXTRA_OPTION -f - -C $demo_mnt/$image_dir/$DOCKERFS_DIR` (fs.zip -> platform.tar.gz) (fs.zip -> dockerfs.tar.gz) (dockerfs.tar.gz -> docker/)
+       3. 解压`platform.tar.gz`: `mkdir -p $demo_mnt/$image_dir/platform; unzip -op $INSTALLER_PAYLOAD "platform.tar.gz" | tar xz $TAR_EXTRA_OPTION -f - -C $demo_mnt/$image_dir/platform` (platform.tar.gz -> platform/)
+       4. 差别为是否对`dockerfs.tar.gz`进一步解压, 默认解压
+   17. 若在onie环境上安装, 生成机器配置文件到磁盘分区根目录:
+       1. 如果存在`/etc/machine-build.conf`, 则从当前环境中提取`onie_`开头的变量并写入到目标磁盘根目录`$demo_mnt/machine.conf`: `[ -f /etc/machine-build.conf ] && set | grep ^onie | sed -e "s/='/=/" -e "s/'$//" > $demo_mnt/machine.conf`
+       2. 否则，直接复制 /etc/machine.conf 到目标位置: `cp /etc/machine.conf $demo_mnt`
+   18. 设置linux内核加载参数`EXTRA_CMDLINE_LINUX`以继承FIPS选项(SONiC升级, 可被ONIE_PLATFORM_EXTRA_CMDLINE_LINUX覆盖): `if grep -q '\bsonic_fips=1\b' /proc/cmdline && echo " $extra_cmdline_linux" | grep -qv '\bsonic_fips=.\b'; then extra_cmdline_linux="$extra_cmdline_linux sonic_fips=1"` (由GRUB_CMDLINE_LINUX="$GRUB_CMDLINE_LINUX $extra_cmdline_linux"传递)
+   19. 更新启动加载程序菜单: `bootloader_menu_config`
+   20. 设置NOS模式, 避免onie再次引导安装nos: `[ -x /bin/onie-nos-mode ] && /bin/onie-nos-mode -s`
+
+
+
+
+**支持三种安装环境**:
+
+- SONiC 环境 (在已有的 SONiC 系统中安装)
+- ONIE 环境 (在 Open Network Install Environment 中安装)
+- BUILD 环境 (在构建系统中安装)
 
 
 

@@ -21,6 +21,7 @@
     - pddf/
       - pd-plugin.json        # pddf 插件数据
       - pddf-device.json      # pddf 设备相关如驱动API的拓扑管理与配置
+    - installer.conf          # 机器安装配置, 安装时将覆盖其他如onie-image.conf等配置
 - platform/`@SWITCH-CHIP-VENDOR-FULL-L@`/
   - sonic-platform-modules-`@VENDOR-FULL-L@`/
     - debian/     # 参照[Debian软件包打包完全指南](./Reference/Debian软件包打包完全指南.md)
@@ -121,6 +122,24 @@
 
 
 ## Details
+
+### installer.conf
+
+**重要配置项**:
+
+- `CONSOLE_PORT`: 0x3f8 (需同时配置`CONSOLE_DEV`)
+- `CONSOLE_DEV`: 0 (需同时配置`CONSOLE_PORT`)
+- `CONSOLE_SPEED`: 115200
+- `ONIE_PLATFORM_EXTRA_CMDLINE_LINUX`: "" (加载sonic内核时的额外自定义参数)
+- `ONIE_IMAGE_PART_SIZE`: 32768 (SONiC分区占用大小, 32GB)
+- `VAR_LOG_SIZE`: 4096 (内核参数varlog_size=4096)
+
+**其他配置项**:
+- `blk_dev`: /dev/sda (onie环境时安装到的目标磁盘, 默认不配置, 即自动查找与onie同个磁盘)
+- `docker_inram`: on (安装时是否解压sonic镜像里的dockerfs.tar.gz到磁盘上, 默认不配置, 即不是on)
+- ``: 
+
+
 
 ### platform-modules-`@VENDOR-FULL-L@`.mk
 
