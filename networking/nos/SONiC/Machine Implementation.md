@@ -139,6 +139,12 @@
 - `docker_inram`: on (安装时是否解压sonic镜像里的dockerfs.tar.gz到磁盘上, 默认不配置, 即不是on)
 - ``: 
 
+**预安装脚本**:
+- 该配置通过`. ./installer.conf`的形式加载, 可通过此做一些其他配置, 比如替换onie下的grub工具等
+
+
+**配置详细加载过程请参阅[Logic of sonic images](./Logic%20of%20sonic%20images.md)**
+
 
 
 ### platform-modules-`@VENDOR-FULL-L@`.mk

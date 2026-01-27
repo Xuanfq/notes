@@ -69,14 +69,14 @@ Image的类型有多种, e.g. onie (最多), raw, kvm etc.
 
 **配置覆盖顺序**:
 
-1. machine.conf
-2. onie-image.conf
-3. onie-image-*.conf
-4. /etc/machine.conf
-5. /host/machine.conf
-6. installer.conf
-7. default_platform.conf
-8. platform.conf
+1. machine.conf: `read_conf_file "./machine.conf"`
+2. onie-image.conf: `. ./onie-image.conf`
+3. onie-image-*.conf: `. ./onie-image-*.conf`
+4. /etc/machine.conf: `read_conf_file "/etc/machine.conf"`
+5. /host/machine.conf: `read_conf_file "/host/machine.conf"`
+6. installer.conf: `. platforms/$onie_platform`
+7. default_platform.conf: `. ./default_platform.conf`
+8. platform.conf: `. ./platform.conf`
 
 
 **SONiC分区中/host/machine.conf来源顺序**:
@@ -105,14 +105,17 @@ Image的类型有多种, e.g. onie (最多), raw, kvm etc.
 ### 磁盘分区结构
 
 - /host/
-  - image-202505.1022539-92b55b412/
+  - image-202505.1022539-92b55b412/     # -> fs.zip
     - boot/
       - vmlinuz-6.1.0-29-2-amd64        # 内核文件
       - initrd.img-6.1.0-29-2-amd64     # 文件系统
       - config-6.1.0-29-2-amd64         # 内核编译配置
       - System.map-6.1.0-29-2-amd64     # 内核编译时生成, 记录文件内核中的符号列表, 实际上并不是真正的System.map, 真正的在linux-image-<version>-dbg
-    - docker/                   # -> dockerfs.tar.gz
-    - platform/                 # platform/
+      - mmx64.efi                       # secure boot 时才有
+      - shimx64.efi                     # secure boot 时才有
+      - grubx64.efi                     # secure boot 时才有
+    - docker/                   # -> fs.zip/dockerfs.tar.gz
+    - platform/                 # -> fs.zip/platform.tar.gz
       - common/
         - Packages.gz                                                   # debian control file for all the *.deb
         - sonic-platform-`@MACHINE-NAME-FULL-L@`_`1.0`_amd64.deb        # -> platform/sw-chip-name/device-vendor/device-name/
@@ -120,9 +123,12 @@ Image的类型有多种, e.g. onie (最多), raw, kvm etc.
       - grub/
         - grub-pc-bin_2.06-13+deb12u1_amd64.deb                         # 
       - `$platform-name`/
-        - sonic-platform-`@MACHINE-NAME-FULL-L@`_`1.0`_amd64.deb        # -> ../common/*.deb
+        - sonic-platform-`@MACHINE-NAME-FULL-L@`_`1.0`_amd64.deb        # -> ../common/*.deb 包括 sonic_platform-1.0-py3-none-any.whl
         - platform-modules-`@MACHINE-NAME-FULL-L@`_`1.0`_amd64.deb      # -> ../common/*.deb 同上, 二选一, 或其他自定义deb名
     - fs.squashfs               # 只读文件系统, 包括device数据
+    - onie-support*.tar.bz2     # onie环境下安装时, 由`onie-support`命令生成
+    - *                         # 其他文件, Option
+  - image-202311.xxxxxxx-yyyyyyyyy/
   - machine.conf
 
 
@@ -196,11 +202,30 @@ Image的类型有多种, e.g. onie (最多), raw, kvm etc.
        2. 否则对`dockerfs.tar.gz`及`platform.tar.gz`进一步解压, 解压fs.zip及dockerfs.tar.gz: `unzip -o $INSTALLER_PAYLOAD -x "$FILESYSTEM_DOCKERFS" "platform.tar.gz" -d $demo_mnt/$image_dir; mkdir -p $demo_mnt/$image_dir/$DOCKERFS_DIR; unzip -op $INSTALLER_PAYLOAD "$FILESYSTEM_DOCKERFS" | tar xz $TAR_EXTRA_OPTION -f - -C $demo_mnt/$image_dir/$DOCKERFS_DIR` (fs.zip -> platform.tar.gz) (fs.zip -> dockerfs.tar.gz) (dockerfs.tar.gz -> docker/)
        3. 解压`platform.tar.gz`: `mkdir -p $demo_mnt/$image_dir/platform; unzip -op $INSTALLER_PAYLOAD "platform.tar.gz" | tar xz $TAR_EXTRA_OPTION -f - -C $demo_mnt/$image_dir/platform` (platform.tar.gz -> platform/)
        4. 差别为是否对`dockerfs.tar.gz`进一步解压, 默认解压
-   17. 若在onie环境上安装, 生成机器配置文件到磁盘分区根目录:
+   17. 若在onie环境上安装, 生成机器配置文件machine.conf到磁盘分区根目录:
        1. 如果存在`/etc/machine-build.conf`, 则从当前环境中提取`onie_`开头的变量并写入到目标磁盘根目录`$demo_mnt/machine.conf`: `[ -f /etc/machine-build.conf ] && set | grep ^onie | sed -e "s/='/=/" -e "s/'$//" > $demo_mnt/machine.conf`
        2. 否则，直接复制 /etc/machine.conf 到目标位置: `cp /etc/machine.conf $demo_mnt`
    18. 设置linux内核加载参数`EXTRA_CMDLINE_LINUX`以继承FIPS选项(SONiC升级, 可被ONIE_PLATFORM_EXTRA_CMDLINE_LINUX覆盖): `if grep -q '\bsonic_fips=1\b' /proc/cmdline && echo " $extra_cmdline_linux" | grep -qv '\bsonic_fips=.\b'; then extra_cmdline_linux="$extra_cmdline_linux sonic_fips=1"` (由GRUB_CMDLINE_LINUX="$GRUB_CMDLINE_LINUX $extra_cmdline_linux"传递)
    19. 更新启动加载程序菜单: `bootloader_menu_config`
+       1. onie
+          1. 通过命令`onie-support`生成`$demo_mnt/$image_dir/onie-support*.tar.bz2`
+          2. bootloader是UEFI:
+             1. 若开启安全启动模式, 则安装`shim`而不是`grub`: `demo_install_uefi_shim "$demo_mnt" "$blk_dev"`
+                1. 检查`/boot/efi`挂载情况, 若没挂载则尝试挂载: `! mount | grep -q "/boot/efi" && mount /boot/efi`
+                2. 从`$blk_dev`(onie)所在磁盘1-8分区查找EFI系统所在分区, 一般是分区1: `sgdisk -i $p $blk_dev | grep -q C12A7328-F81F-11D2-BA4B-00A0C93EC93B && uefi_part=$p`
+                3. 创建存放SONiC EFI的目录: `/boot/efi/EFI/$demo_volume_label`
+                4. 检查secure boot所需的相关shim文件, 并将其拷贝到EFI目录下:
+                   1. `$demo_mnt/$image_dir/boot/mmx64.efi`: `/boot/efi/EFI/$demo_volume_label/mmx64.efi`
+                   2. `$demo_mnt/$image_dir/boot/shimx64.efi`: `/boot/efi/EFI/$demo_volume_label/shimx64.efi`
+                   3. `$demo_mnt/$image_dir/boot/grubx64.efi`: `/boot/efi/EFI/$demo_volume_label/grubx64.efi`
+                5. 创建UEFI启动项: `efibootmgr --quiet --create --label "$demo_volume_label" --disk $blk_dev --part $uefi_part --loader "/EFI/$demo_volume_label/shimx64.efi"`
+             2. 否则安装UEFI`grub`: `demo_install_uefi_grub "$demo_mnt" "$blk_dev"`
+                1. 检查`/boot/efi`挂载情况, 若没挂载则尝试挂载: `! mount | grep -q "/boot/efi" && mount /boot/efi`
+                2. 从`$blk_dev`(onie)所在磁盘1-8分区查找EFI系统所在分区, 一般是分区1: `sgdisk -i $p $blk_dev | grep -q C12A7328-F81F-11D2-BA4B-00A0C93EC93B && uefi_part=$p`
+                3. 安装grub, 用的是onie环境下的grub工具, 可通过`installer.conf`对其进行替换: `grub-install --no-nvram --bootloader-id="$demo_volume_label" --efi-directory="/boot/efi" --boot-directory="$demo_mnt" --recheck "$blk_dev"`
+                4. 创建UEFI启动项: `grub=$(find /boot/efi/EFI/$demo_volume_label/ -name grub*.efi -exec basename {} \;); efibootmgr --quiet --create --label "$demo_volume_label" --disk $blk_dev --part $uefi_part --loader "/EFI/$demo_volume_label/$grub"`
+          3. 否则安装legacy`grub`: `demo_install_grub "$demo_mnt" "$blk_dev"`
+       2. 创建GRUB配置`grub.cfg`
    20. 设置NOS模式, 避免onie再次引导安装nos: `[ -x /bin/onie-nos-mode ] && /bin/onie-nos-mode -s`
 
 
@@ -208,9 +233,12 @@ Image的类型有多种, e.g. onie (最多), raw, kvm etc.
 
 **支持三种安装环境**:
 
-- SONiC 环境 (在已有的 SONiC 系统中安装)
-- ONIE 环境 (在 Open Network Install Environment 中安装)
-- BUILD 环境 (在构建系统中安装)
+- `SONiC` (在已有的 SONiC 系统中安装):
+  - 主要是添加**镜像目录**/host/image-202505.1022539-92b55b412/和**启动项**;
+  - 不会有多个SONiC启动项?? 可用于升级SONiC
+- `ONIE` (在 Open Network Install Environment 中安装):
+  - 比SONiC环境多一些, 磁盘分区唯一性/创建等管理, /host/machine.conf生成
+- `BUILD` (在构建系统中安装)
 
 
 
