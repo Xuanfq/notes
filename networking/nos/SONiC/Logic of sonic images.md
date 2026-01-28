@@ -104,7 +104,13 @@ Image的类型有多种, e.g. onie (最多), raw, kvm etc.
 
 ### 磁盘分区结构
 
-- /host/
+- /host/                                # 实际上是 分区的 根目录 /
+  - grub/
+    - fonts/
+    - i386-pc/
+    - locale/
+    - grub.cfg
+    - grubenv
   - image-202505.1022539-92b55b412/     # -> fs.zip
     - boot/
       - vmlinuz-6.1.0-29-2-amd64        # 内核文件
@@ -184,7 +190,7 @@ Image的类型有多种, e.g. onie (最多), raw, kvm etc.
           2. 挂载分区: `mount_partition` (default_platform.conf or platform.conf)
              1. 记录分区: `demo_dev=$(echo $blk_dev | sed -e 's/\(mmcblk[0-9]\)/\1p/')$demo_part; echo $blk_dev | grep -q nvme0 && demo_dev=$(echo $blk_dev | sed -e 's/\(nvme[0-9]n[0-9]\)/\1p/')$demo_part`
              2. 制作分区的文件系统ext4: `mkfs.ext4 -L $demo_volume_label $demo_dev`
-             3. 创建临时目录`demo_mnt`并挂载该分区`demo_dev`到目录
+             3. 创建临时目录`demo_mnt`并挂载该分区`demo_dev`到该目录
        2. sonic:
           1. 预设挂载点为`demo_mnt`: /host
           2. 获取当前SONiC版本`running_sonic_revision`=`"$(cat /proc/cmdline | sed -n 's/^.*loop=\/*image-\(\S\+\)\/.*$/\1/p')"` (i.e. 202505.1022539-92b55b412)
@@ -225,7 +231,94 @@ Image的类型有多种, e.g. onie (最多), raw, kvm etc.
                 3. 安装grub, 用的是onie环境下的grub工具, 可通过`installer.conf`对其进行替换: `grub-install --no-nvram --bootloader-id="$demo_volume_label" --efi-directory="/boot/efi" --boot-directory="$demo_mnt" --recheck "$blk_dev"`
                 4. 创建UEFI启动项: `grub=$(find /boot/efi/EFI/$demo_volume_label/ -name grub*.efi -exec basename {} \;); efibootmgr --quiet --create --label "$demo_volume_label" --disk $blk_dev --part $uefi_part --loader "/EFI/$demo_volume_label/$grub"`
           3. 否则安装legacy`grub`: `demo_install_grub "$demo_mnt" "$blk_dev"`
-       2. 创建GRUB配置`grub.cfg`
+       2. 创建GRUB配置`grub.cfg`:
+          1. 创建临时GRUB配置文件`grub_cfg`: `$(mktemp)`
+          2. 加载芯片平台配置: `[ -r ./platform.conf ] && . ./platform.conf`
+          3. 根据CPU类型预设禁用 c-states 的参数变量 CSTATES 以关闭CPU节能休眠达到最佳性能: (指在计算机的BIOS/UEFI设置中，关闭CPU的节能休眠状态（C-states）。这是一种通过牺牲功耗和发热来换取最高、最稳定性能（尤其是低延迟）的操作)
+             - Intel: `CSTATES="processor.max_cstate=1 intel_idle.max_cstate=0"`
+             - AMD: `CSTATES="processor.max_cstate=1 amd_idle.max_cstate=0"`
+             - Others: `CSTATES=""`
+          4. 检查和处理并导出环境变量`GRUB_SERIAL_COMMAND`(onie下50_onie_grub会调用): `${GRUB_SERIAL_COMMAND:-"serial --port=${CONSOLE_PORT} --speed=${CONSOLE_SPEED} --word=8 --parity=no --stop=1"}`
+          5. 检查和处理并导出环境变量`GRUB_CMDLINE_LINUX`(onie下50_onie_grub会调用): `${GRUB_CMDLINE_LINUX:-"console=tty0 console=ttyS${CONSOLE_DEV},${CONSOLE_SPEED}n8 quiet $CSTATES"}`
+          6. 添加 通用配置项 超时时间 与 串口控制台 的相关设置 到grub_cfg文件: `$GRUB_SERIAL_COMMAND \n terminal_input console serial \n terminal_output console serial \n set timeout=5`
+          7. 添加 load_env, default="\${saved_entry}", next_entry, onie_entry 的相关设置 到grub_cfg文件
+          8. 若是 DIAG :
+             1. 设置默认启动项为 ONIE 到grub_cfg文件 (*即无法自动选择SONiC-DIAG*): `set default=ONIE`
+             2. 设置 ONIE BOOT MODE 为 install 模式 以确保*自动引导到NOS安装模式*: `$onie_root_dir/tools/bin/onie-boot-mode -q -o install`
+          9. 添加 SONiC OS/DIAG 菜单条目:
+             1. 预设sonic菜单条目名`demo_grub_entry`: `=demo_volume_revision_label`
+             2. 预设其他`onie_menuentry`/`grub_cfg_root`相关变量: 
+                1. sonic env: 
+                   1. 查找原有的SONiC菜单条目`old_sonic_menuentry`: `=$(cat /host/grub/grub.cfg | sed "/^menuentry '${demo_volume_label}-${running_sonic_revision}'/,/}/!d")`
+                   2. 查找原有的GRUB配置根设备(通常是所在磁盘分区的UUID)`grub_cfg_root`: `=$(echo $old_sonic_menuentry | sed -e "s/.*root\=\(.*\)rw.*/\1/")`
+                   3. 查找原有的onie菜单条目配置`onie_menuentry`: `=$(cat /host/grub/grub.cfg | sed "/menuentry ONIE/,/}/!d")`
+                2. build env:
+                   1. GRUB配置根目录`grub_cfg_root`: `=%%SONIC_ROOT%%` (此处对此进行替换files/image_config/platform/rc.local)
+                3. onie env:
+                   1. 查找SONiC所在分区的`uuid`: `=$(blkid "$demo_dev" | sed -ne 's/.* UUID=\"\([^"]*\)\".*/\1/p')`
+                      1. 查找成功则使用uuid作为grub的root: `grub_cfg_root=UUID=$uuid`
+                      2. 查找失败为空则使用所在分区设备名作为grub的root: `grub_cfg_root=$demo_dev`
+             3. 在Debian默认路径/boot/efi/EFI/debian/下创建grub.cfg用于调用真正的包含sonic配置的完整grub.cfg文件:
+                ```sh
+                cat <<EOF > /boot/efi/EFI/debian/grub.cfg
+                search --no-floppy --label --set=root $demo_volume_label  # SONiC-OS Label 所在磁盘分区
+                set prefix=(\$root)'/grub'
+                configfile \$prefix/grub.cfg
+                EOF
+                ```
+             4. 添加 继承的FIPS选项`EXTRA_CMDLINE_LINUX` 到 LINUX命令加载参数`GRUB_CMDLINE_LINUX`: `="$GRUB_CMDLINE_LINUX $extra_cmdline_linux"`
+             5. 预设 GRUB中设置linux内核的命令 `GRUB_CFG_LINUX_CMD`:
+                1. UEFI && SECURE BOOT: `linuxefi`
+                2. Others: `linux`
+             6. 预设 GRUB中设置initrd文件系统的命令 `GRUB_CFG_INITRD_CMD`:
+                1. UEFI && SECURE BOOT: `initrdefi`
+                2. Others: `initrd`
+             7. 添加 新的 SONiC OS/DIAG 菜单条目 到grub_cfg:
+                ```sh
+                menuentry '$demo_grub_entry' {
+                        search --no-floppy --label --set=root $demo_volume_label
+                        echo    'Loading $demo_volume_label $demo_type kernel ...'
+                        insmod gzio
+                        if [ x$grub_platform = xxen ]; then insmod xzio; insmod lzopio; fi
+                        insmod part_msdos
+                        insmod ext2
+                        $GRUB_CFG_LINUX_CMD   /$image_dir/boot/vmlinuz-6.1.0-29-2-${arch} root=$grub_cfg_root rw $GRUB_CMDLINE_LINUX  \
+                                net.ifnames=0 biosdevname=0 \
+                                loop=$image_dir/$FILESYSTEM_SQUASHFS loopfstype=squashfs                       \
+                                systemd.unified_cgroup_hierarchy=0 \
+                                apparmor=1 security=apparmor varlog_size=$VAR_LOG_SIZE usbcore.autosuspend=-1 $ONIE_PLATFORM_EXTRA_CMDLINE_LINUX
+                        echo    'Loading $demo_volume_label $demo_type initial ramdisk ...'
+                        $GRUB_CFG_INITRD_CMD  /$image_dir/boot/initrd.img-6.1.0-29-2-${arch}
+                }
+                ```
+             8. 若是 onie 环境, 调用onie下的 `50_onie_grub` 生成 *SONiC中的onie菜单条目到grub_cfg* 并 *更新ONIE中的grub.cfg*: `$onie_root_dir/grub.d/50_onie_grub >> $grub_cfg`
+                - ONIE中grub配置被影响的有 GRUB_CMDLINE_LINUX & GRUB_SERIAL_COMMAND :
+                  - `if [ -z "$GRUB_ONIE_SERIAL_COMMAND" ] || [ -z "$GRUB_CMDLINE_LINUX" ] ; then . $onie_root_dir/grub/grub-variables fi`
+                  - 
+                    ```sh
+                      if echo -n "$GRUB_CMDLINE_LINUX" | grep -q ttyS ; then
+                          cat <<EOF >> $grub_cfg
+                      # begin: serial console config
+
+                      $GRUB_ONIE_SERIAL_COMMAND
+                      terminal_input serial
+                      terminal_output serial
+
+                      # end: serial console config
+                      EOF
+                    ```
+                  - `onie_initargs="$GRUB_CMDLINE_LINUX"`
+             9. 若是 sonic | build 环境下安装, 将 原有的sonic和onie的菜单条目 添加回grub_cfg:
+                ```sh
+                cat <<EOF >> $grub_cfg
+                $old_sonic_menuentry
+                $onie_menuentry
+                EOF
+                ``` 
+             10. 若是 build 环境, 将 grub_cfg 复制到 `/host/grub.cfg` (分区根目录/下): `cp $grub_cfg $demo_mnt/grub.cfg; umount $demo_mnt`
+             11. 若是 sonic | onie 环境:
+                 1. 将 grub_cfg 复制到 SONiC下的 `/host/grub/grub.cfg` (分区根目录下/grub/grub.cfg): `cp $grub_cfg $onie_initrd_tmp/$demo_mnt/grub/grub.cfg`
+                 2. 生成 grubenv 到 SONiC下的`/host/grub/grubenv` (分区根目录下/grub/grubenv): `[ ! -f "$onie_initrd_tmp/$demo_mnt/grub/grubenv" ] && grub-editenv "$onie_initrd_tmp/$demo_mnt/grub/grubenv" create`
    20. 设置NOS模式, 避免onie再次引导安装nos: `[ -x /bin/onie-nos-mode ] && /bin/onie-nos-mode -s`
 
 
@@ -235,9 +328,9 @@ Image的类型有多种, e.g. onie (最多), raw, kvm etc.
 
 - `SONiC` (在已有的 SONiC 系统中安装):
   - 主要是添加**镜像目录**/host/image-202505.1022539-92b55b412/和**启动项**;
-  - 不会有多个SONiC启动项?? 可用于升级SONiC
+  - 有多个SONiC启动项, 最新安装的在最上方, 可用于升级SONiC
 - `ONIE` (在 Open Network Install Environment 中安装):
-  - 比SONiC环境多一些, 磁盘分区唯一性/创建等管理, /host/machine.conf生成
+  - 比SONiC环境多一些, 磁盘分区唯一性/创建等管理, /host/machine.conf 生成
 - `BUILD` (在构建系统中安装)
 
 

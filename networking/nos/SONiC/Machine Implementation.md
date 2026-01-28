@@ -134,6 +134,9 @@
 - `ONIE_IMAGE_PART_SIZE`: 32768 (SONiC分区占用大小, 32GB)
 - `VAR_LOG_SIZE`: 4096 (内核参数varlog_size=4096)
 
+- `GRUB_SERIAL_COMMAND`: "serial --port=${CONSOLE_PORT} --speed=${CONSOLE_SPEED} --word=8 --parity=no --stop=1" (GRUB的串口设置命令参数, 被写入到grub.cfg中, 默认不配置, 此值为默认值DEFAULT_GRUB_SERIAL_COMMAND变量的值)
+- `GRUB_CMDLINE_LINUX`: "console=tty0 console=ttyS${CONSOLE_DEV},${CONSOLE_SPEED}n8 quiet $CSTATES" (引导启动内核时传递给内核的串口相关设置命令, 被写入到grub.cfg并传递到内核cmdline中, 默认不配置, 此值为默认值DEFAULT_GRUB_SERIAL_COMMAND变量的值)
+
 **其他配置项**:
 - `blk_dev`: /dev/sda (onie环境时安装到的目标磁盘, 默认不配置, 即自动查找与onie同个磁盘)
 - `docker_inram`: on (安装时是否解压sonic镜像里的dockerfs.tar.gz到磁盘上, 默认不配置, 即不是on)
