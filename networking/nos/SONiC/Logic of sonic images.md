@@ -128,7 +128,7 @@ Image的类型有多种, e.g. onie (最多), raw, kvm etc.
   - image-202505.1022539-92b55b412/     # -> fs.zip
     - boot/
       - vmlinuz-6.1.0-29-2-amd64        # 内核文件
-      - initrd.img-6.1.0-29-2-amd64     # 文件系统
+      - initrd.img-6.1.0-29-2-amd64     # 文件系统 -> src/initramfs-tools -> https://salsa.debian.org/kernel-team/initramfs-tools
       - config-6.1.0-29-2-amd64         # 内核编译配置
       - System.map-6.1.0-29-2-amd64     # 内核编译时生成, 记录文件内核中的符号列表, 实际上并不是真正的System.map, 真正的在linux-image-<version>-dbg
       - mmx64.efi                       # 编译并开启 secure boot 时才有
@@ -298,7 +298,7 @@ Image的类型有多种, e.g. onie (最多), raw, kvm etc.
                         insmod ext2
                         $GRUB_CFG_LINUX_CMD   /$image_dir/boot/vmlinuz-6.1.0-29-2-${arch} root=$grub_cfg_root rw $GRUB_CMDLINE_LINUX  \
                                 net.ifnames=0 biosdevname=0 \
-                                loop=$image_dir/$FILESYSTEM_SQUASHFS loopfstype=squashfs                       \
+                                loop=$image_dir/$FILESYSTEM_SQUASHFS loopfstype=squashfs                       \  # FILESYSTEM_SQUASHFS=fs.squashfs
                                 systemd.unified_cgroup_hierarchy=0 \
                                 apparmor=1 security=apparmor varlog_size=$VAR_LOG_SIZE usbcore.autosuspend=-1 $ONIE_PLATFORM_EXTRA_CMDLINE_LINUX
                         echo    'Loading $demo_volume_label $demo_type initial ramdisk ...'
@@ -333,7 +333,7 @@ Image的类型有多种, e.g. onie (最多), raw, kvm etc.
              11. 若是 sonic | onie 环境:
                  1. 将 grub_cfg 复制到 SONiC下的 `/host/grub/grub.cfg` (分区根目录下/grub/grub.cfg): `cp $grub_cfg $onie_initrd_tmp/$demo_mnt/grub/grub.cfg`
                  2. 生成 grubenv 到 SONiC下的`/host/grub/grubenv` (分区根目录下/grub/grubenv): `[ ! -f "$onie_initrd_tmp/$demo_mnt/grub/grubenv" ] && grub-editenv "$onie_initrd_tmp/$demo_mnt/grub/grubenv" create`
-   20. 设置NOS模式, 避免onie再次引导安装nos: `[ -x /bin/onie-nos-mode ] && /bin/onie-nos-mode -s`
+   20. 设置NOS模式, 避免onie再次引导安装nos (由于DIAG时设置onie_mode为install, 则DIAG时还是会引导安装nos): `[ -x /bin/onie-nos-mode ] && /bin/onie-nos-mode -s`
 
 
 
@@ -342,7 +342,7 @@ Image的类型有多种, e.g. onie (最多), raw, kvm etc.
 
 - `SONiC` (在已有的 SONiC 系统中安装):
   - 主要是添加**镜像目录**/host/image-202505.1022539-92b55b412/和**启动项**;
-  - 有多个SONiC启动项, 最新安装的在最上方, 可用于升级SONiC
+  - 有多个SONiC启动项, 最新安装的在最上方, 可用于升级SONiC, 由于只保留一个旧SONiC菜单项, 所以最多两个SONiC菜单选项
 - `ONIE` (在 Open Network Install Environment 中安装):
   - 比SONiC环境多一些, 磁盘分区唯一性/创建等管理, /host/machine.conf 生成
 - `BUILD` (在构建系统中安装)
