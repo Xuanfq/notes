@@ -104,6 +104,20 @@ Image的类型有多种, e.g. onie (最多), raw, kvm etc.
 
 ### 磁盘分区结构
 
+- /boot/efi/EFI/                        # boot分区, SONiC下不会挂载??
+  - SONiC-OS/
+    - mmx64.efi                       # 编译并开启 secure boot 时才有
+    - shimx64.efi                     # 编译并开启 secure boot 时才有
+    - grubx64.efi                     # 编译并开启 secure boot 时才有
+    - grub*.efi                       # 非 secure boot 时 由 grub-install 安装
+  - SONiC-DIAG/
+    - mmx64.efi                       # 编译并开启 secure boot 时才有
+    - shimx64.efi                     # 编译并开启 secure boot 时才有
+    - grubx64.efi                     # 编译并开启 secure boot 时才有
+    - grub*.efi                       # 非 secure boot 时 由 grub-install 安装
+  - debian/
+    - grub.cfg                          # 引导到 SONiC-OS/DIAG 分区下的 grub/grub.cfg
+
 - /host/                                # 实际上是 分区的 根目录 /
   - grub/
     - fonts/
@@ -117,9 +131,9 @@ Image的类型有多种, e.g. onie (最多), raw, kvm etc.
       - initrd.img-6.1.0-29-2-amd64     # 文件系统
       - config-6.1.0-29-2-amd64         # 内核编译配置
       - System.map-6.1.0-29-2-amd64     # 内核编译时生成, 记录文件内核中的符号列表, 实际上并不是真正的System.map, 真正的在linux-image-<version>-dbg
-      - mmx64.efi                       # secure boot 时才有
-      - shimx64.efi                     # secure boot 时才有
-      - grubx64.efi                     # secure boot 时才有
+      - mmx64.efi                       # 编译并开启 secure boot 时才有
+      - shimx64.efi                     # 编译并开启 secure boot 时才有
+      - grubx64.efi                     # 编译并开启 secure boot 时才有
     - docker/                   # -> fs.zip/dockerfs.tar.gz
     - platform/                 # -> fs.zip/platform.tar.gz
       - common/
@@ -258,7 +272,7 @@ Image的类型有多种, e.g. onie (最多), raw, kvm etc.
                    1. 查找SONiC所在分区的`uuid`: `=$(blkid "$demo_dev" | sed -ne 's/.* UUID=\"\([^"]*\)\".*/\1/p')`
                       1. 查找成功则使用uuid作为grub的root: `grub_cfg_root=UUID=$uuid`
                       2. 查找失败为空则使用所在分区设备名作为grub的root: `grub_cfg_root=$demo_dev`
-             3. 在Debian默认路径/boot/efi/EFI/debian/下创建grub.cfg用于调用真正的包含sonic配置的完整grub.cfg文件:
+             3. 在Debian默认路径/boot/efi/EFI/debian/下创建grub.cfg用于调用真正的包含sonic配置的完整grub.cfg文件 (并非主要启动项, 主要启动项由上方创建):
                 ```sh
                 cat <<EOF > /boot/efi/EFI/debian/grub.cfg
                 search --no-floppy --label --set=root $demo_volume_label  # SONiC-OS Label 所在磁盘分区
@@ -334,6 +348,15 @@ Image的类型有多种, e.g. onie (最多), raw, kvm etc.
 - `BUILD` (在构建系统中安装)
 
 
+
+**SONiC-OS与SONiC-DIAG**
+
+- `SONiC-DIAG`默认无法自动选中GRUB选项, 需手动选择, 这是由于`grub.cfg`中有`set default=ONIE`并覆盖了从环境中加载的参数
+- `SONiC-DIAG`设置了 `onie_mode=install` 模式, 而`SONiC-OS`与`SONiC-DIAG`中的`onie_nos_mode=yes`:
+  - onie 首选`install`模式 (`onie_mode=install`)
+  - 当真正的 nos 安装完成, 设置 `onie_nos_mode=yes`, 并添加启动项后自动进入 真正的 nos 时, 且`onie_mode`不设置或为`none`, 自动进入`rescue`模式避免再次引导安装NOS
+  - 进入`install`模式, 若 nos 已安装, 即`onie_nos_mode=yes`, 则设置`onie_mode=none`使其下一次启动进入`rescue`; 若 nos 未安装, 则设置 onie 为第一启动项, 设置`onie_mode=install`使其自动进入 onie 进行 nos 安装
+  - 进入`uninstall|rescue|diag`模式将自动清除`onie_mode`以避免再次自动选中该模式, 其他均有粘连性, 若为`onie_mode=none`且`onie_nos_mode!=yes`则自动选中`install`
 
 
 
