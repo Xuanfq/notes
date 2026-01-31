@@ -2,6 +2,48 @@
 
 onie image 包括 onie-updater 和 onie-recovery.iso
 
+
+## ONIE模式与启动链
+
+```sh
+if [ "$onie_mode" = "install" ] ; then
+   set default="${onie_menu_install}"
+elif [ "$onie_mode" = "uninstall" ] ; then
+   set default="${onie_menu_uninstall}"
+   # clear uninstall mode after one boot attempt
+   reset_onie_mode
+elif [ "$onie_mode" = "update" ] ; then
+   set default="${onie_menu_update}"
+elif [ "$onie_mode" = "embed" ] ; then
+   set default="${onie_menu_embed}"
+elif [ "$onie_mode" = "rescue" ] ; then
+   set default="${onie_menu_rescue}"
+   # clear rescue mode after one boot attempt
+   reset_onie_mode
+elif [ "$onie_mode" = "diag" ] ; then
+   if [ -n "$diag_menu" ] ; then
+       set default="${diag_menu}"
+   fi
+   reset_onie_mode
+else
+   # Consult nos_mode
+   if [ "$onie_nos_mode" = "yes" ] ; then
+      set default="${onie_menu_rescue}"
+   fi
+fi
+```
+
+- `onie_mode`: 通过`onie-boot-mode -o install|update|rescue|uninstall|embed|diag|none`设置
+- `onie_nos_mode`: 通过`onie-nos-mode`设置
+  - `onie-nos-mode -s`: 设置nos模式, 即已经安装NOS, `onie_nos_mode=yes`
+    - 此时`onie_mode`不设置或为none时, 自动进入rescue模式避免再次引导安装NOS; 
+    - 若`onie_mode`设置为其他模式, 则进入自动其他模式
+  - `onie-nos-mode -c`: 清除nos模式, 即未安装NOS, `onie_nos_mode=""`
+- 进入`uninstall|rescue|diag`模式将自动清除`onie_mode`以避免再次自动选中该模式, 其他均有粘连性, 若为`none`则自动选中`install`
+
+
+
+
 ## 制作和安装逻辑
 
 ### 更新包制作过程
