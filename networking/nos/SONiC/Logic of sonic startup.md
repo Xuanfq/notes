@@ -205,7 +205,7 @@ menuentry '$demo_grub_entry' {      # SONiC-${demo_type}-${image_version}=SONiC-
 
 
 
-**核心要点**:
+**核心步骤**:
 1. 挂载 必要的系统运行设备与文件:
    1. /sys: `mount -t sysfs -o nodev,noexec,nosuid sysfs /sys`
    2. /proc: `mount -t proc -o nodev,noexec,nosuid proc /proc`
@@ -231,6 +231,13 @@ menuentry '$demo_grub_entry' {      # SONiC-${demo_type}-${image_version}=SONiC-
 
 
 
+**核心代码**:
+- 基于核心开源项目`initramfs-tools`修改以适配SONiC引导: `https://salsa.debian.org/kernel-team/initramfs-tools.git`
+- 本质上是一个`RAMFS`, 用于引导进入真实的根文件系统
+- 主要基于开源项目的基础上, 添加`loop`相关参数到cmdline的解析支持, 以及作为真实文件系统的`fs.squashfs`的`loop`设备挂载函数`mount_loop_root`
+
+
+
 **关键初始化步骤**:
 - 环境搭建: 创建 /dev , /sys , /proc 等必要目录，挂载 sysfs , proc , udev 等虚拟文件系统
 - 命令行参数解析: 处理内核启动参数（如 root= , ro/rw , debug 等），设置对应环境变量控制启动行为
@@ -251,6 +258,143 @@ menuentry '$demo_grub_entry' {      # SONiC-${demo_type}-${image_version}=SONiC-
 
 
 ### 3. 真实根文件系统初始化阶段
+
+真实根文件系统由`fs.squashfs`中的二进制程序`/sbin/init`引导初始化
+
+`/sbin/init` --link--> `/lib/systemd/systemd`, 即 /sbin/init (PID 1)
+
+
+```sh
+root@sonic:~# systemctl list-dependencies multi-user.target
+multi-user.target
+ ├─auditd.service
+ ├─config-chassisdb.service
+ ├─config-setup.service
+ ├─config-topology.service
+ ├─containerd.service
+ ├─cron.service
+ ├─database-chassis.service
+ ├─database.service
+ ├─dbus.service
+ ├─determine-reboot-cause.service
+ ├─docker.service
+ ├─fstrim.timer
+ ├─kdump-tools.service  # `/etc/init.d/kdump-tools start`
+ ├─kexec-load.service
+ ├─kexec.service
+ ├─logrotate-config.service
+ ├─monit.service
+ ├─netfilter-persistent.service
+ ├─ntp.service
+ ├─pcie-check.service
+ ├─ras-mc-ctl.service
+ ├─rasdaemon.timer
+ ├─rc-local.service
+ ├─rsyslog.service
+ ├─smartmontools.service
+ ├─ssh.service
+ ├─sysfsutils.service
+ ├─sysstat.service
+ ├─system-health.service
+ ├─systemd-ask-password-wall.path
+ ├─systemd-logind.service
+ ├─systemd-update-utmp-runlevel.service
+ ├─systemd-user-sessions.service
+ ├─updategraph.service
+ ├─warmboot-finalizer.service
+ ├─watchdog-control.service
+ ├─basic.target            # ! Importance Point
+ │ ├─networking.service       # `/usr/share/ifupdown2/sbin/start-networking start`
+ │ ├─tmp.mount
+ │ ├─paths.target
+ │ ├─sysinit.target        # ! Importance Point
+ │ │ ├─apparmor.service
+ │ │ ├─dev-hugepages.mount
+ │ │ ├─dev-mqueue.mount
+ │ │ ├─haveged.service
+ │ │ ├─kmod-static-nodes.service
+ │ │ ├─proc-sys-fs-binfmt_misc.automount
+ │ │ ├─sys-fs-fuse-connections.mount
+ │ │ ├─sys-kernel-config.mount
+ │ │ ├─sys-kernel-debug.mount
+ │ │ ├─sys-kernel-tracing.mount
+ │ │ ├─systemd-ask-password-console.path
+ │ │ ├─systemd-binfmt.service
+ │ │ ├─systemd-boot-system-token.service
+ │ │ ├─systemd-hwdb-update.service
+ │ │ ├─systemd-journal-flush.service
+ │ │ ├─systemd-journald.service
+ │ │ ├─systemd-machine-id-commit.service
+ │ │ ├─systemd-modules-load.service
+ │ │ ├─systemd-pstore.service
+ │ │ ├─systemd-random-seed.service
+ │ │ ├─systemd-sysctl.service
+ │ │ ├─systemd-sysusers.service
+ │ │ ├─systemd-tmpfiles-setup-dev.service
+ │ │ ├─systemd-tmpfiles-setup.service
+ │ │ ├─systemd-udev-trigger.service
+ │ │ ├─systemd-udevd.service
+ │ │ ├─systemd-update-utmp.service
+ │ │ ├─cryptsetup.target
+ │ │ ├─local-fs.target
+ │ │ │ └─systemd-remount-fs.service
+ │ │ └─swap.target
+ │ ├─slices.target
+ │ │ ├─-.slice
+ │ │ └─system.slice
+ │ ├─sockets.target
+ │ │ ├─dbus.socket
+ │ │ ├─docker.socket
+ │ │ ├─systemd-initctl.socket
+ │ │ ├─systemd-journald-audit.socket
+ │ │ ├─systemd-journald-dev-log.socket
+ │ │ ├─systemd-journald.socket
+ │ │ ├─systemd-udevd-control.socket
+ │ │ └─systemd-udevd-kernel.socket
+ │ └─timers.target
+ │   ├─aaastatsd.timer
+ │   ├─apt-daily-upgrade.timer
+ │   ├─apt-daily.timer
+ │   ├─e2scrub_all.timer
+ │   ├─featured.timer
+ │   ├─fstrim.timer
+ │   ├─hostcfgd.timer
+ │   ├─logrotate.timer
+ │   ├─process-reboot-cause.timer
+ │   ├─systemd-tmpfiles-clean.timer
+ │   └─tacacs-config.timer
+ ├─getty.target
+ │ ├─getty-static.service
+ │ ├─getty@tty1.service
+ │ └─serial-getty@ttyS0.service
+ ├─remote-fs.target
+ └─sonic.target            # ! Importance Point
+   ├─aaastatsd.timer
+   ├─backend-acl.service
+   ├─bgp.service
+   ├─caclmgrd.service
+   ├─copp-config.service
+   ├─dhcp_relay.service
+   ├─eventd.service
+   ├─featured.timer
+   ├─gbsyncd.service
+   ├─hostcfgd.timer
+   ├─hostname-config.service
+   ├─interfaces-config.service
+   ├─macsec.service
+   ├─mux.service
+   ├─nat.service
+   ├─ntp-config.service
+   ├─procdockerstatsd.service
+   ├─radv.service
+   ├─rsyslog-config.service
+   ├─swss.service
+   ├─syncd.service
+   ├─tacacs-config.timer
+   └─teamd.service
+```
+
+
 
 
 
