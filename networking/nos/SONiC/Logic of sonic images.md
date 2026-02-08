@@ -43,8 +43,11 @@ Image的类型有多种, e.g. onie (最多), raw, kvm etc.
       - System.map-6.1.0-29-2-amd64     # 内核编译时生成, 记录文件内核中的符号列表, 实际上并不是真正的System.map, 真正的在linux-image-<version>-dbg
     - dockerfs.tar.gz           # docker相关
     - fs.squashfs/              # 只读文件系统, 包括device数据
+      - etc/sonic/
+        - sonic_version.yml            # sonic version info
+        - *
       - usr/share/sonic/device/
-        - `$platform-name`/             # -> device/@vendor@/`@platform-name@`/
+        - `$platform-name`/            # -> device/@vendor@/`@platform-name@`/
           - *
       - *
     - platform.tar.gz/          # platform/
@@ -357,6 +360,50 @@ Image的类型有多种, e.g. onie (最多), raw, kvm etc.
   - 当真正的 nos 安装完成, 设置 `onie_nos_mode=yes`, 并添加启动项后自动进入 真正的 nos 时, 且`onie_mode`不设置或为`none`, 自动进入`rescue`模式避免再次引导安装NOS
   - 进入`install`模式, 若 nos 已安装, 即`onie_nos_mode=yes`, 则设置`onie_mode=none`使其下一次启动进入`rescue`; 若 nos 未安装, 则设置 onie 为第一启动项, 设置`onie_mode=install`使其自动进入 onie 进行 nos 安装
   - 进入`uninstall|rescue|diag`模式将自动清除`onie_mode`以避免再次自动选中该模式, 其他均有粘连性, 若为`onie_mode=none`且`onie_nos_mode!=yes`则自动选中`install`
+
+
+
+## 从其他NOS迁移到SONiC
+
+### 从其他NOS的GRUB启动到SONiC
+
+**1.grub中配置cmdline**:
+
+- 之前NOS的所在分区`nos-config-part=/dev/sda3`, 用于存放需要迁移到SONiC的配置文件, 存放到`根目录` ([*], must):
+  - 如: 
+    - mgmt_interface.cfg        -> /host/migration/  ([*], must)
+    - minigraph.xml | minigraph.xml.gz.base64.txt                 -> /host/migration/
+    - acl.json | acl.json.gz.base64.txt                           -> /host/migration/
+    - port_config.json | port_config.json.gz.base64.txt           -> /host/migration/
+    - golden_config_db.json | golden_config_db.json.gz.base64.txt -> /host/migration/
+  - 将被迁移到临时目录`/host/migration/`
+
+- SONiC快速重启`SONIC_BOOT_TYPE=fast*`, 迁移fast-reboot相关配置
+  - arp.json        -> /host/fast-reboot/
+  - fdb.json        -> /host/fast-reboot/
+
+
+
+**2./host/machine.conf**:
+
+该配置文件丢失, 才会 ([*], must):
+
+- 触发上述[1.grub中配置cmdline]()配置迁移
+
+- 意指在非ONIE环境下安装的, 没有grub, 所以设置grub安装标记`grub_installation_needed="TRUE"`, 以在第一次启动时给本SONiC安装grub (`[ -r image-${SONIC_VERSION}/platform/firsttime ] && [ -n "$onie_platform" ] && [ -n  "$grub_installation_needed" ]`)
+
+
+
+**3./host/image-${SONIC_VERSION}/platform/firsttime**:
+
+- 迁移需要被迁移的SONiC的配置文件到`/etc/sonic/old_config/` (原配置所在目录可以为 `/host/`, `/host/migration/`, `/host/old_config/`)
+  - minigraph.xml      # (*, Must)
+  - acl.json
+  - port_config.json
+  - golden_config_db.json
+  - snmp.yml
+
+- 安装grub到`/host`(`/host/grub/`), 并生成`/host/grub/grub.cfg`
 
 
 
