@@ -57,6 +57,16 @@ loop=/image-202505.1022539-92b55b412/fs.squashfs loopfstype=squashfs
 ```
 
 
+**一些重要的cmdline参数**:
+- `init`: 真实init的路径，若忘记密码可以通过指定/bin/bash进行密码重置。默认情况下按顺序自动逐一验证以下init, 验证成功则使用:
+  - `/sbin/init` (default)
+  - `/etc/init`
+  - `/bin/init`
+  - `/bin/sh`
+- `ro`: 以只读方式挂载根文件系统 (SONiC下/dev/sda3)
+- `rw`: 以读写方式挂载根文件系统 (SONiC下/dev/sda3)
+
+
 > 其他参数参阅官网man手册。
 
 
@@ -120,11 +130,11 @@ loop=/image-202505.1022539-92b55b412/fs.squashfs loopfstype=squashfs
   - zz-busybox
   - `*`                       # custom here
 - /etc/initramfs-tools/hooks
-  - file
-  - mke2fs
-  - pzstd
-  - setfacl
-  - union-fsck
+  - file: 拷贝命令file及其数据库magic.mgc
+  - mke2fs: 拷贝磁盘相关工具命令，包括mkfs.ext4/3,fsck.ext4/3等
+  - pzstd: 拷贝pzstd命令，并行化的 Zstandard 压缩工具，主要用于数据压缩。
+  - setfacl: 拷贝setfacl命令，用于设置和修改文件或目录的访问控制列表
+  - union-fsck: 添加更多`fsck.?`
   - `*`                       # custom here
 
 
@@ -138,10 +148,10 @@ loop=/image-202505.1022539-92b55b412/fs.squashfs loopfstype=squashfs
 1. sysfs: `mount -t sysfs -o nodev,noexec,nosuid sysfs /sys`
 2. procfs: `mount -t proc -o nodev,noexec,nosuid proc /proc`
 3. devtmpfs: `mount -t devtmpfs -o nosuid,mode=0755 udev /dev`
-   1. /dev/fd -> /proc/self/fd
-   2. /dev/stdin -> /proc/self/fd/0
-   3. /dev/stdout -> /proc/self/fd/1
-   4. /dev/stderr -> /proc/self/fd/2
+   1. /dev/fd -> /proc/self/fd: `ln -s /proc/self/fd /dev/fd`
+   2. /dev/stdin -> /proc/self/fd/0: `ln -s /proc/self/fd/0 /dev/stdin`
+   3. /dev/stdout -> /proc/self/fd/1: `ln -s /proc/self/fd/1 /dev/stdout`
+   4. /dev/stderr -> /proc/self/fd/2: `ln -s /proc/self/fd/2 /dev/stderr`
    5. /dev/pts: `mount -t devpts -o noexec,nosuid,gid=5,mode=0620 devpts /dev/pts || true`
 4. . /conf/arch.conf
 5. . /conf/initramfs.conf
@@ -201,9 +211,9 @@ loop=/image-202505.1022539-92b55b412/fs.squashfs loopfstype=squashfs
     - arista-convertfs
     - arista-hook
     - arista-net
-    - fsck-rootfs
-    - resize-rootfs
-    - ssd-upgrade
+    - fsck-rootfs             # 对root磁盘分区设备进行自动修复: `fsck.ext4 -v -p $blkdev 2>&1 | gzip -c > /tmp/fsck.log.gz`
+    - resize-rootfs           # 对root磁盘分区设备进行reset (若cmdline里配置了resize-rootfs) : `resize2fs -f $root_dev`
+    - ssd-upgrade             # 对ssd firmware进行升级 (若cmdline里配置了ssd-upgrader-part=/dev/sdax,ext4 /dev/sdax中根目录需放可执行升级程序ssd-fw-upgrade): `./ssd-fw-upgrade >> /tmp/ssd-fw-upgrade.log 2>&1; gzip /tmp/ssd-fw-upgrade.log (will be named to ssd-fw-upgrade.log.gz)`
     - `*`                     # custom here
   - local-top/
     - `*`                     # custom here
