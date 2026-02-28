@@ -11,17 +11,18 @@ SONiC启动逻辑
 ## 分区挂载
 
 
-| Device Name | Size | Read Only | FS Type  | Mount Point | Origin File                   | Comment           |
-| ----------- | ---- | --------- | -------- | ----------- | ----------------------------- | ----------------- |
-| /dev/sda3   | 32G  | No        | ext4     | /host       |                               | SONiC分区         |
-| /loop1      | 4G   | No        | ext4     | /var/log    | /host/disk-img/var-log.ext4   | SONiC日志         |
-| /loop0      | /    | No        | squashfs | /           | /host/image-xx-yy/fs.squashfs | SONiC真实文件系统 |
-|             |      |           |          |             |                               |                   |
-|             |      |           |          |             |                               |                   |
-|             |      |           |          |             |                               |                   |
-|             |      |           |          |             |                               |                   |
-|             |      |           |          |             |                               |                   |
-|             |      |           |          |             |                               |                   |
+| Device Name | Size | Read Only | FS Type  | Mount Point | Origin File                       | Comment           |
+| ----------- | ---- | --------- | -------- | ----------- | ----------------------------------| ----------------- |
+| /dev/sda3   | 32G  | No        | ext4     | /host       |                                   | SONiC分区                                                    |
+| /loop0      | /    | Yes       | squashfs | /           | /host/image-xx-yy/fs.squashfs     | SONiC真实文件系统 (也是下方OverlayFS的只读层,OverlayFS-lowerdir)  |
+| root-overlay| /    | Yes       | squashfs | /           | /                                 | SONiC真实文件系统-只读层,OverlayFS-lowerdir                     |
+| root-overlay| /    | No        | ext4     | /           | /host/image-xx-yy/rw/             | SONiC真实文件系统-可写层,OverlayFS-upperdir                     |
+| root-overlay| /    | No        | ext4     | /           | /host/image-xx-yy/work/           | SONiC真实文件系统-内部工作目录,OverlayFS-workdir                 |
+| (bind)      | /    | No        | ext4     | /var/lib/docker/   | /host/image-xx-yy/docker/  | SONiC Docker存储路径                                          |
+| (bind)      | /    | No        | ext4     | /boot       | /host/image-xx-yy/boot/           | SONiC Image启动配置存储路径                                    |
+| /loop1      | 4G   | No        | ext4     | /var/log    | /host/disk-img/var-log.ext4       | SONiC日志          |
+|             |      |           |          |             |                                   |                   |
+|             |      |           |          |             |                                   |                   |
 
 
 **RAW LOG**:
@@ -99,6 +100,7 @@ menuentry '$demo_grub_entry' {      # SONiC-${demo_type}-${image_version}=SONiC-
                 # loop=/image-202505.1022539-92b55b412/fs.squashfs loopfstype=squashfs
                 loop=$image_dir/$FILESYSTEM_SQUASHFS loopfstype=squashfs                       \
                 systemd.unified_cgroup_hierarchy=0 \
+               #  apparmor=1 security=apparmor varlog_size=4096 usbcore.autosuspend=-1
                 apparmor=1 security=apparmor varlog_size=$VAR_LOG_SIZE usbcore.autosuspend=-1 $ONIE_PLATFORM_EXTRA_CMDLINE_LINUX
         echo    'Loading $demo_volume_label $demo_type initial ramdisk ...'     # Loading SONiC-OS OS initial ramdisk ...
         $GRUB_CFG_INITRD_CMD  /$image_dir/boot/initrd.img-6.1.0-29-2-${arch}
@@ -127,107 +129,47 @@ menuentry '$demo_grub_entry' {      # SONiC-${demo_type}-${image_version}=SONiC-
 通过执行`initrd`中的初始化脚本`/init`引导进入真实文件系统
 
 
-1. 基础环境初始化
-   1. 设置PATH: `=/sbin:/usr/sbin:/bin:/usr/bin`
-   2. 创建必要的目录结构: `/dev /root /sys /proc /tmp /var/lock`
-2. 挂载虚拟文件系统
-   1. 挂载`sys`系统信息到`/sys`: `mount -t sysfs -o nodev,noexec,nosuid sysfs /sys`
-   2. 挂载`proc`进程信息`/proc`: `mount -t proc -o nodev,noexec,nosuid proc /proc`
-3. 初步解析内核参数
-   1. `initramfs.clear`: 清屏参数, 执行`clear`
-   2. `quiet`: 静默模式, 设置`quiet=yes`
-4. 设备文件系统准备
-   1. 挂载`dev`设备信息到`/dev`: `mount -t devtmpfs -o nosuid,mode=0755 udev /dev`
-   2. 创建标准文件描述符符号链接
-      - `ln -s /proc/self/fd /dev/fd`
-      - `ln -s /proc/self/fd/0 /dev/stdin`
-      - `ln -s /proc/self/fd/1 /dev/stdout`
-      - `ln -s /proc/self/fd/2 /dev/stderr`
-   3. 挂载伪终端设备: `mkdir /dev/pts && mount -t devpts -o noexec,nosuid,gid=5,mode=0620 devpts /dev/pts || true`
-5. 加载配置
-   1. 加载架构配置: `. /conf/arch.conf`  # 设置DPKG_ARCH
-   2. 设置模块加载选项: `export MODPROBE_OPTIONS="-qb"`
-   3. 初始化*环境变量*并*导出* (根文件系统相关)
-      - `export ROOT= ROOTDELAY= ROOTFLAGS= ROOTFSTYPE=`
-      - `export LOOP= LOOPFLAGS= LOOPFSTYPE= LOOPOFFSET=`
-      - `export IP= DEVICE= BOOT= BOOTIF= UBIMTD=`
-      - `export break= init=/sbin/init readonly=y rootmnt=/root`
-   4. 加载主配置: `. /conf/initramfs.conf` & `for conf in conf/conf.d/*; do [ -f "${conf}" ] && . "${conf}" done`
-6. 加载函数库 (/bin/sh): `. /scripts/functions`
-7. 详细解析内核参数, 重要参数如下:
-   - `root`=*           # 根设备/文件系统
-   - `rootflags`=*      # 挂载选项
-   - `rootfstype`=*     # 文件系统类型
-   - `loop`=*           # loop设备文件路径（用于squashfs）
-   - `loopfstype`=*     # loop文件系统类型
-   - `init`=*           # 指定init程序路径
-   - `ro/rw`           # 只读/读写挂载
-   - `debug`           # 调试模式
-   - `break`=*         # 设置断点
-   - `resume`=*        # 休眠恢复设备
-8. 执行初始化脚本
-    1. 运行时环境设置
-       - 挂载`tmpfs`到`/run`: `mount -t tmpfs -o "nodev,noexec,nosuid,size=${RUNSIZE:-10%},mode=0755" tmpfs /run`
-       - 创建目录: `mkdir -m 0700 /run/initramfs`
-    2. 断点调试支持: `maybe_break top`
-    3. 执行init-top脚本: `run_scripts /scripts/init-top`
-    4. 加载内核模块: `load_modules`(通过`maybe_break modules`)
-    5. 等待根设备延迟: `sleep "$ROOTDELAY"`(如果设置)
-    6. 执行init-premount脚本: `run_scripts /scripts/init-premount`
-9. 挂载SONiC根磁盘与真实根文件系统
-   1. 加载挂载脚本: `. /scripts/local`, `. /scripts/nfs`, `. /scripts/${BOOT:-local}`
-   2. 解析根设备: `parse_numeric "${ROOT}"`
-   3. 执行挂载流程: 
-      1. `mount_top`
-      2. `mount_premount`
-      3. `mountroot`
-         1. fsck检查和修复SONiC分区: `checkfs "${ROOT}" root "${FSTYPE}"` -> `logsave -a -s $FSCK_LOGFILE fsck $spinner $force $fix -T -t "$TYPE" "$DEV"` -> `fsck -a -T -t ext4 /dev/sda3`
-         2. 挂载SONiC分区到`/root`: `mount ${roflag} ${FSTYPE:+-t "${FSTYPE}"} ${ROOTFLAGS} "${ROOT}" "${rootmnt?}"`, 即`mount -w -t ext4 "/dev/sda3" "/root"`
-         3. 挂载loop根文件系统设备(`fs.squashfs`)到`/root`, 并移动`sonic`分区挂载到`/root/host`: `mount_loop_root`
-            1. 创建`/host`目录, 并将SONiC分区挂载移动到`/host`: `mkdir -p /host && mount -o move "${rootmnt}" /host`
-            2. 添加必要的模块以支持挂载fs.squashfs的loop设备, 并检查是否有loopoffset需要设置: `modprobe loop; modprobe "${FSTYPE:-squashfs}"; [ -n "${LOOPOFFSET}" ] && losetup -o "${LOOPOFFSET:-0}" "$(losetup -f)" "${loopfile}"`
-            3. 挂载`fs.squashfs`到`/root`: `mount ${roflag} -o loop -t "${FSTYPE}" "${LOOPFLAGS}" "$loopfile" "${rootmnt}"`, 即`mount -w -o loop -t squashfs /host/image-xx-yy/fs.squashfs /root`
-            4. 移动`sonic`分区挂载到`/root/host`: `[ -d "${rootmnt}/host" ] && mount -o move /host "${rootmnt}/host"`
-10. 挂载真实文件系统/usr分区, 实际上无需挂载:
-    1. 检查/root/etc/fstab(fs.squashfs)是否有需要挂载到/usf的条目: `read_fstab_entry /usr`
-    2. 挂载/usr: `mountfs /usr`
-11. 挂载清理: `mount_bottom`, `nfs_bottom`, `local_bottom`
-12. 执行bottom脚本, 执行init-bottom脚本: `run_scripts /scripts/init-bottom`
-13. **切换到真实根文件系统**
-    1. 移动`/run`挂载到`/root/run`: `mount -n -o move /run ${rootmnt}/run`
-    2. 验证init程序`/root/sbin/init`或查找备用init: 
-       1. 通过`validate_init`函数检查init程序`/sbin/init`
-       2. 失败则查找备用init: 尝试`/root/sbin/init`, `/root/etc/init`, `/root/bin/init`, `/root/bin/sh`
-    3. 清理环境变量: 保留`init`, `rootmnt`, `drop_caps`
-    4. 移动`/sys`挂载到`/root/sys`: `mount -n -o move /sys ${rootmnt}/sys`
-    5. 移动`/proc`挂载到`/root/proc`: `mount -n -o move /proc ${rootmnt}/proc`
-    6. 切换到真实根文件系统并初始化: `exec run-init ${drop_caps} "${rootmnt}" "${init}" "$@" <"${rootmnt}/dev/console" >"${rootmnt}/dev/console" 2>&1` (init=/sbin/init, rootmnt=/root, drop_caps="") (`Usage: run-init [-d CAP,CAP...] [-n] [-c CONSOLE_DEV] NEW_ROOT NEW_INIT [ARGS]`)
+[详细步骤-参阅Reference目录](./Reference/初始化引导-initramfs-tools.md#启动脚本)
 
 
 
-**核心步骤**:
-1. 挂载 必要的系统运行设备与文件:
-   1. /sys: `mount -t sysfs -o nodev,noexec,nosuid sysfs /sys`
-   2. /proc: `mount -t proc -o nodev,noexec,nosuid proc /proc`
-   3. /dev: `mount -t devtmpfs -o nosuid,mode=0755 udev /dev`
-      - `ln -s /proc/self/fd /dev/fd`
-      - `ln -s /proc/self/fd/0 /dev/stdin`
-      - `ln -s /proc/self/fd/1 /dev/stdout`
-      - `ln -s /proc/self/fd/2 /dev/stderr`
-      - /dev/pts: `mkdir /dev/pts && mount -t devpts -o noexec,nosuid,gid=5,mode=0620 devpts /dev/pts || true`
-   4. /run: `mount -t tmpfs -o "nodev,noexec,nosuid,size=${RUNSIZE:-10%},mode=0755" tmpfs /run`
-2. 挂载 真实的核心分区设备与文件系统
-   1. fsck -> /dev/sda3: `logsave -a -s $FSCK_LOGFILE fsck $spinner $force $fix -T -t "$TYPE" "$DEV"` -> `fsck -a -T -t ext4 /dev/sda3`
-   2. /dev/sda3 -> /root: `mount ${roflag} ${FSTYPE:+-t "${FSTYPE}"} ${ROOTFLAGS} "${ROOT}" "${rootmnt?}"`
-   3. /root -> /host: `mount -o move "${rootmnt}" /host`
-   4. fs.squashfs -> /root: `mount ${roflag} -o loop -t "${FSTYPE}" "${LOOPFLAGS}" "$loopfile" "${rootmnt}"`
-   5. /host -> /root/host: `[ -d "${rootmnt}/host" ] && mount -o move /host "${rootmnt}/host"`
-3. 移动 挂载的必要的系统运行设备与文件 到 真实的核心文件系统:
-   1. /dev -> /root/dev: `run_scripts /scripts/init-bottom` -> `mount -n -o move /dev "${rootmnt:?}/dev" || mount -n --move /dev "${rootmnt}/dev"`
-   2. /run -> /root/run: `mount -n -o move /run ${rootmnt}/run`
-   3. /sys -> /root/sys: `mount -n -o move /sys ${rootmnt}/sys`
-   4. /proc -> /root/proc: `mount -n -o move /proc ${rootmnt}/proc`
-4. 链接/切换 到 真实的文件系统, 以 /root 为 / , 以 /root/sbin/init 为初始程序, 启动初始化: `exec run-init ${drop_caps} "${rootmnt}" "${init}" "$@" <"${rootmnt}/dev/console" >"${rootmnt}/dev/console" 2>&1`
+**启动流程**: (/usr/share/initramfs-tools/init)
+1. sysfs: `mount -t sysfs -o nodev,noexec,nosuid sysfs /sys`
+2. procfs: `mount -t proc -o nodev,noexec,nosuid proc /proc`
+3. devtmpfs: `mount -t devtmpfs -o nosuid,mode=0755 udev /dev`
+   1. /dev/fd -> /proc/self/fd: `ln -s /proc/self/fd /dev/fd`
+   2. /dev/stdin -> /proc/self/fd/0: `ln -s /proc/self/fd/0 /dev/stdin`
+   3. /dev/stdout -> /proc/self/fd/1: `ln -s /proc/self/fd/1 /dev/stdout`
+   4. /dev/stderr -> /proc/self/fd/2: `ln -s /proc/self/fd/2 /dev/stderr`
+   5. /dev/pts: `mount -t devpts -o noexec,nosuid,gid=5,mode=0620 devpts /dev/pts || true`
+4. . /conf/arch.conf
+5. . /conf/initramfs.conf
+6. . /conf/conf.d/*
+7. . /scripts/functions
+8. tmpfs: `mount -t tmpfs -o "nodev,noexec,nosuid,size=${RUNSIZE:-10%},mode=0755" tmpfs /run`
+9. `init-top`: 此目录中的脚本是在 sysfs 和 procfs 挂载后首先执行的脚本。它还会运行 udev 钩子来填充 /dev 树（udev 将一直运行到 init-bottom）。
+10. `init-premount`: 发生在由钩子和 `/etc/initramfs-tools/modules` 指定的模块加载完成之后。
+11. . /scripts/local
+12. . /scripts/nfs
+13. . /scripts/${BOOT} (BOOT=local/nfs)
+14. `local-top`/`nfs-top`: 这些脚本执行后，rootdevice 节点应已存在（本地），或者网络接口应可使用（NFS）。
+15. `local-block`: 这些脚本通过本地块设备的名称调用。这些脚本执行后，该设备节点应存在。如果 local-top 或 local-block 脚本未能创建所需的设备节点，将定期调用 local-block 脚本来重试。如，设置根设备为USB设备，这时为异步发现设备，或需要一定时间去发现该设备。
+16. `local-premount`/`nfs-premount`: 在根设备的完整性已得到验证（本地）或网络接口已启动（NFS）之后，但在实际的根文件系统被挂载之前运行。
+17. local_mount_root: 挂载根分区，如 /dev/sda3 到 root(/)
+    1. fsck -> /dev/sda3: `logsave -a -s $FSCK_LOGFILE fsck $spinner $force $fix -T -t "$TYPE" "$DEV"` -> `fsck -a -T -t ext4 /dev/sda3`
+    2. /dev/sda3 -> /root: `mount ${roflag} ${FSTYPE:+-t "${FSTYPE}"} ${ROOTFLAGS} "${ROOT}" "${rootmnt?}"`
+    3. mount_loop_root: 引导挂载真实文件系统loop文件, 并将原始根分区移动到/host下, 无论是本地FS挂载还是网络FS挂载都支持
+       1. /root -> /host: `mount -o move "${rootmnt}" /host` (mount_loop_root)
+       2. fs.squashfs -> /root: `mount ${roflag} -o loop -t "${FSTYPE}" "${LOOPFLAGS}" "$loopfile" "${rootmnt}"` (mount_loop_root)
+       3. /host -> /root/host: `[ -d "${rootmnt}/host" ] && mount -o move /host "${rootmnt}/host"` (mount_loop_root)
+18. `local-bottom`/`nfs-bottom`: 会在 rootfs 已挂载（本地）或 NFS 根共享已挂载后运行。
+19. `init-bottom`: 是在procfs和sysfs被移至实际根文件系统之前要执行的最后一批脚本，之后执行权将移交给此时应能在已挂载的根文件系统中找到的init二进制文件。udev会被停止。
+    1. /dev -> /root/dev [udev]: `run_scripts /scripts/init-bottom` -> `mount -n -o move /dev "${rootmnt:?}/dev" || mount -n --move /dev "${rootmnt}/dev"`
+20. `mount -n -o move /run ${rootmnt}/run`
+21. /run -> /root/run: `mount -n -o move /run ${rootmnt}/run`
+22. /sys -> /root/sys: `mount -n -o move /sys ${rootmnt}/sys`
+23. /proc -> /root/proc: `mount -n -o move /proc ${rootmnt}/proc`
+24. 链接/切换 到 真实的文件系统, 以 /root 为 / , 以 /root/sbin/init 为初始程序, 启动初始化: `exec run-init ${drop_caps} "${rootmnt}" "${init}" "$@" <"${rootmnt}/dev/console" >"${rootmnt}/dev/console" 2>&1`
 
 
 
@@ -517,6 +459,15 @@ multi-user.target
 
 **特性**:
 - 支持从其他NOS迁移到SONiC, Ref: [从其他NOS的GRUB启动到SONiC](./Logic%20of%20sonic%20images.md#从其他NOS的GRUB启动到SONiC)
+
+
+**主要**
+- SONiC实际文件系统版本: /etc/sonic/sonic_version.yml
+- SONiC环境变量覆盖: /host/image-${SONIC_VERSION}/sonic-config/sonic-environment -> /etc/sonic/sonic-environment
+- ONIE机器配置检查与加载: /host/machine.conf
+- 根据cmdline更新串口波特率: program_console_speed()
+- 首次启动与配置迁移处理: /host/image-${SONIC_VERSION}/platform/firsttime
+- SONiC分区(i.e. /dev/sda3)fsck检查与修复日志的解压处理: /var/log/fsck.log.gz
 
 
 

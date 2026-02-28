@@ -148,6 +148,8 @@ Image的类型有多种, e.g. onie (最多), raw, kvm etc.
       - `$platform-name`/
         - sonic-platform-`@MACHINE-NAME-FULL-L@`_`1.0`_amd64.deb        # -> ../common/*.deb 包括 sonic_platform-1.0-py3-none-any.whl
         - platform-modules-`@MACHINE-NAME-FULL-L@`_`1.0`_amd64.deb      # -> ../common/*.deb 同上, 二选一, 或其他自定义deb名
+    - sonic-config/
+      - sonic-environment       # 环境变量覆盖, 启动时被复制到 /etc/sonic/sonic-environment
     - fs.squashfs               # 只读文件系统, 包括device数据
     - onie-support*.tar.bz2     # onie环境下安装时, 由`onie-support`命令生成
     - *                         # 其他文件, Option
