@@ -2,6 +2,8 @@
 
 SONiC启动逻辑
 
+Base on 202505
+
 
 ## 名词说明
 
@@ -220,15 +222,14 @@ multi-user.target
  ├─dbus.service
  ├─determine-reboot-cause.service
  ├─docker.service
+ ├─e2scrub_reap.service
  ├─fstrim.timer
- ├─kdump-tools.service  # `/etc/init.d/kdump-tools start`
  ├─kexec-load.service
- ├─kexec.service
  ├─logrotate-config.service
  ├─monit.service
  ├─netfilter-persistent.service
- ├─ntp.service
  ├─pcie-check.service
+ ├─process-reboot-cause.service
  ├─ras-mc-ctl.service
  ├─rasdaemon.timer
  ├─rc-local.service     # `/etc/rc.local start`
@@ -242,14 +243,27 @@ multi-user.target
  ├─systemd-logind.service
  ├─systemd-update-utmp-runlevel.service
  ├─systemd-user-sessions.service
- ├─updategraph.service
  ├─warmboot-finalizer.service
  ├─watchdog-control.service
  ├─basic.target            # ! Importance Point
+   ├─kdump-tools.service
  │ ├─networking.service       # `/usr/share/ifupdown2/sbin/start-networking start`
  │ ├─tmp.mount
  │ ├─paths.target
- │ ├─sysinit.target        # ! Importance Point
+ │ ├─slices.target
+ │ │ ├─-.slice
+ │ │ └─system.slice
+ │ ├─sockets.target
+ │ │ ├─dbus.socket
+ │ │ ├─docker.socket
+ │ │ ├─systemd-initctl.socket
+ │ │ ├─systemd-journald-audit.socket
+ │ │ ├─systemd-journald-dev-log.socket
+ │ │ ├─systemd-journald.socket
+ │ │ ├─systemd-udevd-control.socket
+ │ │ ├─systemd-udevd-kernel.socket
+ │ │ └─uuidd.socket
+ │ ├─sysinit.target
  │ │ ├─apparmor.service
  │ │ ├─dev-hugepages.mount
  │ │ ├─dev-mqueue.mount
@@ -262,14 +276,16 @@ multi-user.target
  │ │ ├─sys-kernel-tracing.mount
  │ │ ├─systemd-ask-password-console.path
  │ │ ├─systemd-binfmt.service
- │ │ ├─systemd-boot-system-token.service
- │ │ ├─systemd-hwdb-update.service
+ │ │ ├─systemd-firstboot.service
  │ │ ├─systemd-journal-flush.service
  │ │ ├─systemd-journald.service
  │ │ ├─systemd-machine-id-commit.service
  │ │ ├─systemd-modules-load.service
+ │ │ ├─systemd-pcrphase-sysinit.service
+ │ │ ├─systemd-pcrphase.service
  │ │ ├─systemd-pstore.service
  │ │ ├─systemd-random-seed.service
+ │ │ ├─systemd-repart.service
  │ │ ├─systemd-sysctl.service
  │ │ ├─systemd-sysusers.service
  │ │ ├─systemd-tmpfiles-setup-dev.service
@@ -278,31 +294,21 @@ multi-user.target
  │ │ ├─systemd-udevd.service
  │ │ ├─systemd-update-utmp.service
  │ │ ├─cryptsetup.target
+ │ │ ├─integritysetup.target
  │ │ ├─local-fs.target
  │ │ │ └─systemd-remount-fs.service
- │ │ └─swap.target
- │ ├─slices.target
- │ │ ├─-.slice
- │ │ └─system.slice
- │ ├─sockets.target
- │ │ ├─dbus.socket
- │ │ ├─docker.socket
- │ │ ├─systemd-initctl.socket
- │ │ ├─systemd-journald-audit.socket
- │ │ ├─systemd-journald-dev-log.socket
- │ │ ├─systemd-journald.socket
- │ │ ├─systemd-udevd-control.socket
- │ │ └─systemd-udevd-kernel.socket
+ │ │ ├─swap.target
+ │ │ └─veritysetup.target
  │ └─timers.target
  │   ├─aaastatsd.timer
  │   ├─apt-daily-upgrade.timer
  │   ├─apt-daily.timer
+ │   ├─dpkg-db-backup.timer
  │   ├─e2scrub_all.timer
  │   ├─featured.timer
  │   ├─fstrim.timer
  │   ├─hostcfgd.timer
  │   ├─logrotate.timer
- │   ├─process-reboot-cause.timer
  │   ├─systemd-tmpfiles-clean.timer
  │   └─tacacs-config.timer
  ├─getty.target
@@ -313,9 +319,12 @@ multi-user.target
  └─sonic.target            # ! Importance Point
    ├─aaastatsd.timer
    ├─backend-acl.service
+   ├─banner-config.service
    ├─bgp.service
    ├─caclmgrd.service
+   ├─chrony.service
    ├─copp-config.service
+   ├─dash-ha.service
    ├─dhcp_relay.service
    ├─eventd.service
    ├─featured.timer
@@ -326,15 +335,696 @@ multi-user.target
    ├─macsec.service
    ├─mux.service
    ├─nat.service
-   ├─ntp-config.service
    ├─procdockerstatsd.service
    ├─radv.service
    ├─rsyslog-config.service
+   ├─serial-config.service
    ├─swss.service
    ├─syncd.service
+   ├─sysmgr.service
    ├─tacacs-config.timer
    └─teamd.service
 ```
+
+
+#### systemd 详细说明
+
+
+multi-user.target
+- auditd.service
+- config-chassisdb.service
+   - Link: 
+   - Desc: Config chassis_db
+   - Exec: /usr/bin/config-chassisdb
+   - Dep : rc-local.service
+- config-setup.service
+   - Link: files/build_templates/config-setup.service.j2
+   - Desc: 配置初始化和迁移服务
+   - Exec: /usr/bin/config-setup boot
+   - Dep : rc-local.service database.service config-topology.service
+- config-topology.service
+   - Link: 
+   - Desc: 平台拓扑配置服务
+   - Exec: /usr/bin/config-topology.sh start
+   - Dep : database.service database-chassis.service
+- containerd.service
+   - Link: 
+   - Desc: containerd container runtime
+   - Exec: -/sbin/modprobe overlay; /usr/bin/containerd
+   - Dep : network.target local-fs.target
+- cron.service
+- database-chassis.service
+   - Link: 
+   - Desc: 
+   - Exec: [ -e /etc/sonic/chassisdb.conf ] && /usr/bin/database.sh start chassisdb && /usr/bin/database.sh wait chassisdb
+   - Dep : docker.service config-chassisdb.service
+- database.service
+   - Link: 
+   - Desc: 
+   - Exec: /usr/local/bin/database.sh start; /usr/local/bin/database.sh wait
+   - Dep : database-chassis.service docker.service rc-local.service
+- dbus.service
+- determine-reboot-cause.service
+- docker.service
+   - Link: 
+   - Desc: Docker Application Container Engine
+   - Exec: /usr/bin/dockerd -H fd:// --containerd=/run/containerd/containerd.sock
+   - Dep : network-online.target docker.socket firewalld.service containerd.service time-set.target
+- e2scrub_reap.service
+- fstrim.timer
+- kexec-load.service
+- logrotate-config.service
+- monit.service
+- netfilter-persistent.service
+- pcie-check.service
+- process-reboot-cause.service
+- ras-mc-ctl.service
+- rasdaemon.timer
+- rc-local.service     # `/etc/rc.local start`
+- rsyslog.service
+- smartmontools.service
+- ssh.service
+- sysfsutils.service
+- sysstat.service
+- system-health.service
+- systemd-ask-password-wall.path
+- systemd-logind.service
+- systemd-update-utmp-runlevel.service
+- systemd-user-sessions.service
+- warmboot-finalizer.service
+- watchdog-control.service
+- basic.target            # ! Importance Point
+  - kdump-tools.service
+  - networking.service       # `/usr/share/ifupdown2/sbin/start-networking start`
+  - tmp.mount
+  - paths.target
+  - slices.target
+    - -.slice
+    - system.slice
+  - sockets.target
+    - dbus.socket
+    - docker.socket
+    - systemd-initctl.socket
+    - systemd-journald-audit.socket
+    - systemd-journald-dev-log.socket
+    - systemd-journald.socket
+    - systemd-udevd-control.socket
+    - systemd-udevd-kernel.socket
+    - uuidd.socket
+  - sysinit.target        # ! Importance Point
+    - apparmor.service
+    - dev-hugepages.mount
+    - dev-mqueue.mount
+    - haveged.service
+    - kmod-static-nodes.service
+    - proc-sys-fs-binfmt_misc.automount
+    - sys-fs-fuse-connections.mount
+    - sys-kernel-config.mount
+    - sys-kernel-debug.mount
+    - sys-kernel-tracing.mount
+    - systemd-ask-password-console.path
+    - systemd-binfmt.service
+    - systemd-firstboot.service
+    - systemd-journal-flush.service
+    - systemd-journald.service
+    - systemd-machine-id-commit.service
+    - systemd-modules-load.service
+    - systemd-pcrphase-sysinit.service
+    - systemd-pcrphase.service
+    - systemd-pstore.service
+    - systemd-random-seed.service
+    - systemd-repart.service
+    - systemd-sysctl.service
+    - systemd-sysusers.service
+    - systemd-tmpfiles-setup-dev.service
+    - systemd-tmpfiles-setup.service
+    - systemd-udev-trigger.service
+    - systemd-udevd.service
+    - systemd-update-utmp.service
+    - cryptsetup.target
+    - integritysetup.target
+    - local-fs.target
+      - systemd-remount-fs.service
+          - Link: 
+          - Desc: 
+          - Exec: 
+          - Dep : 
+    - swap.target
+    - veritysetup.target
+  - timers.target
+    - aaastatsd.timer
+    - apt-daily-upgrade.timer
+    - apt-daily.timer
+    - dpkg-db-backup.timer
+    - e2scrub_all.timer
+    - featured.timer
+    - fstrim.timer
+    - hostcfgd.timer
+    - logrotate.timer
+    - systemd-tmpfiles-clean.timer
+    - tacacs-config.timer
+- getty.target
+  - getty-static.service
+  - getty@tty1.service
+  - serial-getty@ttyS0.service
+- remote-fs.target
+- sonic.target            # ! Importance Point
+  - aaastatsd.timer
+      - Link: 
+      - Desc: 延迟 AAA 统计守护进程直到 SONiC 启动
+      - Exec: 1min30s后启动aaastatsd.service (当 aaastatsd.service 被停止/重启时，这个定时器也会被同步停止/重启)
+      - Dep : 
+
+      - aaastatsd.service
+        - Link: 
+        - Desc: AAA Statistics Collection daemon
+        - Exec: /usr/local/bin/aaastatsd
+        - Dep : sonic.target hostcfgd.service config-setup.service
+  - backend-acl.service
+      - Link: 
+      - Desc: 在存储后端机架顶部交换机上启用后端访问控制列表
+      - Exec: /usr/bin/backend_acl.py
+      - Dep : sonic.target swss.service
+  - banner-config.service
+      - Link: 
+      - Desc: Update banner config based on configdb
+      - Exec: /usr/bin/banner-config.sh
+      - Dep : config-setup.service
+  - bgp.service
+      - Link: 
+      - Desc: 启动BGP容器
+      - Exec: /usr/local/bin/bgp.sh start; /usr/local/bin/bgp.sh wait
+      - Dep : sonic.target database.service config-setup.service swss.service interfaces-config.service
+  - caclmgrd.service
+      - Link: 
+      - Desc: Control Plane ACL configuration daemon
+      - Exec: /usr/local/bin/caclmgrd
+      - Dep : sonic.target config-setup.service
+  - chrony.service
+      - Link: 
+      - Desc: chrony, an NTP client/server
+      - Exec: !/usr/sbin/chronyd $DAEMON_OPTS
+      - Dep : network.target
+  - copp-config.service
+      - Link: 
+      - Desc: Update CoPP configuration
+      - Exec: /usr/bin/copp-config.sh
+      - Dep : sonic.target config-setup.service
+  - dash-ha.service
+      - Link: 
+      - Desc: DASH HA container DASH高可用性容
+      - Exec: /usr/local/bin/dash-ha.sh start; /usr/local/bin/dash-ha.sh wait
+      - Dep : sonic.target interfaces-config.service database.service swss.service
+  - dhcp_relay.service
+      - Link: 
+      - Desc: dhcp_relay container
+      - Exec: /usr/local/bin/dhcp_relay.sh start; /usr/local/bin/dhcp_relay.sh wait
+      - Dep : sonic.target swss.service syncd.service teamd.service
+  - eventd.service
+      - Link: 
+      - Desc: EVENTD container
+      - Exec: /usr/bin/eventd.sh start; /usr/bin/eventd.sh wait
+      - Dep : sonic.target rsyslog-config.service
+  - featured.timer
+      - Link: 
+      - Desc: Delays feature daemon until SONiC has started
+      - Exec: 1min30s后启动 featured.service (当 featured.service 被停止/重启时，这个定时器也会被同步停止/重启)
+      - Dep : 
+
+      - featured.service
+        - Link: 
+        - Desc: Feature configuration daemon
+        - Exec: /usr/local/bin/featured
+        - Dep : sonic.target config-setup.service
+  - gbsyncd.service
+      - Link: 
+      - Desc: gbsyncd service
+      - Exec: [ /usr/bin/gbsyncd-platform.sh ] && /usr/local/bin/gbsyncd.sh start && /usr/local/bin/gbsyncd.sh wait
+      - Dep : sonic.target database.service config-setup.service interfaces-config.service swss.service
+  - hostcfgd.timer
+      - Link: 
+      - Desc: Delays hostcfgd daemon until SONiC has started
+      - Exec: 1min30s后启动 hostcfgd.service (当 hostcfgd.service 被停止/重启时，这个定时器也会被同步停止/重启)
+      - Dep : 
+
+      - hostcfgd.service
+        - Link: 
+        - Desc: Host config enforcer daemon
+        - Exec: /usr/local/bin/hostcfgd
+        - Dep : sonic.target config-setup.service
+  - hostname-config.service
+      - Link: 
+      - Desc: Update hostname based on configdb
+      - Exec: /usr/bin/hostname-config.sh
+      - Dep : sonic.target config-setup.service
+  - interfaces-config.service
+      - Link: 
+      - Desc: Update interfaces configuration
+      - Exec: /usr/bin/interfaces-config.sh
+      - Dep : sonic.target config-setup.service
+  - macsec.service
+      - Link: 
+      - Desc: macsec container
+      - Exec: /usr/local/bin/macsec.sh start; /usr/local/bin/macsec.sh wait
+      - Dep : sonic.target swss.service syncd.service
+  - mux.service
+      - Link: 
+      - Desc: MUX Cable Container
+      - Exec: /usr/local/bin/write_standby.py; /usr/local/bin/mark_dhcp_packet.py; /usr/bin/mux.sh start; /usr/bin/mux.sh wait
+      - Dep : sonic.target swss.service interfaces-config.service
+  - nat.service
+      - Link: 
+      - Desc: NAT container
+      - Exec: /usr/bin/nat.sh start; /usr/bin/nat.sh wait
+      - Dep : sonic.target config-setup.service swss.service syncd.service
+  - procdockerstatsd.service
+      - Link: 
+      - Desc: 进程和 Docker CPU/内存利用率数据导出守护进程
+      - Exec: /usr/local/bin/procdockerstatsd
+      - Dep : sonic.target config-setup.service database.service
+  - radv.service
+      - Link: 
+      - Desc: Router advertiser container 路由器通告容器
+      - Exec: /usr/local/bin/radv.sh start; /usr/local/bin/radv.sh wait
+      - Dep : sonic.target config-setup.service swss.service syncd.service
+  - rsyslog-config.service
+      - Link: 
+      - Desc: Update rsyslog configuration
+      - Exec: /usr/bin/rsyslog-config.sh
+      - Dep : sonic.target config-setup.service interfaces-config.service
+  - serial-config.service
+      - Link: 
+      - Desc: Update serial console config
+      - Exec: /usr/bin/serial-config.sh
+      - Dep : sonic.target
+  - swss.service
+      - Link: 
+      - Desc: switch state service
+      - Exec: /usr/local/bin/swss.sh start; /usr/local/bin/swss.sh wait
+      - Dep : sonic.target config-setup.service database.service
+  - syncd.service
+      - Link: 
+      - Desc: syncd service
+      - Exec: 
+      - Dep : sonic.target config-setup.service database.service swss.service
+  - sysmgr.service
+      - Link: 
+      - Desc: Sysmgr Container 系统管理容器
+      - Exec: /usr/bin/sysmgr.sh start; /usr/bin/sysmgr.sh wait
+      - Dep : sonic.target database.service swss.service
+  - tacacs-config.timer
+      - Link: 
+      - Desc: Delays tacacs apply until SONiC has started
+      - Exec: 5min30s后启动 tacacs-config.service (当 tacacs-config.service 被停止/重启时，这个定时器也会被同步停止/重启)
+      - Dep : 
+
+      - tacacs-config.service
+        - Link: 
+        - Desc: TACACS application
+        - Exec: /usr/local/bin/hostcfgd
+        - Dep : sonic.target config-setup.service
+  - teamd.service
+      - Link: 
+      - Desc: TEAMD container
+      - Exec: /usr/local/bin/teamd.sh start; /usr/local/bin/teamd.sh wait
+      - Dep : sonic.target config-setup.service swss.service
+
+
+#### systemd 关系梳理
+
+- 90s: aaastatsd.service
+
+- swss.service
+  - backend-acl.service
+- database.service config-setup.service swss.service interfaces-config.service
+  - bgp.service
+
+
+- systemd启动流程关系梳理
+  - `*.target`
+    - 不等其子项service等完成(`Wants=`关系), 只发送命令启动这些子项serice
+    - 只等其配置的`Requires=`
+    - 基本上*.target的完成是一瞬间的
+  - `After=`
+    - `Type=simple`: 只等它 “启动”，不等 ExecStart 跑完，立刻标记 active (running)
+    - `Type=oneshot`: 等 ExecStart 整个跑完、进程正常退出，才会标记 active (exited)
+    - `Type=forking`: 等 fork 出守护进程、父进程退出，才会标记 active (running)
+    - `Type=notify`: 等服务显式发 “就绪信号”，不等 ExecStart 跑完，等 “我准备好了”
+    - `Type=dbus`: 等服务显式发 “就绪信号”，不等 ExecStart 跑完，等 “我准备好了”
+  - 
+
+
+##### systemd-target 触发流程图
+
+```mermaid
+flowchart TB
+    %% ==== 启动起点 ====
+    START[系统开机]
+
+    %% ==== Target 节点 ====
+    %% 系统初始化层 Target
+    T_SYSINIT[sysinit.target]
+    T_CRYPTSETUP[cryptsetup.target]
+    T_LOCALFS[local-fs.target]
+    T_SWAP[swap.target]
+
+    %% 基础系统层 Target
+    T_BASIC[basic.target]
+    T_PATHS[paths.target]
+    T_SLICES[slices.target]
+    T_SOCKETS[sockets.target]
+    T_TIMERS[timers.target]
+
+    %% 多用户运行层 Target
+    T_MULTIUSER[multi-user.target]
+    T_GETTY[getty.target]
+    T_REMOTEFS[remote-fs.target]
+    T_SONIC[sonic.target]
+
+    %% ==== 主流程（系统启动链路） ====
+    %% 核心启动主线
+    START --> T_SYSINIT
+    T_SYSINIT --> T_BASIC
+    T_BASIC --> T_MULTIUSER
+
+    %% sysinit.target 下的子 Target
+    T_SYSINIT --> T_CRYPTSETUP
+    T_SYSINIT --> T_LOCALFS
+    T_SYSINIT --> T_SWAP
+
+    %% basic.target 下的子 Target
+    T_BASIC --> T_PATHS
+    T_BASIC --> T_SLICES
+    T_BASIC --> T_SOCKETS
+    T_BASIC --> T_TIMERS
+
+    %% multi-user.target 下的子 Target
+    T_MULTIUSER --> T_GETTY
+    T_MULTIUSER --> T_REMOTEFS
+    T_MULTIUSER --> T_SONIC
+```
+
+
+##### systemd-service SONiC相关时序图
+
+- multi-user.target
+
+```mermaid
+flowchart TB
+
+%% ==== 先声明所有节点 ====
+   T_SYSINIT[sysinit.target]
+   T_LOCAL_FS[local-fs.target]
+   T_BASIC[basic.target]
+   T_MULTI_USER[multi-user.target]
+   T_SONIC[sonic.target]
+   T_NETWORK[network.target]
+
+   %% 基础依赖
+   S_RC_LOCAL[rc-local.service]
+   S_CONTAINERD[containerd.service]
+   S_DOCKER[docker.service]
+   S_DATABASE[database.service]
+   S_DATABASE_CHASSIS[database-chassis.service]
+
+   %% 配置类服务
+   S_CONFIG_CHASSISDB[config-chassisdb.service]
+   S_CONFIG_SETUP[config-setup.service]
+   S_CONFIG_TOPOLOGY[config-topology.service]
+
+
+
+%% ==== 启动顺序主线（严格按依赖） ====
+
+   %% common
+
+   T_SYSINIT --> T_LOCAL_FS
+   T_SYSINIT --> T_BASIC
+   T_BASIC --> T_MULTI_USER
+
+   T_NETWORK --> S_RC_LOCAL
+   
+   T_MULTI_USER --> *
+   T_MULTI_USER --> T_SONIC
+
+
+   %% == multi-user.target
+
+   %% config-chassisdb
+   S_RC_LOCAL --> S_CONFIG_CHASSISDB
+
+   %% containerd
+   T_NETWORK --> S_CONTAINERD
+   T_LOCAL_FS --> S_CONTAINERD
+
+   %% docker
+   S_CONTAINERD --> S_DOCKER
+   subgraph docker
+      network-online.target --> S_DOCKER
+      docker.socket --> S_DOCKER
+      firewalld.service --> S_DOCKER
+      time-set.target --> S_DOCKER
+   end
+
+   %% database-chassis
+   S_DOCKER --> S_DATABASE_CHASSIS
+   S_CONFIG_CHASSISDB --> S_DATABASE_CHASSIS
+
+   %% database
+   S_RC_LOCAL --> S_DATABASE
+   S_DOCKER --> S_DATABASE
+   S_DATABASE_CHASSIS --> S_DATABASE
+   
+   %% config-setup
+   S_RC_LOCAL --> S_CONFIG_SETUP
+   S_DATABASE --> S_CONFIG_SETUP
+   S_CONFIG_TOPOLOGY --> S_CONFIG_SETUP
+
+   %% config-topology   
+   S_DATABASE --> S_CONFIG_TOPOLOGY
+   S_DATABASE_CHASSIS --> S_CONFIG_TOPOLOGY
+
+
+```
+
+
+- sonic.target
+
+```mermaid
+flowchart LR
+
+%% ==== 先声明所有节点 ====
+   T_SONIC[sonic.target]
+   T_NETWORK[network.target]
+
+   %% 基础依赖
+   S_DATABASE[database.service]
+   S_DATABASE_CHASSIS[database-chassis.service]
+
+   %% 配置类服务
+   S_CONFIG_SETUP[config-setup.service]
+   S_CONFIG_TOPOLOGY[config-topology.service]
+   S_RSYSLOG_CONFIG[rsyslog-config.service]
+   S_SERIAL_CONFIG[serial-config.service]
+   S_BANNER_CONFIG[banner-config.service]
+   S_INTERFACES_CONFIG[interfaces-config.service]
+   S_COPP_CONFIG[copp-config.service]
+   S_HOSTNAME_CONFIG[hostname-config.service]
+   S_HOSTCFGD[hostcfgd.service]
+   S_HOSTCFGD_TIMER[hostcfgd.timer]
+   S_CHRONY[chrony.service]
+   S_TACACS_CONFIG[tacacs-config.service]
+   S_TACACS_CONFIG_TIMER[tacacs-config.timer]
+
+   %% 核心平台服务
+   S_TEAMD[teamd.service]
+   S_SWSS[swss.service]
+   S_SYNCD[syncd.service]
+   S_EVENTD[eventd.service]
+   S_SYSMGR[sysmgr.service]
+
+   %% 业务协议服务
+   S_BGP[bgp.service]
+   S_DHCP_RELAY[dhcp_relay.service]
+   S_RADV[radv.service]
+   S_MACSEC[macsec.service]
+   S_MUX[mux.service]
+   S_NAT[nat.service]
+
+   %% 监控/统计
+   S_AAASTATSD[aaastatsd.service]
+   S_AAASTATSD_TIMER[aaastatsd.timer]
+   S_PROCDOCKERSTATS[procdockerstatsd.service]
+   S_BACKEND_ACL[backend-acl.service]
+   S_CACLMGRD[caclmgrd.service]
+   S_GBSYNCD[gbsyncd.service]
+   S_DASH_HA[dash-ha.service]
+
+   %% 其他
+   S_FEATURED[featured.service]
+   S_FEATURED_TIMER[featured.timer]
+
+%% ==== 启动顺序主线（严格按依赖） ====
+
+   %% == sonic.target ==
+
+   %% aaastatsd
+   S_AAASTATSD_TIMER --90s--> S_AAASTATSD
+   T_SONIC --> S_AAASTATSD
+   S_CONFIG_SETUP --> S_AAASTATSD
+   S_HOSTCFGD --> S_AAASTATSD
+
+   %% backend-acl
+   T_SONIC --> S_BACKEND_ACL
+   S_SWSS --> S_BACKEND_ACL
+
+   %% banner-config
+   S_CONFIG_SETUP --> S_BANNER_CONFIG
+
+   %% bgp
+   T_SONIC --> S_BGP
+   S_CONFIG_SETUP --> S_BGP
+   S_DATABASE --> S_BGP
+   S_SWSS --> S_BGP
+
+   %% caclmgrd
+   T_SONIC --> S_CACLMGRD
+   S_CONFIG_SETUP --> S_CACLMGRD
+
+   %% chrony
+   T_NETWORK --> S_CHRONY
+
+   %% copp-config
+   T_SONIC --> S_COPP_CONFIG
+   S_CONFIG_SETUP --> S_COPP_CONFIG
+
+   %% dash-ha
+   T_SONIC --> S_DASH_HA
+   S_INTERFACES_CONFIG --> S_DASH_HA
+   S_DATABASE --> S_DASH_HA
+   S_SWSS --> S_DASH_HA
+
+   %% dhcp_relay
+   T_SONIC --> S_DHCP_RELAY
+   S_SWSS --> S_DHCP_RELAY
+   S_SYNCD --> S_DHCP_RELAY
+   S_TEAMD --> S_DHCP_RELAY
+
+   %% eventd
+   T_SONIC --> S_EVENTD
+   S_RSYSLOG_CONFIG --> S_EVENTD
+
+   %% featured
+   S_FEATURED_TIMER --90s--> S_FEATURED
+   T_SONIC --> S_FEATURED
+   S_CONFIG_SETUP --> S_FEATURED
+
+   %% gbsyncd
+   T_SONIC --> S_GBSYNCD
+   S_DATABASE --> S_GBSYNCD
+   S_CONFIG_SETUP --> S_GBSYNCD
+   S_INTERFACES_CONFIG --> S_GBSYNCD
+   S_SWSS --> S_GBSYNCD
+
+   %% hostcfgd
+   S_HOSTCFGD_TIMER --90s--> S_HOSTCFGD
+   T_SONIC --> S_HOSTCFGD
+   S_CONFIG_SETUP --> S_HOSTCFGD
+
+   %% hostname-config
+   T_SONIC --> S_HOSTNAME_CONFIG
+   S_CONFIG_SETUP --> S_HOSTNAME_CONFIG
+
+   %% interfaces-config
+   T_SONIC --> S_INTERFACES_CONFIG
+   S_CONFIG_SETUP --> S_INTERFACES_CONFIG
+
+   %% macsec
+   T_SONIC --> S_MACSEC
+   S_SWSS --> S_MACSEC
+   S_SYNCD --> S_MACSEC
+
+   %% mux
+   T_SONIC --> S_MUX
+   S_SWSS --> S_MUX
+   S_INTERFACES_CONFIG --> S_MUX
+
+   %% nat
+   T_SONIC --> S_NAT
+   S_CONFIG_SETUP --> S_NAT
+   S_SWSS --> S_NAT
+   S_SYNCD --> S_NAT
+
+   %% procdockerstatsd
+   T_SONIC --> S_PROCDOCKERSTATS
+   S_CONFIG_SETUP --> S_PROCDOCKERSTATS
+   S_DATABASE --> S_PROCDOCKERSTATS
+
+   %% radv
+   T_SONIC --> S_RADV
+   S_CONFIG_SETUP --> S_RADV
+   S_SWSS --> S_RADV
+   S_SYNCD --> S_RADV
+
+   %% rsyslog-config
+   T_SONIC --> S_RSYSLOG_CONFIG
+   S_CONFIG_SETUP --> S_RSYSLOG_CONFIG
+   S_INTERFACES_CONFIG --> S_RSYSLOG_CONFIG
+
+   %% serial-config
+   T_SONIC --> S_SERIAL_CONFIG
+
+   %% swss
+   T_SONIC --> S_SWSS
+   S_CONFIG_SETUP --> S_SWSS
+   S_DATABASE --> S_SWSS
+
+   %% syncd
+   T_SONIC --> S_SYNCD
+   S_CONFIG_SETUP --> S_SYNCD
+   S_DATABASE --> S_SYNCD
+   S_SWSS --> S_SYNCD
+
+   %% sysmgr
+   T_SONIC --> S_SYSMGR
+   S_DATABASE --> S_SYSMGR
+   S_SWSS --> S_SYSMGR
+
+   %% tacacs-config
+   S_TACACS_CONFIG_TIMER --5m30s--> S_TACACS_CONFIG
+   T_SONIC --> S_TACACS_CONFIG
+   S_CONFIG_SETUP --> S_TACACS_CONFIG
+
+   %% teamd
+   T_SONIC --> S_TEAMD
+   S_CONFIG_SETUP --> S_TEAMD
+   S_SWSS --> S_TEAMD
+
+   %% 
+   T_SONIC --> S_COPP_CONFIG
+   S_CONFIG_SETUP --> S_COPP_CONFIG
+
+
+%% ==== 整理 ====
+   subgraph *.target
+      T_SONIC
+      T_NETWORK
+   end
+   subgraph *.timer
+      S_AAASTATSD_TIMER
+      S_FEATURED_TIMER
+      S_HOSTCFGD_TIMER
+      S_TACACS_CONFIG_TIMER
+   end
+   subgraph multi-user.target
+      S_CONFIG_SETUP
+      S_CONFIG_TOPOLOGY
+      S_DATABASE
+      S_DATABASE_CHASSIS
+   end
+```
+
+
 
 
 #### /etc/rc.local
@@ -464,94 +1154,124 @@ multi-user.target
 **主要**
 - SONiC实际文件系统版本: /etc/sonic/sonic_version.yml
 - SONiC环境变量覆盖: /host/image-${SONIC_VERSION}/sonic-config/sonic-environment -> /etc/sonic/sonic-environment
-- ONIE机器配置检查与加载: /host/machine.conf
+- ONIE机器配置检查与加载, 确定 platform-name : /host/machine.conf
 - 根据cmdline更新串口波特率: program_console_speed()
 - 首次启动与配置迁移处理: /host/image-${SONIC_VERSION}/platform/firsttime
+- 根据 platform-name 安装特定的 sonic-platform deb 包: dpkg -i /host/image-$SONIC_VERSION/platform/\$platform/*.deb
 - SONiC分区(i.e. /dev/sda3)fsck检查与修复日志的解压处理: /var/log/fsck.log.gz
 
 
 
 
 ```log
-[   38.125317] rc.local[437]: +
-[   38.153643] rc.local[438]: + sed -e s/build_version: //g;s/'//g
-[   38.246817] rc.local[435]: + cat /etc/sonic/sonic_version.yml
-[   38.299176] rc.local[437]: grep build_version
-[   39.365880] rc.local[427]: + SONIC_VERSION=202311.986446-3efdc0000
-[   39.379702] rc.local[427]: + FIRST_BOOT_FILE=/host/image-202311.986446-3efdc0000/platform/firsttime
-[   39.401847] rc.local[427]: + SONIC_CONFIG_DIR=/host/image-202311.986446-3efdc0000/sonic-config
-[   39.454288] rc.local[427]: + SONIC_ENV_FILE=/host/image-202311.986446-3efdc0000/sonic-config/sonic-environment
-[   39.480939] rc.local[427]: + [ -d /host/image-202311.986446-3efdc0000/sonic-config -a -f /host/image-202311.986446-3efdc0000/sonic-config/sonic-environment ]
-[   39.502284] rc.local[427]: + logger SONiC version 202311.986446-3efdc0000 starting up...
-[   39.957296] rc.local[427]: + grub_installation_needed=
-[   39.961363] rc.local[427]: + [ ! -e /host/machine.conf ]
-[   39.970111] rc.local[427]: + . /host/machine.conf
-[   40.061554] rc.local[427]: + onie_arch=x86_64
-[   40.077755] rc.local[427]: + onie_bin=
-[   40.094306] rc.local[427]: + onie_boot_reason=install
-[   40.134360] rc.local[427]: + onie_build_date=2018-11-17T04:18+00:00
-[   40.282845] rc.local[427]: + onie_build_machine=kvm_x86_64
-[   40.493838] rc.local[427]: + onie_build_platform=x86_64-kvm_x86_64-r0
-[   40.498551] rc.local[427]: + onie_config_version=1
-[   40.501031] rc.local[427]: + onie_dev=/dev/vda2
-[   40.513915] rc.local[427]: + onie_disco_boot_reason=install
-[   40.521506] rc.local[427]: + onie_disco_dns=10.0.2.3
-[   40.530695] rc.local[427]: + onie_disco_interface=eth0
-[   40.554368] rc.local[427]: + onie_disco_ip=10.0.2.15
-[   40.567018] rc.local[427]: + onie_disco_lease=86400
-[   40.569424] rc.local[427]: + onie_disco_mask=24
-[   40.586391] rc.local[427]: + onie_disco_opt53=05
-[   40.590692] rc.local[427]: + onie_disco_router=10.0.2.2
-[   40.702492] rc.local[427]: + onie_disco_serverid=10.0.2.2
-[   40.714090] rc.local[427]: + onie_disco_siaddr=10.0.2.2
-[   40.717664] rc.local[427]: + onie_disco_subnet=255.255.255.0
-[   40.729154] rc.local[427]: + onie_exec_url=file://dev/vdb/onie-installer.bin
-[   40.754928] rc.local[427]: + onie_firmware=auto
-[   40.782403] rc.local[427]: + onie_grub_image_name=shimx64.efi
-[   40.924045] rc.local[427]: + onie_initrd_tmp=/
-[   40.946179] rc.local[427]: + onie_installer=/var/tmp/installer
-[   40.961986] rc.local[427]: + onie_kernel_version=4.9.95
-[   41.011104] rc.local[427]: + onie_local_parts=
-[   41.046745] rc.local[427]: + onie_machine=kvm_x86_64
-[   41.059278] rc.local[427]: + onie_machine_rev=0
-[   41.087543] rc.local[427]: + onie_neighs=[fe80::2-eth0],
-[   41.110856] rc.local[427]: + onie_partition_type=gpt
-[   41.139548] rc.local[427]: + onie_platform=x86_64-kvm_x86_64-r0
-[   41.143099] rc.local[427]: + onie_root_dir=/mnt/onie-boot/onie
-[   41.176589] rc.local[427]: + onie_secure_boot=yes
-[   41.211143] rc.local[427]: + onie_skip_ethmgmt_macs=yes
-[   41.243050] rc.local[427]: + onie_switch_asic=qemu
-[   41.280140] rc.local[427]: + onie_uefi_arch=x64
-[   41.324651] rc.local[427]: + onie_uefi_boot_loader=shimx64.efi
-[   41.398832] rc.local[427]: + onie_vendor_id=42623
-[   41.431361] rc.local[427]: + onie_version=master-201811170418
-[   41.469732] rc.local[427]: + program_console_speed
-[   41.623797] rc.local[468]: + cat /proc/cmdline
-[   41.641620] rc.local[469]: + grep -Eo console=tty(S|AMA)[0-9]+,[0-9]+
-[   41.685689] rc.local[473]: + cut -d , -f2
-[   41.742686] rc.local[427]: + speed=115200
-[   41.781768] rc.local[427]: + [ -z 115200 ]
-[   41.803090] rc.local[427]: + CONSOLE_SPEED=115200
-[   41.830308] rc.local[478]: +
-[   41.883692] rc.local[479]: +
-[   41.969023] rc.local[478]: grep agetty /lib/systemd/system/serial-getty@.service
-[   41.985871] rc.local[479]: grep keep-baud
-[   42.033958] rc.local[427]: + [ 1 = 0 ]
-[FAILED] Failed to start OpenBSD Secure Shell server.
-[   42.072589] rc.local[427]: + sed -i s|u' .* %I|u' 115200 %I|g /lib/systemd/system/serial-getty@.service
-[   42.426969] rc.local[427]: + systemctl daemon-reload
-[   42.731629] kdump-tools[423]: Starting kdump-tools:
-[   42.923304] kdump-tools[460]: no crashkernel= parameter in the kernel cmdline ...
-[   42.935361] kdump-tools[523]:  failed!
-[   46.935521] rc.local[427]: + [ -f /host/image-202311.986446-3efdc0000/platform/firsttime ]
-[   46.948663] rc.local[427]: + [ -f /var/log/fsck.log.gz ]
-[   46.968539] rc.local[580]: + gunzip -d -c /var/log/fsck.log.gz
-[FAILED] Failed to start OpenBSD Secure Shell server.
-[   47.031898] rc.local[581]: + logger -t FSCK
-[   47.249167] rc.local[427]: + rm -f /var/log/fsck.log.gz
-[   47.318205] rc.local[427]: + exit 0
+Loading SONiC-OS OS kernel ...
+Loading SONiC-OS OS initial ramdisk ...
+tune2fs 1.47.0 (5-Feb-2023)
+Setting reserved blocks percentage to 0% (0 blocks)
+Setting reserved blocks count to 0
+[   78.796793] kdump-tools[493]: Starting kdump-tools:
+[   78.802460] kdump-tools[497]: no crashkernel= parameter in the kernel cmdline ... failed!
+[   79.566065] rc.local[522]: +
+[   79.593560] rc.local[523]: + grep build_version
+[   79.599039] rc.local[522]: cat /etc/sonic/sonic_version.yml
+[   79.617559] rc.local[524]: + sed -e s/build_version: //g;s/'//g
+[   80.145235] rc.local[517]: + SONIC_VERSION=202505.1048828-77d024ab3
+[   80.227761] rc.local[517]: + FIRST_BOOT_FILE=/host/image-202505.1048828-77d024ab3/platform/firsttime
+[   80.486065] rc.local[517]: + SONIC_CONFIG_DIR=/host/image-202505.1048828-77d024ab3/sonic-config
+[   80.492761] rc.local[517]: + SONIC_ENV_FILE=/host/image-202505.1048828-77d024ab3/sonic-config/sonic-environment
+[   80.511336] rc.local[517]: + [ -d /host/image-202505.1048828-77d024ab3/sonic-config -a -f /host/image-202505.1048828-77d024ab3/sonic-config/sonic-environment ]
+[   80.526483] rc.local[517]: + logger SONiC version 202505.1048828-77d024ab3 starting up...
+[   81.257291] rc.local[517]: + grub_installation_needed=
+[   81.274580] rc.local[517]: + [ ! -e /host/machine.conf ]
+[   81.292616] rc.local[517]: + . /host/machine.conf
+[   81.314546] rc.local[517]: + onie_arch=x86_64
+[   81.326045] rc.local[517]: + onie_bin=
+[   81.338135] rc.local[517]: + onie_boot_reason=install
+[   81.370550] rc.local[517]: + onie_build_date=2018-11-17T04:18+00:00
+[   81.378471] rc.local[517]: + onie_build_machine=kvm_x86_64
+[   81.430420] rc.local[517]: + onie_build_platform=x86_64-kvm_x86_64-r0
+[   81.490946] rc.local[517]: + onie_config_version=1
+[   81.502209] rc.local[517]: + onie_dev=/dev/vda2
+[   81.509908] rc.local[517]: + onie_disco_boot_reason=install
+[   81.549666] rc.local[517]: + onie_disco_dns=10.0.2.3
+[   81.574057] rc.local[517]: + onie_disco_interface=eth0
+[   81.605286] rc.local[517]: + onie_disco_ip=10.0.2.15
+[   81.618194] rc.local[517]: + onie_disco_lease=86400
+[   81.635238] rc.local[517]: + onie_disco_mask=24
+[   81.646226] rc.local[517]: + onie_disco_opt53=05
+[   81.671436] rc.local[517]: + onie_disco_router=10.0.2.2
+[   81.809850] rc.local[517]: + onie_disco_serverid=10.0.2.2
+[   81.849473] rc.local[517]: + onie_disco_siaddr=10.0.2.2
+[   81.866741] rc.local[517]: + onie_disco_subnet=255.255.255.0
+[   81.882634] rc.local[517]: + onie_exec_url=file://dev/vdb/onie-installer.bin
+[   81.895933] rc.local[517]: + onie_firmware=auto
+[   81.934466] rc.local[517]: + onie_grub_image_name=shimx64.efi
+[   81.965894] rc.local[517]: + onie_initrd_tmp=/
+[   81.987359] rc.local[517]: + onie_installer=/var/tmp/installer
+[   82.014052] rc.local[517]: + onie_kernel_version=4.9.95
+[   82.021148] rc.local[517]: + onie_local_parts=
+[   82.038642] rc.local[517]: + onie_machine=kvm_x86_64
+[   82.087192] rc.local[517]: + onie_machine_rev=0
+[   82.091494] rc.local[517]: + onie_neighs=[fe80::2-eth0],
+[   82.097832] rc.local[517]: + onie_partition_type=gpt
+[   82.103949] rc.local[517]: + onie_platform=x86_64-kvm_x86_64-r0
+[   82.107115] rc.local[517]: + onie_root_dir=/mnt/onie-boot/onie
+[   82.110241] rc.local[517]: + onie_secure_boot=yes
+[   82.118627] rc.local[517]: + onie_skip_ethmgmt_macs=yes
+[   82.122521] rc.local[517]: + onie_switch_asic=qemu
+[   82.146146] rc.local[517]: + onie_uefi_arch=x64
+[   82.195109] rc.local[517]: + onie_uefi_boot_loader=shimx64.efi
+[   82.206004] rc.local[517]: + onie_vendor_id=42623
+[   82.211756] rc.local[517]: + onie_version=master-201811170418
+[   82.222997] rc.local[517]: + program_console_speed
+[   82.239932] rc.local[543]: + cat /proc/cmdline
+[   82.255046] rc.local[544]: + grep -Eo console=tty(S|AMA)[0-9]+,[0-9]+
+[   82.273092] rc.local[545]: + cut -d , -f2
+[   82.351989] rc.local[517]: + speed=115200
+[   82.365737] rc.local[517]: + [ -z 115200 ]
+[   82.370885] rc.local[517]: + CONSOLE_SPEED=115200
+[   82.397600] rc.local[552]: + grep agetty /lib/systemd/system/serial-getty@.service
+[   82.441567] rc.local[553]: + grep keep-baud
+[   83.200673] rc.local[553]: ExecStart=-/sbin/agetty -o '-p -- \\u' --keep-baud 115200,57600,38400,9600 - $TERM
+[   83.329475] rc.local[517]: + [ 0 = 0 ]
+[   83.341417] rc.local[517]: + sed -i s|\-\-keep\-baud .* %I| 115200 %I|g /lib/systemd/system/serial-getty@.service
+[   83.951842] rc.local[517]: + systemctl daemon-reload
+[   92.033667] rc.local[517]: + [ -f /host/image-202505.1048828-77d024ab3/platform/firsttime ]
+[   92.042312] rc.local[517]: + echo First boot detected. Performing first boot tasks...
+[   92.055180] rc.local[517]: First boot detected. Performing first boot tasks...
+[   92.067074] rc.local[517]: + [ -n  ]
+[   92.075428] rc.local[517]: + [ -n x86_64-kvm_x86_64-r0 ]
+[   92.087473] rc.local[517]: + platform=x86_64-kvm_x86_64-r0
+[   92.096151] rc.local[517]: + [ -d /host/old_config ]
+[   92.102338] rc.local[517]: + [ -f /host/minigraph.xml ]
+[   92.107460] rc.local[517]: + [ -n  ]
+[   92.119905] rc.local[517]: + touch /tmp/pending_config_initialization
+[   92.198576] rc.local[517]: + touch /tmp/notify_firstboot_to_platform
+[   92.287409] rc.local[517]: + [ ! -d /host/reboot-cause/platform ]
+[   92.299905] rc.local[517]: + mkdir -p /host/reboot-cause/platform
+[   92.482485] rc.local[517]: + [ -d /host/image-202505.1048828-77d024ab3/platform/x86_64-kvm_x86_64-r0 ]
+[   92.495331] rc.local[517]: + [ -f /host/image-202505.1048828-77d024ab3/platform/common/Packages.gz ]
+[   92.631852] rc.local[517]: + dpkg -i /host/image-202505.1048828-77d024ab3/platform/x86_64-kvm_x86_64-r0/sonic-platform-vs_1.0_amd64.deb
+[   95.153487] rc.local[604]: Selecting previously unselected package sonic-platform-vs.
+[  104.908319] rc.local[604]: (Reading database ... 45545 files and directories currently installed.)
+[  104.924962] rc.local[604]: Preparing to unpack .../sonic-platform-vs_1.0_amd64.deb ...
+[  105.303775] rc.local[604]: Unpacking sonic-platform-vs (1.0) ...
+[  107.435471] rc.local[604]: Setting up sonic-platform-vs (1.0) ...
+[  108.744074] rc.local[517]: + sync
+[  109.460106] rc.local[517]: + [ -n x86_64-kvm_x86_64-r0 ]
+[  109.470028] rc.local[517]: + [ -n  ]
+[  109.474405] rc.local[517]: + mkdir -p /var/platform
+[  109.582909] rc.local[517]: + [ -f /etc/default/kdump-tools ]
+[  109.594877] rc.local[517]: + sed -i -e s/__PLATFORM__/x86_64-kvm_x86_64-r0/g /etc/default/kdump-tools
+[  109.753229] rc.local[517]: + firsttime_exit
+[  109.767750] rc.local[517]: + rm -rf /host/image-202505.1048828-77d024ab3/platform/firsttime
+[  109.831130] rc.local[517]: + exit 0
 ```
 
+
+#### sonic.target
+
+##### 
 
 
 

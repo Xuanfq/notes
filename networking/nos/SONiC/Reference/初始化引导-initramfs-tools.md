@@ -230,23 +230,23 @@ loop=/image-202505.1022539-92b55b412/fs.squashfs loopfstype=squashfs
   - init-bottom/
     - union-mount             # **联合挂载: /读写层, /host, /var/lib/docker, /boot, /var/log** (需要先执行`init-bottom/varlog`)
       1. [SecureBoot] 移除读写层中不在`allowlist_file`里的文件 (aboot=`$loop/allowlist_paths.conf`, else=`/host/$image_dir/allowlist_paths.conf`), 并移除除/home下的所有文件的*可执行权限*
-      2. 挂载`/`的可写层`/host/$image_dir/rw`, 以及内部工作目录`/host/$image_dir/work` (OverlayFS): `mount -n -o lowerdir=${rootmnt},upperdir=${rw_dir},workdir=${work_dir} -t overlay root-overlay ${rootmnt}`
+      2. [/] 挂载`/`的可写层`/host/$image_dir/rw`, 以及内部工作目录`/host/$image_dir/work` (OverlayFS): `mount -n -o lowerdir=${rootmnt},upperdir=${rw_dir},workdir=${work_dir} -t overlay root-overlay ${rootmnt}`
          - workdir 必须与 upperdir 在同一文件系统上
          - workdir 必须是空目录
          - 用户不应该直接访问或修改 workdir 中的内容
-      3. 再次挂载`/host`, 确保其存在: `mount -t ext4 ${ROOT} ${rootmnt}/host` or `mount -t ubifs /dev/${ROOT}_0 ${rootmnt}/host`, 若非ubi设备, 禁用/host所在文件系统默认的预留空间(进行紧急维护), 使其最大化可用空间: `tune2fs -m 0 -r 0 ${ROOT}`
-      4. 关联绑定或挂载docker存储路径`/var/lib/docker`:
+      3. [/host] 再次挂载`/host`, 确保其存在: `mount -t ext4 ${ROOT} ${rootmnt}/host` or `mount -t ubifs /dev/${ROOT}_0 ${rootmnt}/host`, 若非ubi设备, 禁用/host所在文件系统默认的预留空间(进行紧急维护), 使其最大化可用空间: `tune2fs -m 0 -r 0 ${ROOT}`
+      4. [/var/lib/docker] 关联绑定或挂载docker存储路径`/var/lib/docker`:
          - 使用ram进行存储 (`docker_inram=on`): `mount -t tmpfs -o "rw,nodev,size=$docker_inram_size" tmpfs "${rootmnt}/var/lib/docker"` or `mkfs.ext4 -m 0 -L dockerfs -O '^has_journal' -q /dev/$zname; mount -o rw,nodev /dev/$zname "${rootmnt}/var/lib/docker"`, 然后解压
          - 使用ssd进行存储 (`/host/$image_dir/docker`): `mount --bind ${rootmnt}/host/$image_dir/docker ${rootmnt}/var/lib/docker` (相当于硬链接两个目录)
-      5. 关联绑定boot存储路径`/boot`: `mount --bind ${rootmnt}/host/$image_dir/boot ${rootmnt}/boot`
-      6. 挂载/var/log日志存储路径`/var/log/`:
+      5. [/boot] 关联绑定boot存储路径`/boot`: `mount --bind ${rootmnt}/host/$image_dir/boot ${rootmnt}/boot`
+      6. [/var/log/] 挂载/var/log日志存储路径`/var/log/`:
          - 使用ram进行存储 (`logs_inram=on`)(一般给非ssd,用小容量flash作为永久性存储设备的Switch):
            - 挂载tmpfs到日志目录 (5%-10% memory size): `set_tmpfs_log_partition_size; mount -t tmpfs -o rw,nosuid,nodev,size=${varlogsize}M tmpfs ${rootmnt}/var/log`
            - 若存在旧的永久性loop日志, 移除: `rm -rf ${rootmnt}/host/disk-img/var-log.ext4`
          - 使用ssd进行存储 (`/host/disk-img/var-log.ext4`):
            - 先检查和修复: `fsck.ext4 -v -p ${rootmnt}/host/disk-img/var-log.ext4 2>&1 | gzip -c >> /tmp/fsck.log.gz`
            - 再挂载loop文件到日志目录: `mount -t ext4 -o loop,rw ${rootmnt}/host/disk-img/var-log.ext4 ${rootmnt}/var/log`
-      7. 移动日志到`/var/log`:
+      7. [/tmp/*.log.gz] 移动日志到`/var/log`:
          - fsck-rootfs: `[ -f /tmp/fsck.log.gz ] && mv /tmp/fsck.log.gz ${rootmnt}/var/log`
          - ssd-upgrade: `[ -f /tmp/ssd-fw-upgrade.log.gz ] && mv /tmp/ssd-fw-upgrade.log.gz ${rootmnt}/var/log`
     - varlog                  # **创建用于存放*日志*的挂载到`/var/log`的单个loop文件`/host/disk-img/var-log.ext4`**, 需通过cmdline参数`varlog_size=4096`指定大小(MB, 4096 default), 若存在则跳过, 也可以通过cmdline参数`logs_inram=true`设置跳过
