@@ -347,6 +347,13 @@ multi-user.target
 ```
 
 
+Others:
+
+- pmon.service
+
+
+
+
 #### systemd 详细说明
 
 
@@ -649,6 +656,13 @@ multi-user.target
       - Exec: /usr/local/bin/teamd.sh start; /usr/local/bin/teamd.sh wait
       - Dep : sonic.target config-setup.service swss.service
 
+- pmon.service  # BindsTo=sonic.target
+    - Link: 
+    - Desc: Platform monitor container
+    - Exec: /usr/bin/pmon.sh start; /usr/bin/pmon.sh wait
+    - Dep : sonic.target database.service config-setup.service
+
+
 
 #### systemd 关系梳理
 
@@ -779,12 +793,7 @@ flowchart TB
 
    %% docker
    S_CONTAINERD --> S_DOCKER
-   subgraph docker
-      network-online.target --> S_DOCKER
-      docker.socket --> S_DOCKER
-      firewalld.service --> S_DOCKER
-      time-set.target --> S_DOCKER
-   end
+   S_DOCKER_DEP[network-online.target<br/>docker.socket<br/>firewalld.service<br/>time-set.target] --> S_DOCKER
 
    %% database-chassis
    S_DOCKER --> S_DATABASE_CHASSIS
@@ -805,6 +814,7 @@ flowchart TB
    S_DATABASE_CHASSIS --> S_CONFIG_TOPOLOGY
 
 
+%% ==== 整理 ====
 ```
 
 
@@ -859,6 +869,7 @@ flowchart LR
    S_CACLMGRD[caclmgrd.service]
    S_GBSYNCD[gbsyncd.service]
    S_DASH_HA[dash-ha.service]
+   S_PMON[pmon.service]
 
    %% 其他
    S_FEATURED[featured.service]
@@ -1000,9 +1011,12 @@ flowchart LR
    S_CONFIG_SETUP --> S_TEAMD
    S_SWSS --> S_TEAMD
 
-   %% 
-   T_SONIC --> S_COPP_CONFIG
-   S_CONFIG_SETUP --> S_COPP_CONFIG
+   %% == Others ==
+
+   %% pmon
+   T_SONIC --> S_PMON
+   S_CONFIG_SETUP --> S_PMON
+   S_DATABASE --> S_PMON
 
 
 %% ==== 整理 ====
@@ -1157,7 +1171,19 @@ flowchart LR
 - ONIE机器配置检查与加载, 确定 platform-name : /host/machine.conf
 - 根据cmdline更新串口波特率: program_console_speed()
 - 首次启动与配置迁移处理: /host/image-${SONIC_VERSION}/platform/firsttime
-- 根据 platform-name 安装特定的 sonic-platform deb 包: dpkg -i /host/image-$SONIC_VERSION/platform/\$platform/*.deb
+- **根据 platform-name 安装特定的 sonic-platform-modules deb 包**: `dpkg -i /host/image-$SONIC_VERSION/platform/\$platform/*.deb`
+  - 一般情况下, 该deb存在 **PDDF 的平台实现的特定的驱动及其配置**
+    - `/lib/modules/6.1.0-29-2-amd64/extra/*.ko`
+    - `/etc/modules-load.d/*.conf` (或通过下方 pddf-platform-init.service 实现自定义加载等)
+  - 一般情况下, 该deb存在 **PDDF sonic_platform 的平台实现**
+    - `/usr/share/sonic/device/$platform/sonic_platform-1.0-py3-none-any.whl`
+  - 一般情况下, 该deb存在 **该平台的 PDDF 模块和设备初始化服务**
+    - `/etc/systemd/system/pddf-platform-init.service` (或其他名称)
+      - Before: `pmon.service` `watchdog-control.service`
+      - Type: oneshot
+      - ExecStartPre: `-/usr/local/bin/pre_pddf_init.sh`  # 加载特定驱动模块, 平台设备初始化, 选择匹配的pddf配置等
+      - ExecStart: `/usr/local/bin/pddf_util.py install`  # 安装驱动模块, 生成相关sysfs节点等
+      - ExecStop: `/usr/local/bin/pddf_util.py clean`     # 卸载驱动模块, 移除相关sysfs节点等
 - SONiC分区(i.e. /dev/sda3)fsck检查与修复日志的解压处理: /var/log/fsck.log.gz
 
 
