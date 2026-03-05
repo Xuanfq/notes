@@ -22,6 +22,8 @@
       - pd-plugin.json        # pddf 插件数据
       - pddf-device.json      # pddf 设备相关如驱动API的拓扑管理与配置
     - installer.conf          # 机器安装配置, 安装时将覆盖其他如onie-image.conf等配置
+    - asic.conf               # option, 配置asic数量及ID等, 如`NUM_ASIC=16 \n DEV_ID_ASIC_0=nokia-bdb:1:0 \n DEV_ID_ASIC_1=nokia-bdb:1:1 \n ...`
+    - platform_env.conf       # option, 配置平台环境变量, 
 - platform/`@SWITCH-CHIP-VENDOR-FULL-L@`/
   - sonic-platform-modules-`@VENDOR-FULL-L@`/
     - debian/     # 参照[Debian软件包打包完全指南](./Reference/Debian软件包打包完全指南.md)
