@@ -24,6 +24,11 @@
     - installer.conf          # 机器安装配置, 安装时将覆盖其他如onie-image.conf等配置
     - asic.conf               # option, 配置asic数量及ID等, 如`NUM_ASIC=16 \n DEV_ID_ASIC_0=nokia-bdb:1:0 \n DEV_ID_ASIC_1=nokia-bdb:1:1 \n ...`
     - platform_env.conf       # option, 配置平台环境变量, 
+    - sensors.conf
+    - fancontrol
+    - chassisdb.conf
+    - platform_wait
+    - psu_sensors_conf_updater
 - platform/`@SWITCH-CHIP-VENDOR-FULL-L@`/
   - sonic-platform-modules-`@VENDOR-FULL-L@`/
     - debian/     # 参照[Debian软件包打包完全指南](./Reference/Debian软件包打包完全指南.md)
@@ -116,9 +121,27 @@
       - pre_pddf_init.sh    # platform/pddf/i2c/service/`pddf-platform-init.service` 运行前执行, 可由此使用不同的pddf相关配置
       - pre_pddf_s3ip.sh    # platform/pddf/i2c/service/`pddf-s3ip-init.service` 运行前执行, 可由此执行相关预设
     - **share/sonic/device/`@PLATFORM-FULL-L@`/[pddf]**   # 设备文件
-      - sonic_platform-1.0-py3-none-any.whl     # pddf api 的实现与python模块适配 sonic_platform
+      - sonic_platform-1.0-py3-none-any.whl     # pddf api 的实现与python模块适配 sonic_platform, 或 py2
 
 
+
+## Device
+
+本章节是目录`device/$vendor/$platform_name/`的内容说明。
+
+
+### asic.conf
+
+- 调用方:
+  - `/usr/bin/pmon.sh`: `pmon.service`的启动脚本, 调用方式为`ASIC_CONF=/usr/share/sonic/device/$PLATFORM/asic.conf; [ -f "$ASIC_CONF" ] && source $ASIC_CONF`
+
+
+
+
+### platform_env.conf
+
+- 调用方:
+  - `/usr/bin/pmon.sh`: `pmon.service`的启动脚本, 调用方式为`PLATFORM_ENV_CONF=/usr/share/sonic/device/$PLATFORM/platform_env.conf; [ -f "$PLATFORM_ENV_CONF" ] && source $PLATFORM_ENV_CONF`
 
 
 

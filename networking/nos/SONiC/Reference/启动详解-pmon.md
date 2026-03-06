@@ -1,6 +1,4 @@
-
-
-# pmon.sh start 流程梳理
+# pmon.sh start
 
 ## 1. 获取启动类型
 ```bash
@@ -151,4 +149,12 @@ postStartAction
 | `CONTAINER_NAME`   | 容器名称             |
 | `SYSLOG_TARGET_IP` | Syslog 目标 IP       |
 | `PLATFORM`         | 平台名称             |
+
+
+
+# 容器 start
+
+
+
+
 
