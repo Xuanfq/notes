@@ -195,7 +195,7 @@ postStartAction
 | **/usr/bin/delay.py**              | 非紧急延时     |                          | delay_non_critical_daemon                                           |
 | **/usr/local/bin/chassisd**        | 模块化机箱管理 |                          | not skip_chassisd &&<br />IS_MODULAR_CHASSIS == 1 or is_smartswitch |
 | **/usr/local/bin/chassis_db_init** |                |                          | not skip_chassis_db_init                                            |
-| **/usr/bin/lm-sensors**            | 传感器监控     | 基于 `sensors.conf`    | not skip_sensors &&`HAVE_SENSORS_CONF == 1`                       |
+| **/usr/bin/lm-sensors.sh**<br/>(sensors -s && service sensord start) | 应用传感器配置并启动sensord.service | 基于 `sensors.conf`    | not skip_sensors &&`HAVE_SENSORS_CONF == 1`                       |
 | **/usr/sbin/fancontrol**           | 风扇控制       | 基于 `fancontrol` 配置 | not skip_fancontrol &&`HAVE_FANCONTROL_CONF == 1`                 |
 | **/usr/local/bin/ledd**            | LED 控制       | 支持 Python 2/3          | not skip_ledd                                                       |
 | **/usr/local/bin/xcvrd**           | 光模块监控     | 支持多种选项             | not skip_xcvrd                                                      |
@@ -310,7 +310,7 @@ postStartAction
 
 **容器生命周期管理**：
 
-- 若存在 `/usr/share/sonic/scripts/container_startup.py` 脚本，则执行，默认不存在: `/usr/share/sonic/scripts/container_startup.py -f pmon -o ${RUNTIME_OWNER} -v ${IMAGE_VERSION}` （可参阅 `src/sonic-ctrmgrd/ctrmgr/container_startup.py`）
+- 若存在 `/usr/share/sonic/scripts/container_startup.py` 脚本，则执行（除stretch外都有，位于docker内部）: `/usr/share/sonic/scripts/container_startup.py -f pmon -o ${RUNTIME_OWNER} -v ${IMAGE_VERSION}` （可参阅 `src/sonic-ctrmgrd/ctrmgr/container_startup.py`）
 - 以通知系统容器状态到swss，支持 kube/local 两种运行时，默认kube，可通过 `RUNTIME_OWNER=local`指定为local
 
 ---
@@ -364,7 +364,7 @@ postStartAction
   - `source /usr/share/sonic/platform/psu_sensors_conf_updater`
   - `update_psu_sensors_configuration /usr/share/sonic/platform/sensors.conf`
 - 检查是否存在临时传感器配置，若存在则指定其为传感器配置 `/tmp/sensors.conf`
-- 复制最终配置到 `/etc/sensors.d/`
+- 复制最终配置到 `/etc/sensors.d/`，用于 lm-sersors 中的 sensord 守护进程
 
 **风扇控制配置**：
 
@@ -434,8 +434,8 @@ postStartAction
 | 配置文件                                                                                                                        | 必须 | 影响范围     | 作用机制                                                   |
 | ------------------------------------------------------------------------------------------------------------------------------- | ---- | ------------ | ---------------------------------------------------------- |
 | /usr/share/sonic/hwsku/**pmon_daemon_control.json**（优先）``/usr/share/sonic/platform/**pmon_daemon_control.json** | N    | 守护进程选择 | 决定哪些服务会在 supervisord 配置中生成                    |
-| /usr/share/sonic/platform/**sensors.conf**                                                                                | N    | 传感器监控   | 控制 `HAVE_SENSORS_CONF` 标志，``影响 lm-sensors 启动    |
-| /usr/share/sonic/platform/**fancontrol**                                                                                  | N    | 风扇控制     | 控制 `HAVE_FANCONTROL_CONF` 标志，``影响 fancontrol 启动 |
+| /usr/share/sonic/platform/**sensors.conf**                                                                                | N    | 传感器监控   | 控制 `HAVE_SENSORS_CONF` 标志，<br/>影响 lm-sensors 启动    |
+| /usr/share/sonic/platform/**fancontrol**                                                                                  | N    | 风扇控制     | 控制 `HAVE_FANCONTROL_CONF` 标志，<br/>影响 fancontrol 启动 |
 | /usr/share/sonic/platform/**platform_env.conf**                                                                           | N    | 平台参数     | 提供 `disaggregated_chassis` 等环境变量                  |
 | /usr/share/sonic/platform/**chassisdb.conf**                                                                              | N    | 机箱架构     | 结合环境变量判断是否为模块化机箱                           |
 |                                                                                                                                 |      |              |                                                            |
@@ -446,8 +446,8 @@ postStartAction
 | ------------------------------------------------------------------------- | ---- | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | /usr/share/sonic/platform/**sonic_platform-1.0-py2/3-none-any.whl** | N    | API 版本     | 决定 Python 版本和 API 能力                                                                                                                             |
 | /usr/share/sonic/**scripts/container_startup.py**                   | N    | 容器状态管理 | 同步容器状态到swss                                                                                                                                      |
-| /usr/share/sonic/platform/**platform_wait**                         | N    | 平台初始化   | 自定义等待硬件初始化完成（如 FPGA 加载、BMC 就绪）``时间过久还没完成可执行失败以触发服务重启                                                            |
-| /usr/share/sonic/platform/**psu_sensors_conf_updater**              | N    | 传感器监控   | 当存在psu_sensors_conf_updater时，``通过其提供的Function生成配置/tmp/sensors.conf，``优先级更高，``覆盖/usr/share/sonic/platform/**sensors.conf** |
+| /usr/share/sonic/platform/**platform_wait**                         | N    | 平台初始化   | 自定义等待硬件初始化完成（如 FPGA 加载、BMC 就绪）<br/>时间过久还没完成可执行失败以触发服务重启                                                            |
+| /usr/share/sonic/platform/**psu_sensors_conf_updater**              | N    | 传感器监控   | 当存在psu_sensors_conf_updater时，<br/>通过其提供的Function生成配置/tmp/sensors.conf，<br/>优先级更高，<br/>覆盖/usr/share/sonic/platform/**sensors.conf** |
 |                                                                           |      |              |                                                                                                                                                         |
 
 ### 3. 动态配置生成流程
@@ -534,3 +534,120 @@ postStartAction
 
 - rsyslogd（仅基础服务）
 - 其他硬件相关服务全部跳过
+
+
+
+---
+
+
+
+# src/sonic-platform-daemons
+
+[sonic-platform-daemons](https://github.com/sonic-net/sonic-platform-daemons)，是基于`python`开发的系列平台监控守护程序，多个`whl`，如`sonic_chassisd-1.0-py3-none-any.whl`, `sonic_ledd-1.1-py2-none-any.whl`等
+
+
+## sonic-chassisd
+
+
+
+
+
+## sonic-ledd
+
+
+
+
+
+## sonic-pcied
+
+
+
+
+
+## sonic-psud
+
+
+
+
+
+## sonic-sensormond
+
+
+
+
+
+## sonic-stormond
+
+
+
+
+
+## sonic-syseepromd
+
+
+
+
+
+## sonic-thermalctld
+
+
+
+
+
+## sonic-xcvrd
+
+
+
+
+
+## sonic-ycabled
+
+
+
+
+
+
+
+---
+
+
+
+# src/lm-sensors (fancontrol)
+
+`lm_sensors` (Linux monitoring sensors) 是一款免费开源应用程序，提供用于监控温度、电压和控制风扇的工具和驱动程序。包含 `fancontrol`。
+
+[参阅-lm-sersors.md](../Reference/lm-sersors.md)
+
+
+## lm-sensors
+
+
+## sensors
+
+
+## sensord
+
+
+## fancontrol
+
+
+
+---
+
+
+
+# dockers/docker-platform-monitor
+
+[参阅-lm-sersors.md](../Reference/lm-sersors.md)
+
+
+## lm-sensors.sh
+
+1. 应用配置:
+   - 存在配置: `sensors -s -c /etc/sensors.d/sensors.conf`
+   - 不存在配置: `sensors -s`
+2. 启动后台监控并输出日志: `service sensord start`
+
+> 日志配置位于`dockers/docker-platform-monitor/etc/rsyslog.conf`
+
+

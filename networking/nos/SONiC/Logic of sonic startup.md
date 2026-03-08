@@ -131,7 +131,7 @@ menuentry '$demo_grub_entry' {      # SONiC-${demo_type}-${image_version}=SONiC-
 通过执行`initrd`中的初始化脚本`/init`引导进入真实文件系统
 
 
-[详细步骤-参阅Reference目录](./Reference/初始化引导-initramfs-tools.md#启动脚本)
+[详细步骤-参阅Reference目录](./Details/初始化引导-initramfs-tools.md#启动脚本)
 
 
 
