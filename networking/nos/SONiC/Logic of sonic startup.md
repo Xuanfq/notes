@@ -1048,7 +1048,7 @@ flowchart LR
   - ExecStart: /etc/rc.local start
 
 1. 初始化阶段
-   1. 从`/etc/sonic/sonic_version.yml`读取SONiC版本号`SONIC_VERSION`(i.e. 202311.986446-3efdc0000): `SONIC_VERSION=$(cat /etc/sonic/sonic_version.yml | grep "build_version" | sed -e "s/build_version: //g;s/'//g")`
+   1. 从`/etc/sonic/sonic_version.yml`读取SONiC版本号`SONIC_VERSION`(i.e. 202505.986446-3efdc0000): `SONIC_VERSION=$(cat /etc/sonic/sonic_version.yml | grep "build_version" | sed -e "s/build_version: //g;s/'//g")`
    2. 检查`/host/image-${SONIC_VERSION}/sonic-config/sonic-environment`是否存在, 如果存在, 将其移动到`/etc/sonic/sonic-environment`
 2. 主执行流程
    1. 记录启动日志: `logger "SONiC version ${SONIC_VERSION} starting up..."`

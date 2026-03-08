@@ -153,7 +153,7 @@ Image的类型有多种, e.g. onie (最多), raw, kvm etc.
     - fs.squashfs               # 只读文件系统, 包括device数据
     - onie-support*.tar.bz2     # onie环境下安装时, 由`onie-support`命令生成
     - *                         # 其他文件, Option
-  - image-202311.xxxxxxx-yyyyyyyyy/
+  - image-202505.xxxxxxx-yyyyyyyyy/
   - machine.conf
 
 

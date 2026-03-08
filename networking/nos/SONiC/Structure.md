@@ -1,22 +1,39 @@
 # Structure
 
-- device/
-- dockers/
-- files/
-- installer/
-- platform/
-- rules/
-- scripts/
-- sonic-slave-bookworm/
+- device/               # 设备特定配置相关文件
+- files/                #
+- installer/            # 制作基于onie的安装器的相关文件
+- src/                  # 通用软件组件源代码及其构建规则，包括子模块、复杂组件
+- rules/                # 平台无关、供应商无关的的编译规则
+- platform/             # 平台相关、供应商相关代码、配置以及编译规则
+- dockers/              # 通用软件组件、各种服务的Dockerfile及配置
+- scripts/              # 脚本工具
+- sonic-slave-bookworm/ # 不同Debian版本的SONiC从机Docker构建环境
 - sonic-slave-bullseye/
 - sonic-slave-buster/
 - sonic-slave-jessie/
 - sonic-slave-stretch/
 - src/
-- target/
-- Makefile
-- Makefile.cache
-- Makefile.work
+  - sonic-py-common/            # SONiC 的通用 Python 库
+    - sonic_py_common/
+      - daemon_base.py              # daemon 程序的基础库
+      - device_info.py
+      - general.py
+      - interface.py
+      - logger.py
+      - multi_asic.py
+      - port_util.py
+      - sonic_db_dump_load.py
+      - syslogger.py
+      - task_base.py
+      - util.py
+    - sonic-swss-common/        	# SONiC SWSS 的通用库，为数据库通信、netlink 封装以及 SWSS 所需的其他功能提供库支持，C-Lang 编写并提供 python swsscommon 库
+      - tests/					    # SONiC SWSS 的 c 和 python 测试、使用示例
+- target/               # 编译结果，编译时生成
+- slave.mk              # 实际执行构建逻辑的 Makefile ，所有构建目标都能在这里找到
+- Makefile              # Wrapper for `Makefile.work`
+- Makefile.work         # Wrapper for all the mainly work and `slave.mk`
+- Makefile.cache        # Wrapper cache work for `slave.mk`
 - build_debian.sh
 - build_debug_docker_j2.sh
 - build_docker.sh
@@ -30,74 +47,4 @@
 - onie-image.conf
 - onie-mk-demo.sh
 - push_docker.sh
-- slave.mk
 - update_screen.sh
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

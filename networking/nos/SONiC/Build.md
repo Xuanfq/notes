@@ -122,7 +122,7 @@ make configure PLATFORM=[ASIC_VENDOR]
     - `ASIC_VENDOR` 私有代码配置位于`platform/checkout/`目录下的：
       - 文件`$(PLATFORM).ini`
       - 文件`$(PLATFORM)-smartswitch.ini`: 需配置参数`SMARTSWITCH=1`, e.g. `make configure PLATFORM=[ASIC_VENDOR] SMARTSWITCH=1`
-    - 当前(202508)仅存在以下`ASIC_VENDOR`存在私有代码：
+    - 当前(202505)仅存在以下`ASIC_VENDOR`存在私有代码：
       - cisco-8000
       - pensando
     - 这些代码一般会被克隆到`platform/$(PLATFORM)`获其子目录

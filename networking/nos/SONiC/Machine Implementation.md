@@ -18,14 +18,19 @@
 
 - device/`@VENDOR-FULL-L@`/   # 将在src/sonic-device-data/处被编译成 `sonic-device-data_${version:-1.0-1}_all.deb` 
   - `@PLATFORM-FULL-L@`/      # platform, e.g. x86_64-dellemc_s52xx-r0
+    - `$hwsku`/               # 多sku的不同sku配置
+      - `$dev0`/
+      - `$dev1`/
+      - pmon_daemon_control.json  # 特定 sku 的 pmon daemon 配置, 优先级高于上层配置
     - pddf/
       - pd-plugin.json        # pddf 插件数据
       - pddf-device.json      # pddf 设备相关如驱动API的拓扑管理与配置
     - installer.conf          # 机器安装配置, 安装时将覆盖其他如onie-image.conf等配置
     - asic.conf               # option, 配置asic数量及ID等, 如`NUM_ASIC=16 \n DEV_ID_ASIC_0=nokia-bdb:1:0 \n DEV_ID_ASIC_1=nokia-bdb:1:1 \n ...`
     - platform_env.conf       # option, 配置平台环境变量, 
-    - sensors.conf
-    - fancontrol
+    - sensors.conf            # lm-sensors sensors配置
+    - fancontrol              # lm-sensors fancontrol配置
+    - pmon_daemon_control.json    # pmon daemon 监控配置, 控制是否跳过某些监控 daemon
     - chassisdb.conf
     - platform_wait
     - psu_sensors_conf_updater
@@ -142,6 +147,7 @@
 
 - 调用方:
   - `/usr/bin/pmon.sh`: `pmon.service`的启动脚本, 调用方式为`PLATFORM_ENV_CONF=/usr/share/sonic/device/$PLATFORM/platform_env.conf; [ -f "$PLATFORM_ENV_CONF" ] && source $PLATFORM_ENV_CONF`
+  - docker-pmon / `/usr/bin/docker_init.sh`: 加载平台环境配置, `[ -e "$PLATFORM_ENV_CONF" ] && source $PLATFORM_ENV_CONF`
 
 
 
