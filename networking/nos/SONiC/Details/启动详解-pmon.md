@@ -553,13 +553,268 @@ STATE_DB.CHASSIS_INFO=dict([
 ])
 ```
 
-- SYSLOG_IDENTIFIER = "chassis_db_init"
+- STATE_DB
+  - CHASSIS_INFO
+    - serial: `chassis().get_serial()` or `N/A`
+    - model: `chassis().get_model()` or `N/A`
+    - revision: `chassis().get_revision()` or `N/A`
+
+> SYSLOG_IDENTIFIER = "chassis_db_init"
 
 
 ## sonic-chassisd/classisd
 
+**核心功能**: 模块信息更新守护进程，负责收集和管理 SONiC 模块化机架系统中的所有模块信息，并将信息写入 State DB。
 
-- SYSLOG_IDENTIFIER = "chassisd"
+**运行周期**: 每 10 秒（`CHASSIS_INFO_UPDATE_PERIOD_SECS`）更新一次
+
+**支持模式**:
+
+1. **模块化机架模式**: Supervisor + Line Cards + Fabric Cards
+2. **智能交换机模式**: Supervisor + DPUs（Data Processing Units）
+
+**chassisd** 是 SONiC 模块化机架和智能交换机的核心管理守护进程，实现了：
+
+1. **模块生命周期管理**: 监控模块在线/离线状态
+2. **配置管理**: 响应配置变化，执行模块管理操作
+3. **状态同步**: 定期更新数据库中的模块信息
+4. **中平面监控**: 检查模块间连接状态
+5. **DPU 状态管理**: 监控 DPU 数据平面和控制平面状态
+6. **错误恢复**: 自动清理离线模块记录
+7. **平台适配**: 支持多种平台架构
+
+---
+
+### 平台适配
+
+#### 模块化机架平台
+
+**组件**:
+
+- Supervisor 卡（管理整个机架）
+- Line Cards（业务处理）
+- Fabric Cards（交换网络）
+
+**特殊处理**:
+
+- Supervisor 和 Line Card 运行不同的逻辑
+- Fabric ASIC 信息单独管理
+- 中平面连接监控
+
+#### 智能交换机平台
+
+**组件**:
+
+- Supervisor 卡
+- DPUs（数据处理单元）
+
+**特殊处理**:
+
+- DPU 数据平面和控制平面状态监控
+- PCI 设备分离/重新扫描
+- 传感器配置变更
+- 异步模块配置更新
+
+---
+
+### 核心数据定义
+
+#### 1. Redis 数据库结构
+
+| 数据库           | 表名                             | 键模板          | 用途                     |
+| ---------------- | -------------------------------- | --------------- | ------------------------ |
+| CONFIG_DB        | CHASSIS_MODULE                   | `<module_name>` | 模块配置（admin_status） |
+| STATE_DB         | CHASSIS_TABLE                    | `CHASSIS 1`     | 机架信息（模块数量）     |
+| STATE_DB         | CHASSIS_MODULE_TABLE             | `<module_name>` | 模块状态信息             |
+| STATE_DB         | CHASSIS_MIDPLANE_TABLE           | `<module_name>` | 中平面连接信息           |
+| STATE_DB         | PHYSICAL_ENTITY_INFO             | `<module_name>` | 物理实体信息             |
+| CHASSIS_STATE_DB | CHASSIS_ASIC_TABLE               | `<asic_key>`    | ASIC 信息                |
+| CHASSIS_STATE_DB | CHASSIS_FABRIC_ASIC_TABLE        | `<asic_key>`    | Fabric ASIC 信息         |
+| CHASSIS_STATE_DB | CHASSIS_MODULE_TABLE             | `<module_name>` | 模块主机名               |
+| CHASSIS_STATE_DB | CHASSIS_MODULE_REBOOT_INFO_TABLE | `<module_name>` | 模块重启信息             |
+| CHASSIS_STATE_DB | DPU_STATE                        | `DPU<id>`       | DPU 状态                 |
+
+- CONFIG_DB
+  - CHASSIS_MODULE
+    - <module_name>: 用于设置模块管理模式，该key被 SET-关闭管理状态`admin_state=0`，该key被 DEL-开启管理状态`admin_state=1`, 设置`chassis.get_module(chassis.get_module_index(module_name)).set_admin_state(admin_state)`
+      - admin_status: up|down
+- STATE_DB
+  - CHASSIS_MODULE_TABLE
+    - <module_name>: `chassis.get_module(module_index).get_xxx()`
+      - desc: `get_description()`
+      - slot: `get_slot()`
+      - oper_status: `get_oper_status()`
+      - num_asics: `len(get_all_asics())`
+      - serial: `get_serial()`
+      - presence: `get_presence()`
+      - is_replaceable: `is_replaceable()`
+      - model: `get_model()`
+  - CHASSIS_TABLE
+    - "CHASSIS 1"
+      - module_num: `chassis.get_num_modules()`
+  - CHASSIS_MIDPLANE_TABLE
+    - <module_name>
+      - ip_address: `get_midplane_ip()` or `0.0.0.0`
+      - access: `str(is_midplane_reachable())` or `str(False)`
+  - PHYSICAL_ENTITY_INFO
+    - <module_name>
+      - position_in_parent: <module_index>
+      - parent_name: "chassis 1"
+      - serial: <module_serial>
+      - model: <module_model>
+      - is_replaceable: <is_replaceable>
+- CHASSIS_STATE_DB
+  - CHASSIS_FABRIC_ASIC_TABLE (asic_table for supervisor slot)
+    - `<module_name>|asic<id>` (e.g. <module_name>|asic1)
+      - asic_pci_address: `get_all_asics()[$i][1]`
+      - name: `<module_name>`
+      - asic_id_in_module: `get_all_asics()[$i][0]`
+  - CHASSIS_ASIC_TABLE (asic_table for non-supervisor slot)
+    - `asic<id>` (e.g. asic1)
+      - asic_pci_address: `get_all_asics()[$i][1]`
+      - name: `<module_name>`
+      - asic_id_in_module: `get_all_asics()[$i][0]`
+  - CHASSIS_MODULE_TABLE (hostname)
+    - LINE-CARD`<slot>-1` (e.g. LINE-CARD0)
+      - slot: <slot>
+      - hostname: `sonic_py_common.device_info.get_hostname() or "None"`
+      - num_asics: `len(get_all_asics())`
+  - CHASSIS_MODULE_REBOOT_INFO_TABLE
+    - <module_name> (下发KV不共存，仅一次一个key)
+      - reboot: `expected`
+      - timestamp: `str(time.time())`
+- CHASSIS_APP_DB
+
+#### 2. Chassis 模块类型
+
+Chassis 模块继承自 `src/sonic-platform-common/sonic_platform_base/module_base.py`中的`ModuleBase(device_base.DeviceBase)`类，是**通用类型的平台外设设备**的**抽象基类**。
+
+| 模块类型    | 前缀          | 说明                       |
+| ----------- | ------------- | -------------------------- |
+| Supervisor  | `SUPERVISOR`  | 管理卡                     |
+| Line Card   | `LINE-CARD`   | 线卡                       |
+| Fabric Card | `FABRIC-CARD` | 交换卡                     |
+| DPU         | `DPU`         | 数据处理单元（智能交换机） |
+
+#### 3. Chassis 模块状态
+
+| 状态                  | 值        | 引用                       | 说明                               |
+| --------------------- | --------- | -------------------------- | ---------------------------------- |
+| MODULE_STATUS_EMPTY   | `Empty`   | `module.get_oper_status()` | 模块不存在                         |
+| MODULE_STATUS_OFFLINE | `Offline` | `module.get_oper_status()` | 模块离线                           |
+| MODULE_STATUS_ONLINE  | `Online`  | `module.get_oper_status()` | 模块在线，fully functional         |
+| MODULE_STATUS_PRESENT | `Present` | `module.get_oper_status()` | not fully functional               |
+| MODULE_STATUS_FAULT   | `Fault`   | `module.get_oper_status()` | Present\|Online->fault，无法Online |
+|                       |           |                            |                                    |
+| MODULE_ADMIN_DOWN     | `0`       | module.set_admin_state(0)  | 管理状态关闭                       |
+| MODULE_ADMIN_UP       | `1`       | module.set_admin_state(1)  | 管理状态开启                       |
+| MODULE_PRE_SHUTDOWN   | `2`       | module.set_admin_state(2)  | DPU预关机状态                      |
+
+---
+
+### 核心总体流程
+
+根据Chassis类型启动对应Daemon (此处主要梳理非PDU&SmartSwitch的Chassis):
+
+- 若是DPU Chassis (`chassis.is_smartswitch() and chassis.is_dpu()`): `DpuChassisdDaemon(SYSLOG_IDENTIFIER, chassis).run()`
+- 否则按平台Chassis: `ChassisdDaemon(SYSLOG_IDENTIFIER, chassis).run()`
+
+
+如下为非PDU Chassis:
+
+1. 设置-模块配置更新器`ModuleUpdater`
+
+   - smartswitch: `SmartSwitchModuleUpdater(SYSLOG_IDENTIFIER, self.platform_chassis)`
+   - 非smartswitch: `ModuleUpdater(SYSLOG_IDENTIFIER, self.platform_chassis, chassis.get_my_slot() or -1, chassis.get_supervisor_slot() or -1)`
+     1. 连接数据库及相应表格 (仅展示差异): 
+        - `STATE_DB`
+        - `CHASSIS_STATE_DB`
+          - asic_table: 
+            - supervisor slot: `CHASSIS_FABRIC_ASIC_TABLE`
+            - common slot: `CHASSIS_ASIC_TABLE`
+     2. 设置`linecard_reboot_timeout`为180s。可通过平台环境变量`platform_env.conf`覆盖。
+     3. 初始化midplane (成功需返回"True", 使if条件判断通过): `chassis.init_midplane_switch()`
+
+2. 更新数据库`STATE_DB.CHASSIS_TABLE`中的**模块数量** (或DPU数量) (非0值): `"CHASSIS 1"=dict([("module_num", chassis.get_num_modules())])`
+
+3. 非smartswitch: 若获取到`slot`或`supervisor_slot`是非法值`-1`，退出
+
+4. 设置并启动-配置管理任务`ConfigManagerTask`
+
+   - smartswitch: `SmartSwitchConfigManagerTask().task_run()`
+
+   - 非smartswitch，需当前`slot`是`supervisor_slot`: `ConfigManagerTask().task_run()`
+
+     - 监听`CONFIG_DB.CHASSIS_MODULE`中的配置项修改：
+
+       - 配置项名称-`key`：
+         - `SUPERVISOR**`, 如`SUPERVISOR-xxx`
+         - `LINE-CARD**`
+         - `FABRIC-CARD**`
+
+       - 修改动作:
+         - SET: 关闭模块管理 (`admin_state=0`)
+         - DEL: 开启模块管理 (`admin_state=1`)
+
+     - 根据配置项的修改动作，设置Chassis-Module的管理状态:
+
+       - ```python
+         chassis.get_module(chassis.get_module_index(key)).set_admin_state(admin_state)
+         ```
+
+   - 其他：无此任务
+
+5. smartswitch: 初始化DPU管理状态
+
+6. 循环执行: (每CHASSIS_INFO_UPDATE_PERIOD_SECS=10s执行一次)
+
+   1. 模块状态检测与更新: `module_updater.module_db_update()`
+      1. 遍历所有模块
+         1. 获取最新的模块信息字典: `chassis.get_module(module_index).get_xxx()` 
+         2. 若`slot`与本模块更新器`module_updater`中设置的一致，记下其模块索引: `my_index = module_index`
+         3. 检查最新的模块信息中模块名`name`是否合法，不合法则**跳过**剩下步骤 (合法如`SUPERVISOR**`, `LINE-CARD**`, `FABRIC-CARD**`)
+         4. 获取数据库中模块信息中的上一次`oper_status`状态 (name是模块名, 默认为空`empty`): `STATE.CHASSIS_MODULE_TABLE.module_name` 
+         5. 更新数据库中模块信息: `STATE_DB.CHASSIS_MODULE_TABLE.module_name`
+         6. 更新数据库中物理条目信息: `STATE_DB.PHYSICAL_ENTITY_INFO.module_name`
+         7. 获取数据库中该模块的hostname, 定义变量down_module_key为`<module_name>|<hostname>`: `CHASSIS_STATE_DB.CHASSIS_MODULE_TABLE.module_name` 
+         8. 对比上一次与最新的`oper_status`状态：
+            1. 从Online变成非Online，输出Offline日志，并记录到`down_modules["<module_name>|<hostname>"]`: 
+               - `down_time=time.time()`
+               - `cleaned=False`
+               - `slot=`最新slot
+            2. 从非Online变成Online，输出Online日志
+            3. 最新为Online，并且模块从down_modules中移除，输出恢复Online日志
+            4. 若为Online，且数据库中配置模块管理状态`CONFIG_DB.CHASSIS_MODULE.<module_name>.admin_status`为非`down`，遍历模块中所有的`asics`更新数据库中`CHASSIS_STATE_DB.$ASIC_TABLE`对应的状态
+      2. 若非Supervisor，获取循环中记下的与本模块更新器一致的模块索引`my_index`，获取其模块信息用以 - 更新数据库中hostname部分: `CHASSIS_STATE_DB.CHASSIS_MODULE_TABLE.LINE-CARD<slot-1>`
+      3. 清除数据库中非Online模块的ASIC记录: `CHASSIS_STATE_DB.$ASIC_TABLE`
+   2. 模块midplane状态检测与更新: `module_updater.check_midplane_reachability()`
+      1. 若midplane没有初始化，则**跳过**剩下步骤
+      2. 遍历所有模块进行检查
+         1. 跳过这些模块:
+            1. **非FABRIC-CARD**
+            2. **Supervisor**: 若Chassis所在的slot是**Supervisor** - slot，且是正在遍历中的模块的slot
+            3. **LINE-CARD**: 若遍历中的 **LINE-CARD**模块的slot不是Supervisor
+         2. 获取最新的模块midplane信息和状态: name，midplane_ip，midplane_reachable
+         3. 获取数据库中上一次记录的模块midplane信息和状态: midplane_reachable
+         4. 对比上一次与最新的模块midplane信息和状态：
+            1. 若从reachable变成非reachable：
+               - 若为预期的，即预期reboot导致(`CHASSIS_STATE_DB.CHASSIS_MODULE_REBOOT_INFO_TABLE.<module_name>.reboot=expected`)，则更新reboot信息数据库中模块midplane重启时间(`CHASSIS_STATE_DB.CHASSIS_MODULE_REBOOT_INFO_TABLE.<module_name>.timestamp=str(time.time())`)，并输出日志
+               - 若为非预期的，输出日志
+            2. 若从非reachable变成reachable，则输出日志，并删除reboot信息数据库中的对应模块`CHASSIS_STATE_DB.CHASSIS_MODULE_REBOOT_INFO_TABLE.<module_name>`
+            3. 若一致都是非reachable，检查reboot是否超时(`linecard_reboot_timeout`)，若超时则删除reboot数据库中对应模块，并输出日志
+         5. 更新数据库中模块midplane信息和状态: `STATE_DB.CHASSIS_MIDPLANE_TABLE.<module_name>={"ip_address":"0.0.0.0","access": "False"}`
+   3. 检查所有Offline模块Offline是否超时(30min)，超时则清除数据库（仅LINE-CARD）并标记清除: `module_updater.module_down_chassis_db_cleanup()`
+      - CHASSIS_APP_DB:
+        - SYSTEM_NEIGH*
+        - SYSTEM_INTERFACE*
+        - SYSTEM_LAG_MEMBER_TABLE*
+        - SYSTEM_LAG_TABLE*
+
+
+
+
+
+> SYSLOG_IDENTIFIER = "chassisd"
 
 
 ## sonic-ledd
