@@ -819,6 +819,94 @@ Chassis 模块继承自 `src/sonic-platform-common/sonic_platform_base/module_ba
 
 ## sonic-ledd
 
+### 核心总体流程
+
+#### 初始化守护进程基类
+
+```python
+daemon_base.DaemonBase.__init__(self, SYSLOG_IDENTIFIER)
+```
+
+#### 多 ASIC 平台配置
+
+- 若为多 ASIC 平台配置，让swsscommon先从`database_global.json`加载详细命名空间配置
+
+  ```python
+  if sonic_py_common.multi_asic.is_multi_asic():
+      swsscommon.SonicDBConfig.initializeGlobalConfig()
+  ```
+
+- src/sonic-swss-common/tests/redis_multi_db_ut_config/database_global.json
+
+#### 加载平台特定 LED 控制模块
+
+- 尝试加载平台特定的 `led_control` 模块中的 `class LedControl()` 类，位于**`/usr/share/sonic/platform/plugins/led_control.py`**
+- 如果加载失败，记录错误并退出（错误码：LEDUTIL_LOAD_ERROR=1）
+
+```python
+self.led_control = self.load_platform_util(LED_MODULE_NAME, LED_CLASS_NAME)
+```
+
+#### 初始化端口状态观察器
+
+```python
+self.portObserver = PortStateObserver()
+```
+
+#### 订阅前面板端口命名空间
+
+- 获取所有前端命名空间: `namespaces = sonic_py_common.multi_asic.get_front_end_namespaces()`
+  - 详细命名空间原理
+    - 相关配置：`src/sonic-swss-common/tests/redis_multi_db_ut_config/database_global.json`
+    - 实际原理：
+      - 物理隔离：每个命名空间有独立的Redis实例（通过不同的unix socket路径）
+      - 逻辑隔离：相同的数据库名称（如APPL_DB）在不同命名空间中指向不同的物理Redis实例
+      - 灵活配置：支持namespace和container_name的组合，实现更细粒度的隔离
+      - 代码流程：
+        1. 用户调用 db_connect("APPL_DB", "asic0")
+        2. 创建 DBConnector("APPL_DB", 0, True, "asic0")
+        3. 创建 SonicDBKey(netns="asic0")
+        4. 从 m_db_info[{netns="asic0"}] 中查找 "APPL_DB" 的配置
+        5. 获取 dbId=1, instName="redis"
+        6. 从 m_inst_info[{netns="asic0"}] 中查找 "redis" 实例
+        7. 获取 unix_socket_path="/var/run/redis0/redis.sock"
+        8. 连接到该socket的Redis实例
+- 订阅这些命名空间的 `STATE_DB.PORT` 表: `self.portObserver.subscribePortTable(namespaces)`
+- 即向RedisDB提交多个订阅: `STATE_DB.PORT_TABLE.<namespace>`
+
+#### 发现前面板端口
+
+```python
+fp_plist, fp_ups, lmap = self.findFrontPanelPorts(namespaces)
+self.fp_ports = FrontPanelPorts(fp_plist, fp_ups, lmap, self.led_control)
+```
+
+- 调用 `findFrontPanelPorts()` 发现前面板端口及其状态 (最多256个Port)
+  - 数据库
+    - `CONFIG_DB.PORT.`
+    - `STATE_DB.PORT_TABLE.`
+  - 判断是否为前面板端口：`sonic_py_common.multi_asic.is_front_panel_port(port_name, port_role)`
+- 创建 `FrontPanelPorts` 对象管理这些端口
+  - fp_port_list (前面板端口索引及其端口归属列表：`{port-index, list of logical ports' name}`)
+  - fp_port_up_subports (端口的子端口状态：`{port-index, total number of subports oper UP (netdev_oper_status is up)}`)
+  - logical_port_mapping (逻辑端口映射：`{port-name, Port Object}`)
+
+#### 初始化端口 LED 颜色
+
+根据当前端口状态初始化所有端口 LED：
+
+- **若该端口的所有子端口(的netdev_oper_status)都是up，则端口up，否则down**
+  - **控制端口状态更新`led_control.port_link_state_change(port_name, ‘up')`**
+
+```python
+self.fp_ports.initPortLeds()
+```
+
+
+
+> SYSLOG_IDENTIFIER = "ledd"
+
+
 ## sonic-pcied
 
 ## sonic-psud
