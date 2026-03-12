@@ -192,7 +192,7 @@ postStartAction
 | **/usr/local/bin/chassis_db_init**                                |                                     |                          | not skip_chassis_db_init                                            |
 | **/usr/bin/lm-sensors.sh**``(sensors -s && service sensord start) | 应用传感器配置并启动sensord.service | 基于 `sensors.conf`    | not skip_sensors &&`HAVE_SENSORS_CONF == 1`                       |
 | **/usr/sbin/fancontrol**                                          | 风扇控制                            | 基于 `fancontrol` 配置 | not skip_fancontrol &&`HAVE_FANCONTROL_CONF == 1`                 |
-| **/usr/local/bin/ledd**                                           | LED 控制                            | 支持 Python 2/3          | not skip_ledd                                                       |
+| **/usr/local/bin/ledd**                                           | 前面板端口状态 LED 控制 (Up/Down)   | 支持 Python 2/3          | not skip_ledd                                                       |
 | **/usr/local/bin/xcvrd**                                          | 光模块监控                          | 支持多种选项             | not skip_xcvrd                                                      |
 | **/usr/local/bin/ycabled**                                        | 双 ToR 配置                         | 仅 DualToR 设备          | 仅 DualToR 设备                                                     |
 | **/usr/local/bin/psud**                                           | 电源监控                            | 支持 Python 2/3          | not skip_psud                                                       |
@@ -819,88 +819,100 @@ Chassis 模块继承自 `src/sonic-platform-common/sonic_platform_base/module_ba
 
 ## sonic-ledd
 
+前面板端口状态 LED 控制 (Up/Down)，非速率灯。
+
+
 ### 核心总体流程
 
-#### 初始化守护进程基类
+1. 实例并初始化DaemonLedd: `ledd = DaemonLedd(daemon_base.DaemonBase)`
 
-```python
-daemon_base.DaemonBase.__init__(self, SYSLOG_IDENTIFIER)
-```
+   1. 初始化守护进程基类: `daemon_base.DaemonBase.__init__(self, SYSLOG_IDENTIFIER)`
 
-#### 多 ASIC 平台配置
+   2. 多 ASIC 平台配置
 
-- 若为多 ASIC 平台配置，让swsscommon先从`database_global.json`加载详细命名空间配置
+      - 若为多 ASIC 平台配置，让swsscommon先从`database_global.json`加载详细命名空间配置: `if sonic_py_common.multi_asic.is_multi_asic(): swsscommon.SonicDBConfig.initializeGlobalConfig()`
+      - src/sonic-swss-common/tests/redis_multi_db_ut_config/database_global.json
 
-  ```python
-  if sonic_py_common.multi_asic.is_multi_asic():
-      swsscommon.SonicDBConfig.initializeGlobalConfig()
-  ```
+   3. 加载平台特定 LED 控制模块
 
-- src/sonic-swss-common/tests/redis_multi_db_ut_config/database_global.json
+      - 尝试加载平台特定的 `led_control` 模块中的 `class LedControl(sonic_led.led_control_base.LedControlBase)` 类，位于**`/usr/share/sonic/platform/plugins/led_control.py`**，继承并实现**`src/sonic-platform-common/sonic_led/led_control_base.py`**
+      - 如果加载失败，记录错误并退出（错误码：LEDUTIL_LOAD_ERROR=1）
 
-#### 加载平台特定 LED 控制模块
+      ```python
+      self.led_control = self.load_platform_util(LED_MODULE_NAME, LED_CLASS_NAME)
+      ```
 
-- 尝试加载平台特定的 `led_control` 模块中的 `class LedControl()` 类，位于**`/usr/share/sonic/platform/plugins/led_control.py`**
-- 如果加载失败，记录错误并退出（错误码：LEDUTIL_LOAD_ERROR=1）
+   4. 初始化端口状态观察器: `self.portObserver = PortStateObserver()`
 
-```python
-self.led_control = self.load_platform_util(LED_MODULE_NAME, LED_CLASS_NAME)
-```
+   5. 订阅前面板端口命名空间`STATE_DB.PORT`
 
-#### 初始化端口状态观察器
+      - 获取所有前端命名空间: `namespaces = sonic_py_common.multi_asic.get_front_end_namespaces()`
+      - 详细命名空间原理
+        - 相关配置：`src/sonic-swss-common/tests/redis_multi_db_ut_config/database_global.json`
+        - 实际原理：
+          - 物理隔离：每个命名空间有独立的Redis实例（通过不同的unix socket路径）
+          - 逻辑隔离：相同的数据库名称（如APPL_DB）在不同命名空间中指向不同的物理Redis实例
+          - 灵活配置：支持namespace和container_name的组合，实现更细粒度的隔离
+          - 代码流程：
+            1. 用户调用 db_connect("APPL_DB", "asic0")
+            2. 创建 DBConnector("APPL_DB", 0, True, "asic0")
+            3. 创建 SonicDBKey(netns="asic0")
+            4. 从 m_db_info[{netns="asic0"}] 中查找 "APPL_DB" 的配置
+            5. 获取 dbId=1, instName="redis"
+            6. 从 m_inst_info[{netns="asic0"}] 中查找 "redis" 实例
+            7. 获取 unix_socket_path="/var/run/redis0/redis.sock"
+            8. 连接到该socket的Redis实例
 
-```python
-self.portObserver = PortStateObserver()
-```
+      - 订阅这些命名空间的 `STATE_DB.PORT_TABLE`表: `self.portObserver.subscribePortTable(namespaces)`
+        - 即向RedisDB提交多个订阅: `STATE_DB.PORT_TABLE.`
 
-#### 订阅前面板端口命名空间
+   6. 发现前面板端口
 
-- 获取所有前端命名空间: `namespaces = sonic_py_common.multi_asic.get_front_end_namespaces()`
-  - 详细命名空间原理
-    - 相关配置：`src/sonic-swss-common/tests/redis_multi_db_ut_config/database_global.json`
-    - 实际原理：
-      - 物理隔离：每个命名空间有独立的Redis实例（通过不同的unix socket路径）
-      - 逻辑隔离：相同的数据库名称（如APPL_DB）在不同命名空间中指向不同的物理Redis实例
-      - 灵活配置：支持namespace和container_name的组合，实现更细粒度的隔离
-      - 代码流程：
-        1. 用户调用 db_connect("APPL_DB", "asic0")
-        2. 创建 DBConnector("APPL_DB", 0, True, "asic0")
-        3. 创建 SonicDBKey(netns="asic0")
-        4. 从 m_db_info[{netns="asic0"}] 中查找 "APPL_DB" 的配置
-        5. 获取 dbId=1, instName="redis"
-        6. 从 m_inst_info[{netns="asic0"}] 中查找 "redis" 实例
-        7. 获取 unix_socket_path="/var/run/redis0/redis.sock"
-        8. 连接到该socket的Redis实例
-- 订阅这些命名空间的 `STATE_DB.PORT` 表: `self.portObserver.subscribePortTable(namespaces)`
-- 即向RedisDB提交多个订阅: `STATE_DB.PORT_TABLE.<namespace>`
+      ```python
+      fp_plist, fp_ups, lmap = self.findFrontPanelPorts(namespaces)
+      self.fp_ports = FrontPanelPorts(fp_plist, fp_ups, lmap, self.led_control)
+      ```
 
-#### 发现前面板端口
+       - 调用 `findFrontPanelPorts()` 发现前面板端口及其状态 (最多256个Port)
+         - 数据库
+           - `CONFIG_DB.PORT.`
+           - `STATE_DB.PORT_TABLE.`
+         - 判断是否为前面板端口：`sonic_py_common.multi_asic.is_front_panel_port(port_name, port_role)`
+       - 创建 `FrontPanelPorts` 对象管理这些端口
+         - fp_port_list (前面板端口索引及其端口归属列表：`{port-index, list of logical ports' name}`)
+         - fp_port_up_subports (端口的子端口状态是up的数量：`{port-index, total number of subports oper UP (netdev_oper_status is up)}`)
+         - logical_port_mapping (逻辑端口映射：`{port-name, Port Object}`)
 
-```python
-fp_plist, fp_ups, lmap = self.findFrontPanelPorts(namespaces)
-self.fp_ports = FrontPanelPorts(fp_plist, fp_ups, lmap, self.led_control)
-```
+   7. 初始化端口 LED 颜色
 
-- 调用 `findFrontPanelPorts()` 发现前面板端口及其状态 (最多256个Port)
-  - 数据库
-    - `CONFIG_DB.PORT.`
-    - `STATE_DB.PORT_TABLE.`
-  - 判断是否为前面板端口：`sonic_py_common.multi_asic.is_front_panel_port(port_name, port_role)`
-- 创建 `FrontPanelPorts` 对象管理这些端口
-  - fp_port_list (前面板端口索引及其端口归属列表：`{port-index, list of logical ports' name}`)
-  - fp_port_up_subports (端口的子端口状态：`{port-index, total number of subports oper UP (netdev_oper_status is up)}`)
-  - logical_port_mapping (逻辑端口映射：`{port-name, Port Object}`)
+      根据当前端口状态初始化所有端口 LED：`self.fp_ports.initPortLeds()`
 
-#### 初始化端口 LED 颜色
+      - **若该端口的所有子端口(的netdev_oper_status)都是up，则端口up，否则down**
+        - **控制端口状态更新`led_control.port_link_state_change(port_name, ‘up')`**
 
-根据当前端口状态初始化所有端口 LED：
 
-- **若该端口的所有子端口(的netdev_oper_status)都是up，则端口up，否则down**
-  - **控制端口状态更新`led_control.port_link_state_change(port_name, ‘up')`**
+2. 无限循环监听端口更新状态变化，每次循环: `while True: if 0 != ledd.run(): sys.exit(LEDD_SELECT_ERROR)`
 
-```python
-self.fp_ports.initPortLeds()
-```
+   1. 获取选择事件: `state, event = self.portObserver.getSelectEvent()`
+
+   2. 处理事件超时：如果状态为 `swsscommon.Select.TIMEOUT`，返回 0，跳过剩下步骤返回0等下一次再查看事件
+
+   3. 处理错误：如果状态不是 `swsscommon.Select.OBJECT`，记录警告并返回 -1，这会导致守护进程重启
+
+   4. 处理端口事件：
+      - 获取端口表事件：`portEvent = self.portObserver.getPortTableEvent(event)`
+        - 忽略这些key: `STATE_DB.PORT_TABLE.PortInitDone`, `STATE_DB.PORT_TABLE.PortInitDone`
+
+      - 如果事件有效：
+        - 记录日志（端口名称和状态）
+        - 调用 `processPortStateChange()` 处理状态变化
+          - 若端口状态没有更新则跳过进入下一次循环
+          - 若端口状态更新
+            - down->up，索引对应的子端口up状态数量加一: `fp_port_up_subports[port._index] = min(1 + self.fp_port_up_subports[port._index], self.getTotalSubports(port._index))`
+            - up->down，索引对应的子端口up状态数量减一: `fp_port_up_subports[port._index] = max(0, self.fp_port_up_subports[port._index] - 1)`
+            - 若所有子端口都up/down，更新端口led灯：`led_control.port_link_state_change(port_name, port_state)`
+
+   5. 返回 0 表示成功
 
 
 

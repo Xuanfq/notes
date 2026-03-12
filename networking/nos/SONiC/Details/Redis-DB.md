@@ -98,6 +98,8 @@ Read: docker/pmon/ledd
 
 - <port_name>
   - netdev_oper_status: `up` or `down` (端口操作状态)
+- PortConfigDone
+- PortInitDone
 
 
 
