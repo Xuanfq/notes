@@ -824,7 +824,7 @@ Chassis 模块继承自 `src/sonic-platform-common/sonic_platform_base/module_ba
 
 ### 核心总体流程
 
-1. 实例并初始化DaemonLedd: `ledd = DaemonLedd(daemon_base.DaemonBase)`
+1. 实例并初始化`DaemonLedd(daemon_base.DaemonBase)`: `ledd = DaemonLedd()`
 
    1. 初始化守护进程基类: `daemon_base.DaemonBase.__init__(self, SYSLOG_IDENTIFIER)`
 
@@ -891,7 +891,7 @@ Chassis 模块继承自 `src/sonic-platform-common/sonic_platform_base/module_ba
         - **控制端口状态更新`led_control.port_link_state_change(port_name, ‘up')`**
 
 
-2. 无限循环监听端口更新状态变化，每次循环: `while True: if 0 != ledd.run(): sys.exit(LEDD_SELECT_ERROR)`
+2. 无限循环监听端口Up/Down状态变化并更新led，每次循环: `while True: if 0 != ledd.run(): sys.exit(LEDD_SELECT_ERROR)`
 
    1. 获取选择事件: `state, event = self.portObserver.getSelectEvent()`
 
@@ -920,6 +920,22 @@ Chassis 模块继承自 `src/sonic-platform-common/sonic_platform_base/module_ba
 
 
 ## sonic-pcied
+
+### 核心总体流程
+
+1. 实例化初始化`DaemonPcied(daemon_base.DaemonBase)`: `pcied = DaemonPcied(SYSLOG_IDENTIFIER)`
+   
+   1. 初始化守护进程基类: `super(DaemonPcied, self).__init__(log_identifier)`
+
+2. 无限循环，每`PCIED_MAIN_THREAD_SLEEP_SECS=60`s执行一次，每次循环: `while pcied.run(): pass`
+   
+   1. 若60s被信号中断, 则退出该Daemon，触发重启
+   
+   2. 检查PCIe设备: `check_pcie_devices()`
+
+
+> SYSLOG_IDENTIFIER = "pcied"
+
 
 ## sonic-psud
 
