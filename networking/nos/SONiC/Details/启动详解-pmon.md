@@ -542,6 +542,9 @@ postStartAction
 
 ## sonic-chassisd/classis_db_init
 
+**核心功能**：初始化`STATE_DB`中**Chassis硬件信息**
+
+
 - 初始化 `STATE_DB`中Chassis硬件信息
 
 ```python
@@ -819,7 +822,7 @@ Chassis 模块继承自 `src/sonic-platform-common/sonic_platform_base/module_ba
 
 ## sonic-ledd
 
-前面板端口状态 LED 控制 (Up/Down)，非速率灯。
+**核心功能**：前面板端口状态 LED 控制 (Up/Down)，非速率灯。
 
 
 ### 核心总体流程
@@ -921,17 +924,85 @@ Chassis 模块继承自 `src/sonic-platform-common/sonic_platform_base/module_ba
 
 ## sonic-pcied
 
+**核心功能**：PCIe设备监控，是否丢失PASS/FAIL、高级错误报告统计等
+
+
 ### 核心总体流程
 
 1. 实例化初始化`DaemonPcied(daemon_base.DaemonBase)`: `pcied = DaemonPcied(SYSLOG_IDENTIFIER)`
    
    1. 初始化守护进程基类: `super(DaemonPcied, self).__init__(log_identifier)`
+   2. 加载平台pcie工具类`PcieUtil`: `platform_pcieutil = load_platform_pcieutil()`
+      1. 若platform有自己的实现, 则使用platform实现类: `sonic_platform.pcie.Pcie(path=sonic_py_common.device_info.get_paths_to_platform_and_hwsku_dirs())`
+         1. `sonic_platform.pcie.Pcie()`继承自:
+            1. 默认已实现模块: `sonic_platform_base.sonic_pcie.pcie_common.PcieUtil(.pcie_base.PcieBase)`
+            2. 底层为实现模块: `sonic_platform_base.sonic_pcie.pcie_base.PcieBase()`
+         2. `sonic_py_common.device_info.get_paths_to_platform_and_hwsku_dirs()`实际为:
+            1. `/usr/share/sonic/platform/$hwsku/` (优先)
+            2. `/usr/share/sonic/device/$platform_name/$hwsku/`
+      2. 否则使用默认的模块: `sonic_platform_base.sonic_pcie.pcie_common.PcieUtil(path=sonic_py_common.device_info.get_paths_to_platform_and_hwsku_dirs())`
+      3. 若均初始化报错则退出
+   3. 连接`STATE_DB`数据库, 失败则退出:
+      - `STATE_DB.PCIE_DEVICE`: PCIe设备表
+      - `STATE_DB.PCIE_DEVICES`: PCIe状态表
+      - `STATE_DB.PCIE_DETACH_INFO`: PCIe断联信息表
 
 2. 无限循环，每`PCIED_MAIN_THREAD_SLEEP_SECS=60`s执行一次，每次循环: `while pcied.run(): pass`
    
    1. 若60s被信号中断, 则退出该Daemon，触发重启
    
    2. 检查PCIe设备: `check_pcie_devices()`
+      1. 对于所有PCIe设备, 使用`pcieuitl.get_pcie_check()`根据配置检查PCIe设备是否存在并返回结果: `self.resultInfo = platform_pcieutil.get_pcie_check()`
+         1. 配置为`/usr/share/sonic/platform/$hwsku/pcie.yaml`或`pcie_xx.yaml`, 内容为对象列表, 每个对象配置为:
+            - bus: '00'
+            - dev: '09'
+            - fn: '0'
+            - id: '19a4'
+            - name: 'Intel Corporation Atom Processor C3000 Series PCI Express Root Port #0 (rev 11)'
+            - result: 'Passed' or 'Failed' (无需配置, 检查结果生成存储到类变量里)
+         2. 实际原理为, 判断路径是否存在: `'/sys/bus/pci/devices/%04x:%02x:%02x.%d' % (domain=0, bus, device, func)`
+      2. 对于所有PCIe设备, 循环检查结果:
+         1. 若不存在则 (failed):
+            1. 若为smartswitch, 检查dpu是否处于断联模式, 是则输出日志并返回
+            2. 否则, 输出找不到的日志, 并且错误计数加一
+         2. 若存在则更新PCIe设备的**id**及**AER高级错误报告统计**到`STATE_DB.PCIE_DEVICE`**DB数据库** (passed): 
+            1. 检查设备id是否存在: `id=$(cat '/sys/bus/pci/devices/0000:$bus:$device.$fn/device')`
+               1. 不存在则跳过, 无需更新
+               2. 存在则继续执行, 并更新设备表中的id到`STATE_DB.PCIE_DEVICE`数据库:
+                  - device_name (`device_name = "%02x:%02x.%d" % (Bus, Dev, Fn)`)
+                    - id: id
+            2. 使用`pcieuitl.get_pcie_aer_stats(self, domain=0, bus=0, dev=0, func=0)`获取PCIe的AER: `self.aer_stats = platform_pcieutil.get_pcie_aer_stats(bus=Bus, dev=Dev, func=Fn)`
+               - 原理: 按行读取解析
+                 - 可纠正错误计数器-correctable: `/sys/bus/pci/devices/0000:$bus:$device.$fn/aer_dev_correctable`
+                   - 示例
+                     ```sh
+                     # cat /sys/bus/pci/devices/0000:01:00.0/aer_dev_correctable
+                     RxErr                 0
+                     BadTLP                0
+                     BadDLLP               0
+                     Rollover              0
+                     Timeout               0
+                     NonFatalErr           0
+                     CorrIntErr            0
+                     HeaderOF              0
+                     ```
+                 - 致命错误计数器-fatal: `/sys/bus/pci/devices/0000:$bus:$device.$fn/aer_dev_fatal`
+                 - 非致命错误计数器-non_fatal: `/sys/bus/pci/devices/0000:$bus:$device.$fn/aer_dev_nonfatal`
+               - 返回结果结构为:
+                 - correctable:
+                   - field: value
+                 - fatal:
+                   - field: value
+                 - non_fatal:
+                   - field: value
+            3. 更新AER到`STATE_DB.PCIE_DEVICE`数据库表, 不存在则跳过, 无需更新:
+               - device_name (`device_name = "%02x:%02x.%d" % (Bus, Dev, Fn)`) (将会移除上方的id)
+                 - `correctable|field`: value
+                 - `fatal|field`: value
+                 - `non_fatal|field`: value
+      3. 更新PCIe设备状态到`STATE_DB.PCIE_DEVICES`数据库表, 只要有一个PCIe设备不存在则状态标记为`FAILED`否则`PASSED`:
+         - status
+           - status: `PASSED` or `FAILED`
 
 
 > SYSLOG_IDENTIFIER = "pcied"

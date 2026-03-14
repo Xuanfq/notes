@@ -11,6 +11,19 @@ Read: docker/pmon/classisd
   - admin_status: `up` or `down`
 
 
+## DEVICE_METADATA
+
+```
+Read: docker/pmon/pcied (sonic_py_common/device_info.py)
+```
+
+- localhost
+  - hostname: 
+  - platform: 
+  - hwsku: 
+  - yang_config_validation: `enable`
+
+
 ## PORT
 
 ```
@@ -74,6 +87,50 @@ Write: docker/pmon/classisd
 - <module_name>
   - ip_address: `get_midplane_ip()` or `0.0.0.0`
   - access: `str(is_midplane_reachable())` or `str(False)`
+
+
+## PCIE_DEVICE
+
+PCIe设备表, 记录所有设备 及其 id / 高级错误报告统计AER(Advanced Error Reporting)信息
+
+```
+Write: docker/pmon/pcied
+```
+
+- <device_name>: (`device_name = "%02x:%02x.%d" % (Bus, Dev, Fn)`)
+  - id: `$(cat '/sys/bus/pci/devices/0000:$bus:$device.$fn/device')` (若下方存在则该键值不存在)
+
+  - correctable|field1: `0`
+  - fatal|field1: `0`
+  - non_fatal|field1: `0`
+
+  - correctable|RxErr: `0`
+
+
+## PCIE_DEVICES
+
+PCIe设备状态表, 记录是否有PCIe设备丢失
+
+```
+Write: docker/pmon/pcied
+```
+
+- status
+  - status: `PASSED` or `FAILED`(丢失)
+
+
+
+## PCIE_DETACH_INFO
+
+SmartSwitch的DPU设备断联信息
+
+```
+Read: docker/pmon/pcied
+```
+
+- <dpu*> (SmartSwitch)
+  - bus_info: `0000:%02x:%02x.%d' % (bus, device, func)`
+  - dpu_state: `detaching` (DPU状态, 断联)
 
 
 ## PHYSICAL_ENTITY_INFO
