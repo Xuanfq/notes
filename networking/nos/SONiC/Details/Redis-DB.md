@@ -1,7 +1,12 @@
 # CONFIG_DB
 
+配置数据库
+
 
 ## CHASSIS_MODULE
+
+Chassis的模块管理配置表，用于设置模块管理模式等
+
 
 ```
 Read: docker/pmon/classisd
@@ -12,6 +17,8 @@ Read: docker/pmon/classisd
 
 
 ## DEVICE_METADATA
+
+设备的元数据表配置表
 
 ```
 Read: docker/pmon/pcied (sonic_py_common/device_info.py)
@@ -26,14 +33,32 @@ Read: docker/pmon/pcied (sonic_py_common/device_info.py)
 
 ## PORT
 
+端口配置表，记录端口与子端口的索引、角色和拓扑等
+
 ```
 Read: docker/pmon/ledd
 ```
 
 - <port_name>
-  - index
-  - subport
-  - role
+  - index: `"0"` (0-255)
+  - subport: `"0"` (0-255)
+  - role: `Int`/`Inb`/`Rec`/`Dpc` etc.
+    ```
+    - 判断是否为前面板端口：`sonic_py_common.multi_asic.is_front_panel_port(port_name, port_role)`
+      - 不是：
+        - Ethernet-BP*      (port_name)(Ethernet-Backplane)
+        - Ethernet-IB*      (port_name)(Ethernet-Inband)
+        - Ethernet-Rec*     (port_name)(Ethernet-Recirc)
+        - `*.*`             (port_name)(have '.')
+        - role 属于内部角色的
+          - Int: INTERNAL_PORT
+          - Inb: INBAND_PORT
+          - Rec: RECIRC_PORT
+          - Dpc: DPU_CONNECT_PORT
+      - 是：
+        - Ethernet*         (port_name)(don't '.')
+        - ...
+    ```
 
 
 ---
@@ -42,8 +67,12 @@ Read: docker/pmon/ledd
 
 # STATE_DB
 
+状态数据库
+
 
 ## CHASSIS_INFO
+
+Chassis信息状态表，记录Chassis的序列号、型号、版本等数据
 
 ```
 Write: docker/pmon/classis_db_init
@@ -55,6 +84,8 @@ Write: docker/pmon/classis_db_init
 
 
 ## CHASSIS_MODULE_TABLE
+
+Chassis的模块状态表，实时更新记录模块的详细状态
 
 ```
 Write: docker/pmon/classisd
@@ -73,6 +104,8 @@ Write: docker/pmon/classisd
 
 ## CHASSIS_TABLE
 
+Chassis状态表，记录Chassis的模块数量等
+
 ```
 Write: docker/pmon/classisd
 ```
@@ -80,10 +113,15 @@ Write: docker/pmon/classisd
 - "CHASSIS 1"
   - module_num: `chassis.get_num_modules()`
 
+
 ## CHASSIS_MIDPLANE_TABLE
+
+Chassis MidPlane的状态表，记录MidPlane的ip和ip reachable等状态
+
 ```
 Write: docker/pmon/classisd
 ```
+
 - <module_name>
   - ip_address: `get_midplane_ip()` or `0.0.0.0`
   - access: `str(is_midplane_reachable())` or `str(False)`
@@ -135,6 +173,8 @@ Read: docker/pmon/pcied
 
 ## PHYSICAL_ENTITY_INFO
 
+Chassis的模块物理实体状态表，实时更新记录模块的物理实体详细状态
+
 ```
 Write: docker/pmon/classisd
 ```
@@ -148,6 +188,8 @@ Write: docker/pmon/classisd
 
 
 ## PORT_TABLE
+
+FrontPort 前面板端口操作状态变化表，记录端口操作状态变化等。
 
 ```
 Read: docker/pmon/ledd
@@ -165,6 +207,8 @@ Read: docker/pmon/ledd
 
 
 # CHASSIS_STATE_DB
+
+机箱状态数据库
 
 
 ## CHASSIS_FABRIC_ASIC_TABLE
@@ -197,7 +241,7 @@ Write: docker/pmon/classisd
 
 ## CHASSIS_MODULE_TABLE
 
-hostname
+Chassis模块表，记录Line-Card模块的slot、hostname、asics数量等
 
 ```
 Write: docker/pmon/classisd
@@ -210,6 +254,8 @@ Write: docker/pmon/classisd
 
 
 ## CHASSIS_MODULE_REBOOT_INFO_TABLE
+
+Chassis的模块重启信息状态表，记录Chassis模块的重启操作重启时间等
 
 ```
 Write: docker/pmon/classisd

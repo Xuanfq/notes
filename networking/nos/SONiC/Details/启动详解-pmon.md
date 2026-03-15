@@ -881,6 +881,19 @@ Chassis 模块继承自 `src/sonic-platform-common/sonic_platform_base/module_ba
            - `CONFIG_DB.PORT.`
            - `STATE_DB.PORT_TABLE.`
          - 判断是否为前面板端口：`sonic_py_common.multi_asic.is_front_panel_port(port_name, port_role)`
+           - 不是：
+             - Ethernet-BP*      (port_name)(Ethernet-Backplane)
+             - Ethernet-IB*      (port_name)(Ethernet-Inband)
+             - Ethernet-Rec*     (port_name)(Ethernet-Recirc)
+             - `*.*`             (port_name)(have '.')
+             - role 属于内部角色的
+               - Int: INTERNAL_PORT
+               - Inb: INBAND_PORT
+               - Rec: RECIRC_PORT
+               - Dpc: DPU_CONNECT_PORT
+           - 是：
+             - Ethernet*         (port_name)(don't '.')
+             - ...
        - 创建 `FrontPanelPorts` 对象管理这些端口
          - fp_port_list (前面板端口索引及其端口归属列表：`{port-index, list of logical ports' name}`)
          - fp_port_up_subports (端口的子端口状态是up的数量：`{port-index, total number of subports oper UP (netdev_oper_status is up)}`)
