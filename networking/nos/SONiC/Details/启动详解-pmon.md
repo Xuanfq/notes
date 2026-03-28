@@ -549,7 +549,7 @@ postStartAction
 
 ```python
 # DB.Table
-STATE_DB.CHASSIS_INFO=dict([
+STATE_DB.CHASSIS_INFO.<"chassis 1">=dict([
 	(serial , sonic_platform.platform.Platform().get_chassis().get_serial() or N/A),
 	(model , sonic_platform.platform.Platform().get_chassis().get_model() or N/A),
 	(revision , sonic_platform.platform.Platform().get_chassis().get_revision() or N/A),
@@ -558,9 +558,10 @@ STATE_DB.CHASSIS_INFO=dict([
 
 - STATE_DB
   - CHASSIS_INFO
-    - serial: `chassis().get_serial()` or `N/A`
-    - model: `chassis().get_model()` or `N/A`
-    - revision: `chassis().get_revision()` or `N/A`
+    - <"chassis 1">
+      - serial: `chassis().get_serial()` or `N/A`
+      - model: `chassis().get_model()` or `N/A`
+      - revision: `chassis().get_revision()` or `N/A`
 
 > SYSLOG_IDENTIFIER = "chassis_db_init"
 
@@ -824,6 +825,9 @@ Chassis 模块继承自 `src/sonic-platform-common/sonic_platform_base/module_ba
 
 **核心功能**：前面板端口状态 LED 控制 (Up/Down)，非速率灯。
 
+**重要文件**：
+- /usr/share/sonic/platform/plugins/led_control.py (继承`src/sonic-platform-common/sonic_led/led_control_base.py`)
+
 
 ### 核心总体流程
 
@@ -939,6 +943,10 @@ Chassis 模块继承自 `src/sonic-platform-common/sonic_platform_base/module_ba
 
 **核心功能**：PCIe设备监控，是否丢失PASS/FAIL、高级错误报告统计等
 
+**重要文件**：
+- /usr/share/sonic/platform/$hwsku/pcie.yaml
+- /usr/share/sonic/platform/$hwsku/pcie_xxx.yaml
+
 
 ### 核心总体流程
 
@@ -1022,6 +1030,44 @@ Chassis 模块继承自 `src/sonic-platform-common/sonic_platform_base/module_ba
 
 
 ## sonic-psud
+
+**核心功能**：
+
+**重要文件**：
+- /usr/share/sonic/platform/plugins/psuutil.py (继承`src/sonic-platform-common/sonic_psu/psu_base.py`)
+
+
+### 核心总体流程
+
+1. 实例化初始化`DaemonPsud(daemon_base.DaemonBase)`: `psud = DaemonPsud(SYSLOG_IDENTIFIER)`
+   
+   1. 初始化守护进程基类: `super(DaemonPsud, self).__init__(log_identifier)`
+   2. 加载平台接口实现类或工具类: **优先调用`sonic_platform`实现方式, 而后是plugin工具类`psuutil.py`**
+      1. `sonic_platform`方式: 尝试加载`PddfChassis`实现类: `platform_chassis = sonic_platform.platform.Platform().get_chassis()`
+      2. `plugin`方式: 若不存在`PddfChassis`实例则尝试加载平台特定的`psuutil`插件实现类`PsuUtil(sonic_psu.psu_base.PsuBase)`: `/usr/share/sonic/platform/plugins/psuutil.py`
+      3. 若二则实现均加载失败, 将退出该脚本
+   3. 获取PSU数量并更新状态数据库:
+      - STATE_DB
+        - CHASSIS_INFO
+          - <"chassis 1">
+            - psu_num: `chassis().get_num_psus()` or `psuutil.get_num_psus()`
+
+2. 无限循环，每`PSU_INFO_UPDATE_PERIOD_SECS=3`s执行一次，每次循环: `while psud.run(): pass`
+   
+   1. 若是`sonic_platform`方式实现, 更新`STATE_DB`PSU预定义的父级位置信息: `self._update_psu_entity_info()`
+      ```
+      该逻辑原位于 init 函数中，意味着仅会执行一次，但存在其他进程删除键（PHYSICAL_ENTITY_INFO|*）的可能性，例如温控守护进程（thermalctld）重启时的退出函数，此位于循环迭代中执行，可以确保键被删除后能重新填充。
+      ```
+      - STATE_DB.PHYSICAL_ENTITY_INFO
+         - <psu_name>  (`chassis().get_psu(psu_index).get_name()`)
+           - position_in_parent: `Psu(PddfPsu).get_position_in_parent()` or `psu_index`
+           - parent_name: "chassis 1"
+   2. 
+
+
+
+> SYSLOG_IDENTIFIER = "psud"
+
 
 ## sonic-sensormond
 

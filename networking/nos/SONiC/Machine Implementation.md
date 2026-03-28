@@ -22,13 +22,14 @@
       - `$dev0`/
       - `$dev1`/
       - pmon_daemon_control.json  # 特定 sku 的 pmon daemon 配置, 优先级高于上层配置
-      - pcie.yaml             # pcied 默认模块配置, 调用方`src/sonic-platform-common/sonic_platform_base/sonic_pcie/pcie_common.py`
-      - pcie_xxx.yaml         # pcied 默认模块配置, 平台继承`src/sonic-platform-common/sonic_platform_base/sonic_pcie/pcie_common.py`, 并覆盖`self._conf_rev`
+      - pcie.yaml             # option, pcied 默认模块配置, 调用方`src/sonic-platform-common/sonic_platform_base/sonic_pcie/pcie_common.py`
+      - pcie_xxx.yaml         # option, pcied 默认模块配置, 平台继承`src/sonic-platform-common/sonic_platform_base/sonic_pcie/pcie_common.py`, 并覆盖`self._conf_rev`
     - pddf/
       - pd-plugin.json        # pddf 插件数据
       - pddf-device.json      # pddf 设备相关如驱动API的拓扑管理与配置
     - plugins/
-      - led_control.py        # ledd 插件, `class LedControl(LedControlBase)`实现类, 继承`src/sonic-platform-common/sonic_led/led_control_base.py`
+      - led_control.py        # option, ledd 插件, `class LedControl(LedControlBase)`实现类, 继承`src/sonic-platform-common/sonic_led/led_control_base.py`
+      - psuutil.py            # option, psud 插件, `PsuUtil(PsuBase)`实现类, 继承`src/sonic-platform-common/sonic_psu/psu_base.py` (可由`sonic_platform`替代实现)
     - installer.conf          # 机器安装配置, 安装时将覆盖其他如onie-image.conf等配置
     - asic.conf               # option, 配置asic数量及ID等, 如`NUM_ASIC=16 \n DEV_ID_ASIC_0=nokia-bdb:1:0 \n DEV_ID_ASIC_1=nokia-bdb:1:1 \n ...`
     - platform_env.conf       # option, 配置平台环境变量, 
