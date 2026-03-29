@@ -85,6 +85,13 @@ Write: docker/pmon/psud
   - revision: `chassis().get_revision()` or `N/A`
   - psu_num: `chassis().get_num_psus()` or `plugins/psuutil.py/PsuUtil(PsuBase).get_num_psus()`
 
+- <"chassis_power_budget 1">
+  - Supplied Power {PSU_NAME} (`psu.get_name()` or `PSU 1/2`): `psu.get_maximum_supplied_power()` or `0.0`
+  - Consumed Power {FAN_DRAWER_NAME} (`chassis.get_all_fan_drawers()[index].get_name()` or `FAN-DRAWER 0/1/..`): `fan_drawer.get_maximum_supplied_power()` or `0.0`
+  - Consumed Power {MODULE_NAME} (`chassis.get_all_modules()[index].get_name()` or `MODULE 0/1/..`): `fan_drawer.get_maximum_supplied_power()` or `0.0`
+  - Total Supplied Power: Supplied Power 之和
+  - Total Consumed Power: Consumed Power 之和
+
 
 ## CHASSIS_MODULE_TABLE
 
@@ -215,12 +222,44 @@ Read: docker/pmon/ledd
 Read: docker/pmon/psud
 ```
 
+- <psu_name>  (`chassis().get_psu(psu_index).get_name()`)
+  - model: `Psu(PddfPsu).get_model()` or 'N/A'
+  - serial: `Psu(PddfPsu).get_serial()` or 'N/A'
+  - revision: `Psu(PddfPsu).get_revision()` or 'N/A'
+  - temp: `Psu(PddfPsu).get_temperature()` or 'N/A'
+  - temp_threshold: `Psu(PddfPsu).get_temperature_high_threshold()` or 'N/A'
+  - voltage: `Psu(PddfPsu).get_voltage()` or 'N/A'
+  - voltage_min_threshold: `Psu(PddfPsu).get_voltage_low_threshold()` or 'N/A'
+  - voltage_max_threshold: `Psu(PddfPsu).get_voltage_high_threshold()` or 'N/A'
+  - current: `Psu(PddfPsu).get_current()` or 'N/A'
+  - power: `Psu(PddfPsu).get_power()` or 'N/A'
+  - power_warning_suppress_threshold: `Psu(PddfPsu).get_psu_power_warning_suppress_threshold()` or 'N/A'
+  - power_critical_threshold: `Psu(PddfPsu).get_psu_power_critical_threshold()` or 'N/A'
+  - power_overload: `Psu(PddfPsu).get_revision()` or 'N/A'
+  - is_replaceable: `Psu(PddfPsu).is_replaceable()` or `False`
+  - input_current: `Psu(PddfPsu).get_input_current()` or 'N/A'
+  - input_voltage: `Psu(PddfPsu).get_input_voltage()` or 'N/A'
+  - max_power: `Psu(PddfPsu).get_maximum_supplied_power()` or 'N/A'
+  - presence: `"true" if Psu(PddfPsu).get_presence() else "false"`
+  - status: `"true" if Psu(PddfPsu).get_powergood_status() else "false"`
+  - 
+  - led_status: `Psu(PddfPsu).get_status_led()` or 'N/A'
+
 
 ## FAN_INFO
 
 ```
 Read: docker/pmon/psud
 ```
+
+- <fan_name> (PSU: `f"Psu(PddfPsu).get_name() FAN {index}"`)
+  - presence: `Psu(PddfPsu).get_presence()` or 'N/A'
+  - status: `"True" if Psu(PddfPsu).get_presence() else "False"`
+  - direction: `Psu(PddfPsu).get_all_fans()[index].get_direction()` or 'N/A'
+  - speed: `Psu(PddfPsu).get_all_fans()[index].get_speed()` or 'N/A'
+  - timestamp: `datetime.now().strftime('%Y%m%d %H:%M:%S')`
+  - 
+  - led_status: `fan.get_status_led()` or 'N/A'
 
 
 ## PSU_INFO

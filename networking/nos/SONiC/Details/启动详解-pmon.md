@@ -1062,7 +1062,69 @@ Chassis 模块继承自 `src/sonic-platform-common/sonic_platform_base/module_ba
          - <psu_name>  (`chassis().get_psu(psu_index).get_name()`)
            - position_in_parent: `Psu(PddfPsu).get_position_in_parent()` or `psu_index`
            - parent_name: "chassis 1"
-   2. 
+   2. 若是`sonic_platform`方式实现, 更新PSU日志、LED、DB等数据: `self.update_psu_data()`
+      1. 设置超出阈值设定为否: `self.psu_threshold_exceeded_logged=False`
+      2. 遍历所有PSU:
+         1. 根据PSU是否在位获取相关状态信息, 不在位则为N/A
+         2. 若还没创建PSU的状态存放实例则创建(状态默认为在位): `self.psu_status_dict[index] = PsuStatus(self, psu, index)`
+         3. 若PSU在位状态变更了，记录日志: `presence_changed = psu_status.set_presence(presence)`
+         4. 若PSU在位状态变更或第一次运行，更新PSU的Fan数据: STATE_DB.FAN_INFO
+            - <fan_name> (PSU: `f"Psu(PddfPsu).get_name() FAN {index}"`)
+              - presence: `Psu(PddfPsu).get_presence()` or 'N/A'
+              - status: `"True" if Psu(PddfPsu).get_presence() else "False"`
+              - direction: `Psu(PddfPsu).get_all_fans()[index].get_direction()` or 'N/A'
+              - speed: `Psu(PddfPsu).get_all_fans()[index].get_speed()` or 'N/A'
+              - timestamp: `datetime.now().strftime('%Y%m%d %H:%M:%S')`
+         5. 若PSU在位且供电power_good状态变更了，记录日志: `power_good_changed = psu_status.set_power_good(power_good)`
+         6. 若PSU在位、供电power_good状态ok、sonic_platform实现了阈值设定`get_psu_power_critical_threshold`和`get_psu_power_critical_threshold`(或`pd-plugin.json`)，则:
+            1. system_power >= power_critical_threshold: power_exceeded_threshold=True 触发警告日志
+            2. system_power < power_warning_suppress_threshold && psu_status.power_exceeded_threshold: power_exceeded_threshold=False 清除警告
+            3. 若超出阈值的状态发生变更，且本次循环未触发告警psu_threshold_exceeded_logged，记录触发告警日志及变量
+         7. 若PSU在位，检查电压是否变化并超过阈值，触发日志
+         8. 若PSU在位，检查温度是否变化并超过阈值，触发日志
+         9. 根据上述状态变更，更新PSU led灯：
+            1. 状态变更包含：见下方
+            2. 灯状态：`psu.set_status_led(color)`
+               1. `psu.STATUS_LED_COLOR_GREEN`: self.presence and self.power_good and self.voltage_good and self.temperature_good
+               2. `psu.STATUS_LED_COLOR_RED`: other
+         10. 更新数据库: STATE_DB.PSU_INFO
+             - <psu_name>  (`chassis().get_psu(psu_index).get_name()`)
+               - model: `Psu(PddfPsu).get_model()` or 'N/A'
+               - serial: `Psu(PddfPsu).get_serial()` or 'N/A'
+               - revision: `Psu(PddfPsu).get_revision()` or 'N/A'
+               - temp: `Psu(PddfPsu).get_temperature()` or 'N/A'
+               - temp_threshold: `Psu(PddfPsu).get_temperature_high_threshold()` or 'N/A'
+               - voltage: `Psu(PddfPsu).get_voltage()` or 'N/A'
+               - voltage_min_threshold: `Psu(PddfPsu).get_voltage_low_threshold()` or 'N/A'
+               - voltage_max_threshold: `Psu(PddfPsu).get_voltage_high_threshold()` or 'N/A'
+               - current: `Psu(PddfPsu).get_current()` or 'N/A'
+               - power: `Psu(PddfPsu).get_power()` or 'N/A'
+               - power_warning_suppress_threshold: `Psu(PddfPsu).get_psu_power_warning_suppress_threshold()` or 'N/A'
+               - power_critical_threshold: `Psu(PddfPsu).get_psu_power_critical_threshold()` or 'N/A'
+               - power_overload: `Psu(PddfPsu).get_revision()` or 'N/A'
+               - is_replaceable: `Psu(PddfPsu).is_replaceable()` or `False`
+               - input_current: `Psu(PddfPsu).get_input_current()` or 'N/A'
+               - input_voltage: `Psu(PddfPsu).get_input_voltage()` or 'N/A'
+               - max_power: `Psu(PddfPsu).get_maximum_supplied_power()` or 'N/A'
+               - presence: `"true" if Psu(PddfPsu).get_presence() else "false"`
+               - status: `"true" if Psu(PddfPsu).get_powergood_status() else "false"`
+   3. 若是`sonic_platform`方式实现, 更新数据库中PSU及PSU_FAN的LED状态: `self._update_led_color()`
+      1. STATE_DB.PSU_INFO
+         - <psu_name>  (`chassis().get_psu(psu_index).get_name()`)
+           - led_status: `Psu(PddfPsu).get_status_led()` or 'N/A'
+      2. STATE_DB.FAN_INFO
+         - <fan_name> (PSU: `f"Psu(PddfPsu).get_name() FAN {index}"`)
+           - led_status: `fan.get_status_led()` or 'N/A'
+   4. 若是`sonic_platform`方式实现, 且为模块化机箱`chassis.is_modular_chassis()`，更新PSU Chassis信息
+      1. 若还没创建则创建: `if not self.psu_chassis_info: self.psu_chassis_info = PsuChassisInfo(SYSLOG_IDENTIFIER, platform_chassis)`
+      2. 运行power budget计算并更新数据库状态: 
+         - <"chassis_power_budget 1">
+           - Supplied Power {PSU_NAME} (`psu.get_name()` or `PSU 1/2`): `psu.get_maximum_supplied_power()` or `0.0`
+           - Consumed Power {FAN_DRAWER_NAME} (`chassis.get_all_fan_drawers()[index].get_name()` or `FAN-DRAWER 0/1/..`): `fan_drawer.get_maximum_supplied_power()` or `0.0`
+           - Consumed Power {MODULE_NAME} (`chassis.get_all_modules()[index].get_name()` or `MODULE 0/1/..`): `fan_drawer.get_maximum_supplied_power()` or `0.0`
+           - Total Supplied Power: Supplied Power 之和
+           - Total Consumed Power: Consumed Power 之和
+      3. 根据PSU供电功率和消耗功率比较是否有budget，输出日志，并更新PSU Master LED灯颜色，实际默认为设置类的成员`_psu_master_led_color`=`Psu.STATUS_LED_COLOR_GREEN if self.total_consumed_power < self.total_supplied_power else Psu.STATUS_LED_COLOR_RED`
 
 
 
