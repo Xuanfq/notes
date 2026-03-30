@@ -24,6 +24,7 @@
       - pmon_daemon_control.json  # 特定 sku 的 pmon daemon 配置, 优先级高于上层配置
       - pcie.yaml             # option, pcied 默认模块配置, 调用方`src/sonic-platform-common/sonic_platform_base/sonic_pcie/pcie_common.py`
       - pcie_xxx.yaml         # option, pcied 默认模块配置, 平台继承`src/sonic-platform-common/sonic_platform_base/sonic_pcie/pcie_common.py`, 并覆盖`self._conf_rev`
+      - sensors.yaml          # 
     - pddf/
       - pd-plugin.json        # pddf 插件数据
       - pddf-device.json      # pddf 设备相关如驱动API的拓扑管理与配置

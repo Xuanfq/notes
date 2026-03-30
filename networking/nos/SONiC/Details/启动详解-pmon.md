@@ -1031,7 +1031,7 @@ Chassis 模块继承自 `src/sonic-platform-common/sonic_platform_base/module_ba
 
 ## sonic-psud
 
-**核心功能**：
+**核心功能**：监控PSU在位与否、风扇、上电正常与否、功率阈值、功率budget等状态变更，并将状态写入 State DB
 
 **重要文件**：
 - /usr/share/sonic/platform/plugins/psuutil.py (继承`src/sonic-platform-common/sonic_psu/psu_base.py`)
@@ -1132,6 +1132,31 @@ Chassis 模块继承自 `src/sonic-platform-common/sonic_platform_base/module_ba
 
 
 ## sonic-sensormond
+
+**核心功能**：监控传感器状态，并将状态写入 State DB
+
+**重要文件**：
+- /usr/share/sonic/platform/$hwsku/sensors.yaml
+
+
+### 核心总体流程
+
+1. 实例化初始化`SensorMonitorDaemon(daemon_base.DaemonBase)`: `sensor_control = SensorMonitorDaemon()`
+   
+   1. 初始化守护进程基类: `super(SensorMonitorDaemon, self).__init__(SYSLOG_IDENTIFIER)`
+   2. 尝试获取平台Chassis实例: `self.chassis = sonic_platform.platform.Platform().get_chassis()`
+   3. 读取配置文件`/usr/share/sonic/platform/$hwsku/sensors.yaml`, 根据配置文件实例化基于文件系统的传感器实现类`VoltageSensorFs`和`CurrentSensorFs`
+      1. 电压: 若配置文件中有`voltage_sensors`数据, 实例化`VoltageSensorFs`(多个): `self._voltage_sensor_fs = VoltageSensorFs.factory(VoltageSensorFs, sensors_data['voltage_sensors'])`
+      2. 电流: 若配置文件中有`current_sensors`数据, 实例化`VoltageSensorFs`(多个): `self._current_sensor_fs = CurrentSensorFs.factory(CurrentSensorFs, sensors_data['current_sensors'])`
+   4. 实例化传感器更新器:
+      1. 电压: `self.voltage_updater = VoltageUpdater(self.chassis, self._voltage_sensor_fs)`
+      2. 电流: `self.current_updater = CurrentUpdater(self.chassis, self._current_sensor_fs)`
+
+2. 无限循环，每`5/60/60/60/...`s执行一次(开始时5s)，每次循环: `while sensor_control.run(): pass`
+
+
+> SYSLOG_IDENTIFIER = 'sensormond'
+
 
 ## sonic-stormond
 
