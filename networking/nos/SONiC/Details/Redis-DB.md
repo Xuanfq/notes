@@ -203,7 +203,7 @@ Write: docker/pmon/sensormond
   - parent_name: "chassis 1"
 
 - <voltage_sensor_name> (`/usr/share/sonic/platform/$hwsku/sensors.yaml`中配置, 或`f'{chassis 1} voltage_sensor {index+1}'`)
-  - position_in_parent: `src/sonic-platform-common/sonic_platform_base/sensor_fs.py/SensorFs.get_position_in_parent()`, 或`index+1`
+  - position_in_parent: `src/sonic-platform-common/sonic_platform_base/sensor_fs.py/SensorFs.get_position_in_parent()`, 或`'Module {index}'`或`index+1`
   - parent_name: "chassis 1"
 
 
@@ -307,7 +307,7 @@ Write: docker/pmon/sensormond
   - maximum_current: `CurrentSensorBase().get_maximum_recorded()`
   - high_threshold: `CurrentSensorBase().get_high_threshold()`
   - low_threshold: `CurrentSensorBase().get_low_threshold()`
-  - warning_status: ``
+  - warning_status: `"True"` or `"False"`
   - critical_high_threshold: `CurrentSensorBase().get_high_critical_threshold()`
   - critical_low_threshold: `CurrentSensorBase().get_low_critical_threshold()`
   - is_replaceable: `CurrentSensorBase().is_replaceable()`
@@ -387,6 +387,8 @@ Write: docker/pmon/classisd
 Write: docker/pmon/sensormond
 ```
 
+- <voltage_sensor_name> (`/usr/share/sonic/platform/$hwsku/sensors.yaml`中配置, 或`f'{chassis 1} voltage_sensor {index+1}'`)
+  - ... (Ref STATE.VOLTAGE_INFO)
 
 
 ## CURRENT_INFO_${SLOT}
@@ -397,6 +399,8 @@ Write: docker/pmon/sensormond
 Write: docker/pmon/sensormond
 ```
 
+- <current_sensor_name> (`/usr/share/sonic/platform/$hwsku/sensors.yaml`中配置, 或`f'{chassis 1} current_sensor {index+1}'`)
+  - ... (Ref STATE.CURRENT_INFO)
 
 
 
