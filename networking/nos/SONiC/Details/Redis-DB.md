@@ -60,6 +60,18 @@ Read: docker/pmon/ledd
         - ...
     ```
 
+## STORMOND_CONFIG
+
+配置pmon中的stormond存储设备监控程序轮训和同步间隔时间
+
+```
+Read: docker/pmon/stormond
+```
+
+- INTERVALS:
+  - daemon_polling_interval: 3600 (s, 轮训间隔1hour)
+  - fsstats_sync_interval: 86400 (s, 同步数据保存到JSON的时间间隔为24hour, 实际上距离上次同步后已过的时间与同步间隔的差值小于轮询间隔也会进行同步)
+
 
 ---
 
@@ -313,6 +325,33 @@ Write: docker/pmon/sensormond
   - is_replaceable: `CurrentSensorBase().is_replaceable()`
   - timestamp: `CurrentSensorBase().time.strftime('%Y%m%d %H:%M:%S')`
 
+
+## STORAGE_INFO
+
+记录系统里的存储设备状态信息。
+
+```
+Write: docker/pmon/stormond
+```
+
+- <disk_device_name> (`ls /sys/block/`, sdx,nvmex,mmcblkx)
+  - device_model: `Ssd/Emmc/UsbUtil(StorageCommon).get_model()`
+  - serial: `Ssd/Emmc/UsbUtil(StorageCommon).get_serial()`
+  - 
+  - firmware: `Ssd/Emmc/UsbUtil(StorageCommon).get_firmware()`
+  - health: `Ssd/Emmc/UsbUtil(StorageCommon).get_health()`
+  - temperature: `Ssd/Emmc/UsbUtil(StorageCommon).get_temperature()`
+  - latest_fsio_reads: `Ssd/Emmc/UsbUtil(StorageCommon).get_fs_io_reads()`
+  - latest_fsio_writes: `Ssd/Emmc/UsbUtil(StorageCommon).get_fs_io_writes()`
+  - disk_io_reads: `Ssd/Emmc/UsbUtil(StorageCommon).get_disk_io_reads()`
+  - disk_io_writes: `Ssd/Emmc/UsbUtil(StorageCommon).get_disk_io_writes()`
+  - reserved_blocks: `Ssd/Emmc/UsbUtil(StorageCommon).get_reserved_blocks()`
+  - last_sync_time: `"%Y-%m-%d %H:%M:%S"`
+  - total_fsio_reads: ``  (总)
+  - total_fsio_writes: ``  (总)
+
+- FSSTATS_SYNC
+  - successful_sync_time: `"%Y-%m-%d %H:%M:%S"` (最近同步数据到/usr/share/stormond/fsio-rw-stats.json的时间)
 
 
 ---

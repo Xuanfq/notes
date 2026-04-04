@@ -199,7 +199,7 @@ postStartAction
 | **/usr/local/bin/syseepromd**                                     | EEPROM 读取                         | 支持 Python 2/3          | not skip_syseepromd                                                 |
 | **/usr/local/bin/thermalctld**                                    | 温度控制                            | 支持 Python 2/3          | not skip_thermalctld                                                |
 | **/usr/local/bin/pcied**                                          | PCIe 设备监控                       | 固定路径                 | not skip_pcied                                                      |
-| **/usr/local/bin/sensormond**                                     |                                     | 固定路径                 | include_sensormond                                                  |
+| **/usr/local/bin/sensormond**                                     | 传感器监控 (电压和电流)                                    | 固定路径                 | include_sensormond                                                  |
 | **/usr/local/bin/stormond**                                       |                                     | 固定路径                 | not skip_stormond                                                   |
 
 **依赖启动机制**：
@@ -1133,10 +1133,15 @@ Chassis 模块继承自 `src/sonic-platform-common/sonic_platform_base/module_ba
 
 ## sonic-sensormond
 
-**核心功能**：监控传感器状态，并将状态写入 State DB
+**核心功能**：监控电压和电流的传感器状态，并将状态写入 State DB
+
+**Sensor**：
+- `PDDF.Chassis().get_all_voltage_sensors()`
+- `PDDF.Chassis().get_all_current_sensors()`
+- /usr/share/sonic/platform/$hwsku/sensors.yaml 中电压和电流
 
 **重要文件**：
-- /usr/share/sonic/platform/$hwsku/sensors.yaml (或通过`PDDF.Chassis()`)
+- /usr/share/sonic/platform/$hwsku/sensors.yaml
 
 
 ### 核心总体流程
@@ -1165,17 +1170,116 @@ Chassis 模块继承自 `src/sonic-platform-common/sonic_platform_base/module_ba
    1. 更新电压信息到数据库: `self.voltage_updater.update()`
       1. 日志
       2. 数据库
-         1. 
+         - <voltage_sensor_name> (`/usr/share/sonic/platform/$hwsku/sensors.yaml`中配置, 或`f'{chassis 1} voltage_sensor {index+1}'`)
+           - voltage: `VoltageSensorBase().get_value()`
+           - unit: `VoltageSensorBase().get_unit()` e.g. mV
+           - minimum_voltage: `VoltageSensorBase().get_minimum_recorded()`
+           - maximum_voltage: `VoltageSensorBase().get_maximum_recorded()`
+           - high_threshold: `VoltageSensorBase().get_high_threshold()`
+           - low_threshold: `VoltageSensorBase().get_low_threshold()`
+           - high_critical_threshold: `VoltageSensorBase().get_high_critical_threshold()`
+           - low_critical_threshold: `VoltageSensorBase().get_low_critical_threshold()`
+           - is_replaceable: `VoltageSensorBase().is_replaceable()`
+           - timestamp: `VoltageSensorBase().time.strftime('%Y%m%d %H:%M:%S')`
    2. 更新电流信息到数据库: `self.current_updater.update()`
       1. 日志
       2. 数据库
-         1. 
+         - <current_sensor_name> (`/usr/share/sonic/platform/$hwsku/sensors.yaml`中配置, 或`f'{chassis 1} current_sensor {index+1}'`)
+           - current: `CurrentSensorBase().get_value()`
+           - unit: `CurrentSensorBase().get_unit()` e.g. mV
+           - minimum_current: `CurrentSensorBase().get_minimum_recorded()`
+           - maximum_current: `CurrentSensorBase().get_maximum_recorded()`
+           - high_threshold: `CurrentSensorBase().get_high_threshold()`
+           - low_threshold: `CurrentSensorBase().get_low_threshold()`
+           - warning_status: `"True"` or `"False"`
+           - critical_high_threshold: `CurrentSensorBase().get_high_critical_threshold()`
+           - critical_low_threshold: `CurrentSensorBase().get_low_critical_threshold()`
+           - is_replaceable: `CurrentSensorBase().is_replaceable()`
+           - timestamp: `CurrentSensorBase().time.strftime('%Y%m%d %H:%M:%S')`
 
 
 > SYSLOG_IDENTIFIER = 'sensormond'
 
 
 ## sonic-stormond
+
+**核心功能**：监控存储设备状态，并将状态写入 State DB
+
+**重要工具**：
+- `smartctl`, `iSmart`, `SmartCmd`
+- python psutil.disk_io_counters() - /proc/diskstats
+
+**重要文件**：
+- /usr/share/stormond/fsio-rw-stats.json
+
+
+### 核心总体流程
+
+1. 实例化初始化`DaemonStorage(daemon_base.DaemonBase)`: `stormon = DaemonStorage(SYSLOG_IDENTIFIER)`
+   
+   1. 初始化守护进程基类: `super(DaemonStorage, self).__init__(SYSLOG_IDENTIFIER)`
+   2. 扫描所有存储设备并创建对应的设备工具实例: `self.storage = StorageDevices()` (src/sonic-platform-common/sonic_platform_base/sonic_storage/*.py)
+      - SSD: `sonic_platform_base.sonic_storage.ssd.SsdUtil('/dev/sdx' or '/dev/nvmex')`
+        - 根据SSD类型使用`smartctl`, `iSmart`, `SmartCmd`等工具读取SSD信息
+      - EMMC: `sonic_platform_base.sonic_storage.emmc.EmmcUtil('/dev/mmcblkx)`
+        - N/A
+      - USB: `sonic_platform_base.sonic_storage.usb.UsbUtil('/dev/sdx)`
+        - 通过`blkinfo.BlkDiskInfo().get_disks('emmcblk')[0]`获取usb信息
+   3. 连接数据库`STATE_DB.STORAGE_INFO`
+   4. 数据加载与同步：从STATE_DB.STORAGE_INFO中加载文件系统IO(FSIO)读写数据统计到`fsio_rw_statedb`: `self._load_fsio_rw_statedb()`
+      1. 若 `STORAGE_INFO|*`(sda,sdb..) 键的数量不等于设备上实际`磁盘数量`与 FSSTATS_SYNC 字段数值之和，则判定数据库已损坏。此种情况下，*跳过数据库加载*，将切换以 JSON 文件作为唯一可信数据源（权威基准）。
+      2. 遍历所有磁盘及*需要同步的字段*，逐一从数据库获取数据: `'STORAGE_INFO|{self.storage.devices[index]}'.{statedb_json_sync_fields[i]}`, e.g. `"STORAGE_INFO|sda".latest_fsio_reads`
+      3. 成功则标记
+   5. 数据加载与同步：从`/usr/share/stormond/fsio-rw-stats.json`中加载文件系统IO(FSIO)读写数据统计到`fsio_rw_json`: `self._load_fsio_rw_statedb()`
+      1. 不存在json文件则跳过
+      2. 检查所有设备的字段不为none
+      3. 成功则标记
+   6. 根据上述数据加载情况设定是否使用加载到的数据，使用哪个数据，优先数据库
+
+2. 读取并更新*静态字段*到状态数据库STATE_DB.STORAGE_INFO: `stormon.get_static_fields_update_state_db()`
+   
+   - <disk_device_name> (`ls /sys/block/`, sdx,nvmex,mmcblkx)
+     - device_model: `Ssd/Emmc/UsbUtil(StorageCommon).get_model()`
+     - serial: `Ssd/Emmc/UsbUtil(StorageCommon).get_serial()`
+
+3. 无限循环，每`3600`s执行一次（可通过数据库设定间隔，见下方），每次循环: `while stormon.run(): pass`
+
+   1. 连接配置数据库（CONFIG_DB），获取轮询间隔与同步间隔: `self.get_configdb_intervals()`
+      1. CONFIG_DB.STORMOND_CONFIG
+         - INTERVALS:
+           - daemon_polling_interval: 3600 (s, 轮训间隔1hour)
+           - fsstats_sync_interval: 86400 (s, 同步数据保存到JSON的时间间隔为24hour, 实际上距离上次同步后已过的时间与同步间隔的差值小于轮询间隔也会进行同步)
+   2. 读取*动态字段*值，并将其更新至状态数据库（StateDB）: `self.get_dynamic_fields_update_state_db()`
+      1. 遍历所有设备: `for storage_device, storage_object in self.storage.devices.items()`
+         1. 获取最新数据并解析: `storage_object.fetch_parse_info(blkdevice)`
+         2. <disk_device_name> (`ls /sys/block/`, sdx,nvmex,mmcblkx)
+            - firmware: `Ssd/Emmc/UsbUtil(StorageCommon).get_firmware()`
+            - health: `Ssd/Emmc/UsbUtil(StorageCommon).get_health()`
+            - temperature: `Ssd/Emmc/UsbUtil(StorageCommon).get_temperature()`
+            - latest_fsio_reads: `Ssd/Emmc/UsbUtil(StorageCommon).get_fs_io_reads()`
+            - latest_fsio_writes: `Ssd/Emmc/UsbUtil(StorageCommon).get_fs_io_writes()`
+            - disk_io_reads: `Ssd/Emmc/UsbUtil(StorageCommon).get_disk_io_reads()`
+            - disk_io_writes: `Ssd/Emmc/UsbUtil(StorageCommon).get_disk_io_writes()`
+            - reserved_blocks: `Ssd/Emmc/UsbUtil(StorageCommon).get_reserved_blocks()`
+            - last_sync_time: `"%Y-%m-%d %H:%M:%S"`
+            - total_fsio_reads: ``  (总), 若是有JSON同步文件，以其total字段为基准；若是state_db，则以实际状态和db中的latest字段只差为total的增量
+            - total_fsio_writes: ``  (总)
+   3. 若距离上次同步后已过的时间与同步间隔的差值小于轮询间隔，或大于同步间隔，则同步数据保存到JSON，同时在数据库记录同步时间:
+      1. *需要同步的字段*: (STATE_DB.STORAGE_INFO.)disk_device_name
+         - latest_fsio_reads
+         - latest_fsio_writes
+         - total_fsio_reads
+         - total_fsio_writes
+         - disk_io_reads
+         - disk_io_writes
+         - reserved_blocks
+         - last_sync_time
+      2. 记录同步时间: (STATE_DB.STORAGE_INFO.)successful_sync_time="%Y-%m-%d %H:%M:%S"
+      3. 记录同步时间到数据库: STATE_DB.STORAGE_INFO.FSSTATS_SYNC.successful_sync_time="%Y-%m-%d %H:%M:%S"
+
+
+> SYSLOG_IDENTIFIER = 'stormond'
+
 
 ## sonic-syseepromd
 
