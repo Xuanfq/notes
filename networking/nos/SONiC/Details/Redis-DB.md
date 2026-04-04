@@ -354,6 +354,42 @@ Write: docker/pmon/stormond
   - successful_sync_time: `"%Y-%m-%d %H:%M:%S"` (最近同步数据到/usr/share/stormond/fsio-rw-stats.json的时间)
 
 
+## EEPROM_INFO
+
+记录系统EERPOM里的信息。
+
+```
+Write: docker/pmon/syseepromd
+```
+
+- TlvHeader
+  - Id String: 
+  - Version: 
+  - Total Length: 
+- 0x21
+  - Name: 
+  - Len: 
+  - Value: 
+- ... (固定字段, 0x21-0x2F)
+- 0x2F
+  - Name: 
+  - Len: 
+  - Value: 
+- 0xFD  (厂商扩展字段, 通过多次使用0xFD实现多个厂商自定义字段)
+  - Name_0: 
+  - Len_0: 
+  - Value_0: 
+  - Name_1: 
+  - Len_1: 
+  - Value_1: 
+  - ...
+  - Num_vendor_ext: `number`
+- Checksum
+  - Valid: `1` / `0`(无效)
+- State
+  - Initialized: `1` (默认)
+
+
 ---
 
 

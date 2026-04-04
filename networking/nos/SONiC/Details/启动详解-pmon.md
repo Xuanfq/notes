@@ -1034,7 +1034,7 @@ Chassis 模块继承自 `src/sonic-platform-common/sonic_platform_base/module_ba
 **核心功能**：监控PSU在位与否、风扇、上电正常与否、功率阈值、功率budget等状态变更，并将状态写入 State DB
 
 **重要文件**：
-- /usr/share/sonic/platform/plugins/psuutil.py (继承`src/sonic-platform-common/sonic_psu/psu_base.py`)
+- /usr/share/sonic/platform/plugins/psuutil.py (继承`src/sonic-platform-common/sonic_psu/psu_base.py/PsuBase`, 类名需为`class PsuUtil(PsuBase)`)
 
 
 ### 核心总体流程
@@ -1282,6 +1282,61 @@ Chassis 模块继承自 `src/sonic-platform-common/sonic_platform_base/module_ba
 
 
 ## sonic-syseepromd
+
+**核心功能**：系统 EEPROM (TLV) 信息采集守护进程，并写入 State DB。会持续监听状态数据库内的系统 EEPROM 数据表，若该数据表被删除，会重新写入数据。依托此守护进程，查看系统 EEPROM的命令行指令，可直接从状态数据库调取数据，无需再访问硬件或缓存。
+
+**重要文件**：
+- /usr/share/sonic/platform/plugins/eeprom.py (继承`src/sonic-platform-common/sonic_eeprom/eeprom_tlvinfo.py/TlvInfoDecoder`, 类名需为`class board(TlvInfoDecoder)`)(或通过`sonic_platform.platform.Platform().get_chassis().get_eeprom()`获取`PddfEeprom`，优先)
+
+
+### 核心总体流程
+
+1. 实例化初始化`DaemonSyseeprom(daemon_base.DaemonBase)`: `syseepromd = DaemonSyseeprom()`
+   
+   1. 初始化守护进程基类: `super(DaemonSyseeprom, self).__init__(SYSLOG_IDENTIFIER)`
+   2. 获取系统EEPROM的抽象实例`TlvInfoDecoder`的实现，失败则退出，先后逐一尝试:
+      1. 尝试获取`sonic_platform`实现: `self.eeprom = sonic_platform.platform.Platform().get_chassis().get_eeprom()`
+      2. 尝试获取插件`/usr/share/sonic/platform/plugins/eeprom.py`实现: `self.eeprom = self.load_platform_util('eeprom', 'board')`
+   3. 连接数据库: STATE_DB.EEPROM_INFO
+   4. *将系统eeprom信息提交到数据库*: `rc = self.post_eeprom_to_db()`
+      1. 读取数据，数据为空则返回: `eeprom_data = self.eeprom.read_eeprom()`
+      2. 写入数据库，失败则返回: `err = self.eeprom.update_eeprom_db(eeprom_data)`
+         - TlvHeader
+           - Id String: 
+           - Version: 
+           - Total Length: 
+         - 0x21
+           - Name: 
+           - Len: 
+           - Value: 
+         - ... (固定字段, 0x21-0x2F)
+         - 0x2F
+           - Name: 
+           - Len: 
+           - Value: 
+         - 0xFD  (厂商扩展字段, 通过多次使用0xFD实现多个厂商自定义字段)
+           - Name_0: 
+           - Len_0: 
+           - Value_0: 
+           - Name_1: 
+           - Len_1: 
+           - Value_1: 
+           - ...
+           - Num_vendor_ext: `number`
+         - Checksum
+           - Valid: `1` / `0`(无效)
+         - State
+           - Initialized: `1` (默认)
+      3. 从数据库中获取所有key并记录: `self.eepromtbl_keys = self.eeprom_tbl.getKeys()`
+
+2. 无限循环，每`60`s执行一次，每次循环: `while syseepromd.run(): pass`
+
+   1. 比对数据库中key和上次写入的是否一致(是否篡改): `rc = self.detect_eeprom_table_integrity()`
+   2. 若不一致则*清除数据库中的key*，并重新*将系统eeprom信息提交到数据库*，见上方
+
+
+> SYSLOG_IDENTIFIER = 'syseepromd'
+
 
 ## sonic-thermalctld
 
