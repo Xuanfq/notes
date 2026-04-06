@@ -201,6 +201,7 @@ Chassis的模块物理实体状态表，实时更新记录模块的物理实体�
 Write: docker/pmon/classisd
 Write: docker/pmon/psud
 Write: docker/pmon/sensormond
+Write: docker/pmon/thermalctld
 ```
 
 - <module_name>
@@ -213,6 +214,20 @@ Write: docker/pmon/sensormond
 - <psu_name>  (`chassis().get_psu(psu_index).get_name()`)
   - position_in_parent: `Psu(PddfPsu).get_position_in_parent()` or `psu_index`
   - parent_name: "chassis 1"
+
+- <thermal_name>  (`chassis/psu().get_all_thermals(index).get_name()`)
+  - position_in_parent: `Thermal(ThermalBase).get_position_in_parent()`(暂无该函数) or `thermal_index`
+  - parent_name: "chassis 1" or "Module 1-n" or "PSU 1-n" or "Module 1-n PSU 1-n"
+    - chassis 1 (Module 1-n): `chassis.get_all_thermals()`
+    - PSU 1-n (Module 1-n PSU 1-n): `chassis.get_all_psus()[index].get_all_thermals()`
+
+- <fan_drawer_name>  (`FanDrawerBase().get_name()`)
+  - position_in_parent: `FanDrawer(FanDrawerBase).get_position_in_parent()` or `drawer_index`
+  - parent_name: "chassis 1"
+
+- <fan_name>  `FanBase().get_name()` or `'{parent_name:"PSU $Num"|module.get_name()/"Module $Num"|fan_drawer.get_name()/"chassis 1"} fan {index}'`
+  - position_in_parent: `Fan(FanBase).get_position_in_parent()` or `index`
+  - parent_name: `{parent_name}`
 
 - <voltage_sensor_name> (`/usr/share/sonic/platform/$hwsku/sensors.yaml`中配置, 或`f'{chassis 1} voltage_sensor {index+1}'`)
   - position_in_parent: `src/sonic-platform-common/sonic_platform_base/sensor_fs.py/SensorFs.get_position_in_parent()`, 或`'Module {index}'`或`index+1`
@@ -271,9 +286,10 @@ Write: docker/pmon/psud
 
 ```
 Write: docker/pmon/psud
+Write: docker/pmon/thermalctld
 ```
 
-- <fan_name> (PSU: `f"Psu(PddfPsu).get_name() FAN {index}"`)
+- <psu_fan_name>  `FanBase().get_name()` or (PSU: `f"Psu(PddfPsu).get_name() FAN {index}"`) (由下方覆盖)
   - presence: `Psu(PddfPsu).get_presence()` or 'N/A'
   - status: `"True" if Psu(PddfPsu).get_presence() else "False"`
   - direction: `Psu(PddfPsu).get_all_fans()[index].get_direction()` or 'N/A'
@@ -281,6 +297,41 @@ Write: docker/pmon/psud
   - timestamp: `datetime.now().strftime('%Y%m%d %H:%M:%S')`
   - 
   - led_status: `fan.get_status_led()` or 'N/A'
+
+- <fan_name>  `FanBase().get_name()` or `'{parent_name:"PSU $Num"|module.get_name()/"Module $Num"|fan_drawer.get_name()/"chassis 1"} fan {index}'`
+  - presence: `FanBase().get_presence()`
+  - drawer_name: `fan_drawer.get_name()/"chassis 1"`
+  - model: `FanBase().get_model()`
+  - serial: `FanBase().get_serial()`
+  - status: `presence and status and not under_speed and not over_speed and not invalid_direction`
+  - direction: `FanBase().get_direction()`
+  - speed: `FanBase().get_speed()`
+  - speed_target: `FanBase().get_target_speed()`
+  - is_under_speed: `FanBase().is_under_speed()`
+  - is_over_speed: `FanBase().is_over_speed()`
+  - is_replaceable: `FanBase().is_replaceable()`
+  - timestamp: `'%Y%m%d %H:%M:%S'`
+  - 
+  - led_status: `fan.get_status_led()` or 'N/A'
+
+
+## FAN_DRAWER_INFO
+
+记录风扇抽屉状态。
+
+```
+Write: docker/pmon/thermalctld
+```
+
+- <fan_drawer_name>  (`FanDrawerBase().get_name()`)
+  - presence: `FanDrawerBase().get_presence()`
+  - model: `FanDrawerBase().get_model()`
+  - serial: `FanDrawerBase().get_serial()`
+  - status: `FanDrawerBase().get_status()`
+  - is_replaceable: `FanDrawerBase().is_replaceable()`
+  - 
+  - led_status: `fan.get_status_led()` or 'N/A'
+
 
 
 ## VOLTAGE_INFO
@@ -390,6 +441,33 @@ Write: docker/pmon/syseepromd
   - Initialized: `1` (默认)
 
 
+## TEMPERATURE_INFO
+
+记录所有的PDDF-ThermalBase温度传感器的信息。
+
+```
+Write: docker/pmon/thermalctld
+```
+
+- <thermal_name>  `thermal.get_name()` or `{parent_name} Thermal {index}`, parent_name可以是:
+  ```md
+  - chassis 1 (Module 1-n): `chassis.get_all_thermals()`
+  - PSU 1-n (Module 1-n PSU 1-n): `chassis.get_all_psus()[index].get_all_thermals()`
+  - SFP 1-n (Module 1-n SFP 1-n): `chassis.get_all_sfps()[index].get_all_thermals()`
+  ```
+  - temperature: `thermal.get_temperature()`
+  - minimum_temperature: `thermal.get_minimum_recorded()`
+  - maximum_temperature: `thermal.get_maximum_recorded()`
+  - high_threshold: `thermal.get_high_threshold()`
+  - low_threshold: `thermal.get_low_threshold()`
+  - warning_status: `"True"` or `"False"` (是否超过阈值)
+  - critical_high_threshold: `thermal.get_high_critical_threshold()`
+  - critical_low_threshold: `thermal.get_low_critical_threshold()`
+  - is_replaceable: `thermal.is_replaceable()`
+  - timestamp: `'%Y%m%d %H:%M:%S'`
+
+
+
 ---
 
 
@@ -477,6 +555,17 @@ Write: docker/pmon/sensormond
 - <current_sensor_name> (`/usr/share/sonic/platform/$hwsku/sensors.yaml`中配置, 或`f'{chassis 1} current_sensor {index+1}'`)
   - ... (Ref STATE.CURRENT_INFO)
 
+
+## TEMPERATURE_INFO_${SLOT}`
+
+`SLOT`值为`{chassis.get_my_slot() if self.is_chassis_system else chassis.get_dpu_id()}`
+
+需满足以下二者之一才有，数据同`STATE.TEMPERATURE_INFO`一样:
+  - `chassis.is_modular_chassis()` (该类型不一定有此项数据库)
+  - `chassis.is_smartswitch() and chassis.is_dpu()`
+
+- <thermal_name>  `thermal.get_name()` or `{parent_name} Thermal {index}`
+  - ...
 
 
 ---

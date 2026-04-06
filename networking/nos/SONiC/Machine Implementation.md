@@ -38,6 +38,7 @@
     - sensors.conf            # lm-sensors sensors配置
     - fancontrol              # lm-sensors fancontrol配置
     - pmon_daemon_control.json    # pmon daemon 监控配置, 控制是否跳过某些监控 daemon
+    - thermal_policy.json         # option, thermalctld 风控策略配置，由`src/sonic-platform-common/sonic_platform_base/sonic_thermal_control/thermal_manager_base.py`读取 (可由`sonic_platform`实现覆盖,chassis.get_thermal_manager()) 
     - chassisdb.conf
     - platform_wait
     - psu_sensors_conf_updater

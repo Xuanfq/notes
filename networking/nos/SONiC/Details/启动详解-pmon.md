@@ -1069,7 +1069,7 @@ Chassis 模块继承自 `src/sonic-platform-common/sonic_platform_base/module_ba
          2. 若还没创建PSU的状态存放实例则创建(状态默认为在位): `self.psu_status_dict[index] = PsuStatus(self, psu, index)`
          3. 若PSU在位状态变更了，记录日志: `presence_changed = psu_status.set_presence(presence)`
          4. 若PSU在位状态变更或第一次运行，更新PSU的Fan数据: STATE_DB.FAN_INFO
-            - <fan_name> (PSU: `f"Psu(PddfPsu).get_name() FAN {index}"`)
+            - <psu_fan_name>  `FanBase().get_name()` or (PSU: `f"Psu(PddfPsu).get_name() FAN {index}"`)
               - presence: `Psu(PddfPsu).get_presence()` or 'N/A'
               - status: `"True" if Psu(PddfPsu).get_presence() else "False"`
               - direction: `Psu(PddfPsu).get_all_fans()[index].get_direction()` or 'N/A'
@@ -1339,6 +1339,142 @@ Chassis 模块继承自 `src/sonic-platform-common/sonic_platform_base/module_ba
 
 
 ## sonic-thermalctld
+
+**核心功能**：Thermal(风控)控制守护进程，监控ThermalBase相关温度传感器，监控FanBase相关风扇状态，并写入 State DB。
+
+**重要文件**：
+- /usr/share/sonic/platform/thermal_policy.json (由`src/sonic-platform-common/sonic_platform_base/sonic_thermal_control/thermal_manager_base.py/ThermalManagerBase`读取) (可由`sonic_platform`实现覆盖, chassis.get_thermal_manager())
+
+
+### 核心总体流程
+
+1. 实例化初始化`ThermalControlDaemon(daemon_base.DaemonBase)`: `thermal_control = ThermalControlDaemon()`
+   
+   1. 初始化守护进程基类: `super(ThermalControlDaemon, self).__init__(SYSLOG_IDENTIFIER)`
+   2. 获取`sonic_platform`实现的`Chassis`实例: `self.chassis = sonic_platform.platform.Platform().get_chassis()`
+   3. 实例化`ThermalMonitor`: `self.thermal_monitor = ThermalMonitor(self.chassis)`
+      1. 创建数据库*风扇更新器*: `self.fan_updater = FanUpdater(chassis, self.task_stopping_event)`
+         1. 连接数据库:
+            - STATE_DB.FAN_INFO
+            - STATE_DB.FAN_DRAWER_INFO
+            - STATE_DB.PHYSICAL_ENTITY_INFO
+      2. 创建数据库*温度更新器*: `self.temperature_updater = TemperatureUpdater(chassis, self.task_stopping_event)`
+         1. 连接数据库:
+            - STATE_DB.TEMPERATURE_INFO
+            - STATE_DB.PHYSICAL_ENTITY_INFO
+            - CHASSIS_STATE_DB.TEMPERATURE_INFO_`{chassis.get_my_slot() if self.is_chassis_system else chassis.get_dpu_id()}`
+              - 需满足以下二者之一:
+                - is_chassis_system: chassis.is_modular_chassis() (不一定得有这个数据库, 所以连接数据库出错了就忽略)
+                - chassis.is_smartswitch() and chassis.is_dpu()
+   4. 启动`ThermalMonitor`监控任务，*更新状态到数据库*: `self.thermal_monitor.task_run()`
+      1. 每隔一段时间运行一次数据同步到数据库主体程序(*风扇和温度更新*)(初始时为`wait_time=5s`，实际控制在每60秒内调控一次): `while not self.task_stopping_event.wait(self.wait_time): self.main()`
+         1. *风扇更新器*执行更新: `self.fan_updater.update()`
+            1. 需要更新风扇数据到数据库的`FanBase`实例有:
+               - Chassis Fan Drawer: `chassis.get_all_fan_drawers()[index].get_all_fans()`
+               - Chassis Module: `chassis.get_all_modules()[index].get_all_fans()`
+               - PSU: `chassis.get_all_psus()[index].get_all_fans()`
+            2. 状态变化时，如转速超出阈值、恢复阈值范围内、在位状态等，生成日志
+            3. 状态变化时，如转速超出阈值、恢复阈值范围内、在位状态等，若是*风扇抽屉里的风扇，更新风扇led*
+               1. 颜色，ok为绿，否则为红: `led_color = fan.STATUS_LED_COLOR_GREEN if fan_status.is_ok() else fan.STATUS_LED_COLOR_RED`
+               2. 更新风扇led: `fan.set_status_led(led_color)`
+               3. 更新风扇抽屉led: `fan_drawer.set_status_led(led_color)`
+            4. 同步数据到数据库:
+               - STATE_DB.PHYSICAL_ENTITY_INFO
+                 - <fan_drawer_name>  (`FanDrawerBase().get_name()`)
+                   - position_in_parent: `FanDrawer(FanDrawerBase).get_position_in_parent()` or `drawer_index`
+                   - parent_name: "chassis 1"
+                 - <fan_name>  `FanBase().get_name()` or `'{parent_name:"PSU $Num"|module.get_name()/"Module $Num"|fan_drawer.get_name()/"chassis 1"} fan {index}'`
+                   - position_in_parent: `Fan(FanBase).get_position_in_parent()` or `index`
+                   - parent_name: `{parent_name}`
+               - STATE_DB.FAN_DRAWER_INFO
+                 - <fan_drawer_name>  (`FanDrawerBase().get_name()`)
+                   - presence: `FanDrawerBase().get_presence()`
+                   - model: `FanDrawerBase().get_model()`
+                   - serial: `FanDrawerBase().get_serial()`
+                   - status: `FanDrawerBase().get_status()`
+                   - is_replaceable: `FanDrawerBase().is_replaceable()`
+                   - led_status: `fan.get_status_led()`
+               - STATE_DB.FAN_INFO
+                 - <fan_name>  `FanBase().get_name()` or `'{parent_name:"PSU $Num"|module.get_name()/"Module $Num"|fan_drawer.get_name()/"chassis 1"} fan {index}'`
+                   - presence: `FanBase().get_presence()`
+                   - drawer_name: `fan_drawer.get_name()/"chassis 1"`
+                   - model: `FanBase().get_model()`
+                   - serial: `FanBase().get_serial()`
+                   - status: `FanBase().get_status() and presence and status and not under_speed and not over_speed and not invalid_direction`
+                   - direction: `FanBase().get_direction()`
+                   - speed: `FanBase().get_speed()`
+                   - speed_target: `FanBase().get_target_speed()`
+                   - is_under_speed: `FanBase().is_under_speed()`
+                   - is_over_speed: `FanBase().is_over_speed()`
+                   - is_replaceable: `FanBase().is_replaceable()`
+                   - timestamp: `'%Y%m%d %H:%M:%S'`
+                   - led_status: `fan.get_status_led()`
+            5. 统一更新数据库中的`led_status`，见上方
+            6. 根据坏的（不在位`get_presence`或状态不ok`get_status`）风扇数量的变化，生成警告日志
+         2. *温度更新器*执行更新: `self.temperature_updater.update()`
+            1. 需要更新温度到数据库的`ThermalBase`实例有:
+               - chassis 1 (Module 1-n): `chassis.get_all_thermals()`
+               - PSU 1-n (Module 1-n PSU 1-n): `chassis.get_all_psus()[index].get_all_thermals()`
+               - SFP 1-n (Module 1-n SFP 1-n): `chassis.get_all_sfps()[index].get_all_thermals()`
+            2. 状态变化时，如超出阈值、恢复阈值范围内，生成日志
+            3. 同步数据到数据库:
+               - STATE_DB.PHYSICAL_ENTITY_INFO
+                 - <thermal_name>  (`chassis/psu().get_all_thermals(index).get_name()`)
+                   - position_in_parent: `Thermal(ThermalBase).get_position_in_parent()`(暂无该函数) or `thermal_index`
+                   - parent_name: "chassis 1" or "Module 1-n" or "PSU 1-n" or "Module 1-n PSU 1-n"
+                     - chassis 1 (Module 1-n): `chassis.get_all_thermals()`
+                     - PSU 1-n (Module 1-n PSU 1-n): `chassis.get_all_psus()[index].get_all_thermals()`
+               - STATE_DB.TEMPERATURE_INFO & CHASSIS_STATE_DB.TEMPERATURE_INFO_xx
+                 - <thermal_name>  `thermal.get_name()` or `{parent_name} Thermal {index}`, parent_name可以是:
+                   ```md
+                   - chassis 1 (Module 1-n): `chassis.get_all_thermals()`
+                   - PSU 1-n (Module 1-n PSU 1-n): `chassis.get_all_psus()[index].get_all_thermals()`
+                   - SFP 1-n (Module 1-n SFP 1-n): `chassis.get_all_sfps()[index].get_all_thermals()`
+                   ```
+                   - temperature: `thermal.get_temperature()`
+                   - minimum_temperature: `thermal.get_minimum_recorded()`
+                   - maximum_temperature: `thermal.get_maximum_recorded()`
+                   - high_threshold: `thermal.get_high_threshold()`
+                   - low_threshold: `thermal.get_low_threshold()`
+                   - warning_status: `"True"` or `"False"` (是否超过阈值)
+                   - critical_high_threshold: `thermal.get_high_critical_threshold()`
+                   - critical_low_threshold: `thermal.get_low_critical_threshold()`
+                   - is_replaceable: `thermal.is_replaceable()`
+                   - timestamp: `'%Y%m%d %H:%M:%S'`
+         3. 二者执行更新所需时间记为`elapsed`，若:
+            1. `elapsed`小于当前设定的更新间隔时间`UPDATE_INTERVAL=60s`，则设定数据同步程序执行间隔为`wait_time=UPDATE_INTERVAL-elapsed`以达到一分钟一次调控；否则设为初始值`wait_time=5s`
+            2. `elapsed`大于阈值`UPDATE_ELAPSED_THRESHOLD=30s`，生成警告日志，警告一次数据同步到数据库需要运行30s可能存在性能风险
+   5. 尝试获取*Thermal管理器*并初始化，失败则跳过: 
+      1. 获取Thermal管理器: `self.thermal_manager = self.chassis.get_thermal_manager()`
+      2. 初始化Thermal管理器: `self.thermal_manager.initialize()`
+      3. 加载Thermal管理器*风控策略文件*`/usr/share/sonic/platform/thermal_policy.json`: `self.thermal_manager.load(ThermalControlDaemon.POLICY_FILE)`
+      4. 初始化Thermal管理器*风控算法*: `self.thermal_manager.init_thermal_algorithm(self.chassis)`
+      5. 获取Thermal管理器执行风控策略的时间间隔，设为下方主体默认风控轮训间隔: `self.wait_time = self.thermal_manager.get_interval()`
+
+2. 无限循环，每`60`s (风控轮训间隔) 执行一次，每次循环执行风控策略: `while thermal_control.run(): pass`
+
+   1. 若存在*Thermal管理器*，执行其风控策略: `self.thermal_manager.run_policy(self.chassis)`
+   2. 更新风控轮训间隔:
+      1. 临时间隔基准`interval`:
+         - 若存在Thermal管理器则以其为基准`self.thermal_manager.get_interval()`
+         - 否则使用默认的间隔: `60`s
+      2. 若本次*风控策略*执行所需的时间`elapsed`小于间隔基准`interval`，则设定*风控轮训间隔*为`self.wait_time = interval - elapsed`以达到*每`thermal_manager.get_interval()`执行一次风控策略*；否则设定间隔为`self.wait_time = FAST_START_INTERVAL`(15s)
+   3. `elapsed`大于阈值`RUN_POLICY_WARN_THRESHOLD_SECS=30s`，生成警告日志，警告一次一次风控策略运行需要运行30s可能存在性能风险
+
+
+3. 接收到中断信号:
+
+   1. 取消Thermal管理器的初始化
+   2. 停止ThermalMonitor的任务运行‘
+      1. 删除数据库key: 
+         - STATE_DB.FAN_INFO
+         - STATE_DB.FAN_DRAWER_INFO
+         - STATE_DB.TEMPERATURE_INFO
+         - STATE_DB.PHYSICAL_ENTITY_INFO
+         - CHASSIS_STATE_DB.TEMPERATURE_INFO_xx
+
+> SYSLOG_IDENTIFIER = 'thermalctld'
+
 
 ## sonic-xcvrd
 
