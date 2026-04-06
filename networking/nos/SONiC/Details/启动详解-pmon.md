@@ -1478,6 +1478,43 @@ Chassis 模块继承自 `src/sonic-platform-common/sonic_platform_base/module_ba
 
 ## sonic-xcvrd
 
+**核心功能**：光模块信息更新守护进程，写入 State DB
+
+**重要文件**：
+- /usr/share/sonic/platform/plugins/sfputil.py (继承`src/sonic-platform-common/sonic_sfp/sfputilbase.py/SfpUtilBase`, 类名需为`class SfpUtil(SfpUtilBase)`)(或通过`sonic_platform.platform.Platform().get_chassis().get_sfp(physical_port)`获取`SfpBase`，`src/sonic-platform-common/sonic_platform_base/sfp_base.py`，优先)
+- /usr/share/sonic/platform/$hwsku/media_settings.json (优先) (ASIC 端 SerDes 自定义 SI信号完整性 参数配置，预加重参数)
+- /usr/share/sonic/platform/media_settings.json (次选)
+- /usr/share/sonic/platform/$hwsku/optics_si_settings.json (优先) (光模块 端 自定义 SI信号完整性 参数配置)
+- /usr/share/sonic/platform/optics_si_settings.json (次选)
+
+
+### 核心总体流程
+
+1. 解析传入参数:
+   1. 跳过CMIS管理: `--skip_cmis_mgr`
+   2. 启用SFF管理: `--enable_sff_mgr`
+
+2. 实例化初始化`DaemonXcvrd(daemon_base.DaemonBase)`: `xcvrd = DaemonXcvrd(SYSLOG_IDENTIFIER, args.skip_cmis_mgr, args.enable_sff_mgr)`
+   
+   1. 初始化守护进程基类: `super(DaemonXcvrd, self).__init__(SYSLOG_IDENTIFIER, enable_runtime_log_config=True)`
+
+3. 运行守护进程主体: `xcvrd.run()`
+
+   1. 执行初始化并获取端口数据映射: `port_mapping_data = self.init()`
+      1. 初始化`platform_chassis`，用以获取`SfpBase`实现类: `platform_chassis = sonic_platform.platform.Platform().get_chassis()`
+      2. 若Chassis获取失败，加载插件`/usr/share/sonic/platform/plugins/sfputil.py`中的`SfpUtil(SfpUtilBase)`实现类，*失败则退出*: `platform_sfputil = self.load_platform_util('sfputil', 'SfpUtil')`
+      3. 若是多ASIC架构，先从 database_global.json 文件加载命名空间详情: `if multi_asic.is_multi_asic(): swsscommon.SonicDBConfig.initializeGlobalConfig()`
+      4. 获取所有 front-end 命名空间，以避免 get_all_namespaces() 函数在工作线程期间出现竞态条件: `self.namespaces = multi_asic.get_front_end_namespaces()`
+      5. 若没有启用 fast-reboot (`STATE_DB.FAST_RESTART_ENABLE_TABLE.system.enable`)，加载配置`media_settings.json`和`optics_si_settings.json`:
+         1. ASIC 端 SerDes 自定义 SI信号完整性 参数配置，预加重参数: `media_settings_parser.load_media_settings()`
+         2. 光模块 端 自定义 SI信号完整性 参数配置: `optics_si_parser.load_optics_si_settings()`
+      6. 等待所有端口都配置完成 (监控`APPL_DB.PORT_TABLE`出现`["PortConfigDone", "PortInitDone"]`其中一个key): `for namespace in self.namespaces: self.wait_for_port_config_done(namespace)`
+      7. 
+
+
+> SYSLOG_IDENTIFIER = 'xcvrd'
+
+
 ## sonic-ycabled
 
 ---

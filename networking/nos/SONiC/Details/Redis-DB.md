@@ -1,3 +1,49 @@
+# SONiC Redis Data Structure
+
+## 存储原理
+
+- 主要使用了`Redis`中的*哈希/散列类型*的值，相当于`Key`->`Hash Tables`(字典/关联二维数组)。
+
+- KEY:
+  - KEY1: VAL1
+  - KEY2: VAL2
+  - ...
+
+- 哈希类型/散列类型中，key 对应的 value 是一个二维数组。但是字段的值*只可以是字符串*。也就是说只能是二维数组，不能有更多的维度。
+
+- 相关操作命令:
+  - 赋值: `HSET key field value`. 如 hset user name lane, hset user age 23
+  - 取值: `HGET key field`. 如 hget user name，得到的是 lane. 
+  - 同一个key多个字段赋值: `HMSET key field1 value1 field2 value2...`
+  - 同一个KEY多个字段取值: `HMGET key field1 fields2...`
+  - 获取KEY的所有字段和所有值: `HGETALL key`. 如 HGETALL user 得到的是 name lane age 23. 每个返回都是独立的一行. 
+  - 字段是否存在: `HEXISTS key field`. 存在返回 1，不存在返回 0
+  - 当字段不存在时赋值: `HSETNX key field value`. 如果 key 下面的字段 field 不存在，则建立 field 字段，且值为 value. 如果 field 字段存在，则不执行任何操作. 它的效果等于 HEXISTS + HSET. 但是这个命令的优点是原子操作. 再高的并发也不会怕怕. 
+  - 自增 N: `HINCREBY key field increment`. 同字符串的自增类型，不再阐述. 
+  - 删除字段: `DEL key field1 field2...` 删除指定KEY的一个或多个字段. 
+  - 只获取字段名: `HKEYS key`. 与 HGETALL 类似，但是只获取字段名，不获取字段值. 
+  - 只获取字段值: `HVALS key`. 与 HGETALL 类似，但是只获取字段值，不获取字段名. 
+  - 获取字段数量: `HLEN key`. 
+
+
+## SONiC
+
+- SONiC的Redis-DB中，大量使用了Redis的*哈希/散列类型*数据结构。
+
+- SONiC所有的键，值，字段*都是字符串*。
+
+- SONiC所有的*键的命名*为: *表名 (大写) + | + 键名 (小写)*
+  - 如下方的`STATE_DB.PSU_INFO.<psu_name>`的键为`PSU_INFO|<psu_name>`
+  - 用Redis命令读取数据`FAST_RESTART_ENABLE_TABLE.system.enable`，enable为散列类型的key: `hget "FAST_RESTART_ENABLE_TABLE|system" enable`
+
+
+
+
+----
+
+
+
+
 # CONFIG_DB
 
 配置数据库
@@ -467,6 +513,19 @@ Write: docker/pmon/thermalctld
   - timestamp: `'%Y%m%d %H:%M:%S'`
 
 
+## FAST_RESTART_ENABLE_TABLE
+
+记录 FAST_BOOT 状态信息。
+
+```
+Read: docker/pmon/xcvrd
+```
+
+- system
+  - enable: "true"
+
+
+
 
 ---
 
@@ -564,6 +623,10 @@ Write: docker/pmon/sensormond
   - `chassis.is_modular_chassis()` (该类型不一定有此项数据库)
   - `chassis.is_smartswitch() and chassis.is_dpu()`
 
+```
+Write: docker/pmon/thermalctld
+```
+
 - <thermal_name>  `thermal.get_name()` or `{parent_name} Thermal {index}`
   - ...
 
@@ -576,6 +639,27 @@ Write: docker/pmon/sensormond
 
 
 
+
+
+---
+
+
+
+# APPL_DB
+
+
+
+## PORT_TABLE
+
+
+
+```
+Read: docker/pmon/xcvrd
+```
+
+- PortConfigDone
+
+- PortInitDone
 
 
 
