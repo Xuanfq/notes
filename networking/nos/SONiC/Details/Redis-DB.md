@@ -83,11 +83,16 @@ Read: docker/pmon/pcied (sonic_py_common/device_info.py)
 
 ```
 Read: docker/pmon/ledd
+Read: docker/pmon/xcvrd
 ```
 
-- <port_name>
+- <port_name>  (Ethernet*)
   - index: `"0"` (0-255)
-  - subport: `"0"` (0-255)
+  - subport: `"0"` (0-255) (子端口的index)
+  - lanes: `41,42,43,44` (SW CHIP ASIC 的通道)
+  - 
+  - admin_status: `"up"` or `"down"`
+  - 
   - role: `Int`/`Inb`/`Rec`/`Dpc` etc.
     ```
     - 判断是否为前面板端口：`sonic_py_common.multi_asic.is_front_panel_port(port_name, port_role)`
@@ -286,10 +291,13 @@ FrontPort 前面板端口操作状态变化表，记录端口操作状态变化�
 
 ```
 Read: docker/pmon/ledd
+Read: docker/pmon/xcvrd
 ```
 
-- <port_name>
+- <port_name>  (Ethernet*)
   - netdev_oper_status: `up` or `down` (端口操作状态)
+  - NPU_SI_SETTINGS_SYNC_STATUS: `'NPU_SI_SETTINGS_DEFAULT'` (NPU SI 默认设置)
+  - host_tx_ready: `"true"` or `"false"`
 - PortConfigDone
 - PortInitDone
 
@@ -523,6 +531,97 @@ Read: docker/pmon/xcvrd
 
 - system
   - enable: "true"
+
+
+## TRANSCEIVER_INFO
+
+FrontPort 前面板端口光模块信息状态等。
+
+```
+Read: docker/pmon/xcvrd
+```
+
+- <port_name>  (Ethernet*)
+  - type: `QSFP28` or `QSFP+` or `..` (XCVR_TYPE)
+
+- <{port_name}:{n} (ganged)>  (聚合端口) (e.g. Ethernet8是由两个端口聚合: "Ethernet8:1 (ganged)", "Ethernet8:2 (ganged)")
+
+
+## TRANSCEIVER_FIRMWARE_INFO
+
+
+
+## TRANSCEIVER_DOM_SENSOR
+
+
+
+## TRANSCEIVER_DOM_FLAG
+
+
+
+## TRANSCEIVER_DOM_FLAG_CHANGE_COUNT
+
+
+
+## TRANSCEIVER_DOM_FLAG_SET_TIME
+
+
+
+## TRANSCEIVER_DOM_FLAG_CLEAR_TIME
+
+
+
+## TRANSCEIVER_DOM_THRESHOLD
+
+
+
+## TRANSCEIVER_STATUS
+
+
+
+## TRANSCEIVER_STATUS_FLAG
+
+
+
+## TRANSCEIVER_STATUS_FLAG_CHANGE_COUNT
+
+
+
+## TRANSCEIVER_STATUS_FLAG_SET_TIME
+
+
+
+## TRANSCEIVER_STATUS_FLAG_CLEAR_TIME
+
+
+
+## TRANSCEIVER_STATUS_SW
+
+
+
+## TRANSCEIVER_VDM_REAL_VALUE
+
+
+
+## TRANSCEIVER_VDM_HALARM_THRESHOLD
+
+
+
+## TRANSCEIVER_VDM_LALARM_THRESHOLD
+
+
+
+## TRANSCEIVER_VDM_HWARN_THRESHOLD
+
+
+
+## TRANSCEIVER_VDM_LWARN_THRESHOLD
+
+
+
+
+
+
 
 
 

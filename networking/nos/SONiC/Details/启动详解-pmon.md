@@ -1478,7 +1478,11 @@ Chassis 模块继承自 `src/sonic-platform-common/sonic_platform_base/module_ba
 
 ## sonic-xcvrd
 
-**核心功能**：光模块信息更新守护进程，写入 State DB
+**核心功能**：光模块信息更新守护进程，控制QSFP28/QSFP+的tx_disabe ，写入 State DB
+
+**重要参数**：
+- skip_cmis_mgr: 禁用CMIS管理
+- enable_sff_mgr: 启用SFF管理
 
 **重要文件**：
 - /usr/share/sonic/platform/plugins/sfputil.py (继承`src/sonic-platform-common/sonic_sfp/sfputilbase.py/SfpUtilBase`, 类名需为`class SfpUtil(SfpUtilBase)`)(或通过`sonic_platform.platform.Platform().get_chassis().get_sfp(physical_port)`获取`SfpBase`，`src/sonic-platform-common/sonic_platform_base/sfp_base.py`，优先)
@@ -1486,6 +1490,11 @@ Chassis 模块继承自 `src/sonic-platform-common/sonic_platform_base/module_ba
 - /usr/share/sonic/platform/media_settings.json (次选)
 - /usr/share/sonic/platform/$hwsku/optics_si_settings.json (优先) (光模块 端 自定义 SI信号完整性 参数配置)
 - /usr/share/sonic/platform/optics_si_settings.json (次选)
+
+**代码实现**：
+- SFF: Small Form Factor，指的是小型化的硬件组件和系统，也是小型化封装行业标准。SONiC中主要是指符合 SFF 标准的光模块
+- CMIS: 
+- DOM: Digital Optical Monitor，数字光监控（光模块核心监测功能，收发光功率、温度、电压等参数）
 
 
 ### 核心总体流程
@@ -1509,7 +1518,80 @@ Chassis 模块继承自 `src/sonic-platform-common/sonic_platform_base/module_ba
          1. ASIC 端 SerDes 自定义 SI信号完整性 参数配置，预加重参数: `media_settings_parser.load_media_settings()`
          2. 光模块 端 自定义 SI信号完整性 参数配置: `optics_si_parser.load_optics_si_settings()`
       6. 等待所有端口都配置完成 (监控`APPL_DB.PORT_TABLE`出现`["PortConfigDone", "PortInitDone"]`其中一个key): `for namespace in self.namespaces: self.wait_for_port_config_done(namespace)`
-      7. 
+      7. 生成端口映射数据管理实例(EthernetXX/port_name/logic->index/phy, index/phy->[EthernetXX/port_name/logic]): `port_mapping_data = port_event_helper.get_port_mapping(self.namespaces)`
+      8. 在数据库端口数据表中初始化端口初始控制相关字段，`STATE_DB.PORT_TABLE.<lport/port_name>`中，若端口尚未配置该字段，则初始化 NPU_SI_SETTINGS_SYNC_STATUS_KEY 字段: `self.initialize_port_init_control_fields_in_port_table()`
+         1. 遍历所有逻辑端口: 
+            1. 若端口对应的 STATE_DB.PORT_TABLE 不存在 (没有对应的相关key)，则跳过该端口
+            2. 获取端口的值，不存在则设为空，更新添加新的字段: `NPU_SI_SETTINGS_SYNC_STATUS: 'NPU_SI_SETTINGS_DEFAULT'`
+      9. 创建字典来存放物理端口与其对应的SFP对象(`index/phy->SfpBase()`)(`chassis.get_sfp(physical_port)`): `self.sfp_obj_dict = self.initialize_sfp_obj_dict(port_mapping_data)`
+      10. 若光模块不存在，则删除对应的 STATE_DB.TRANSCEIVER_INFO 表，以避免光模块被拔除、而 xcvrd 进程未运行时残留无效表项: `self.remove_stale_transceiver_info(port_mapping_data)`
+          - <port_name>  (Ethernet*)
+          - <{port_name}:{n} (ganged)>  (聚合端口) (e.g. Ethernet8是由两个端口聚合: "Ethernet8:1 (ganged)", "Ethernet8:2 (ganged)")
+      11. 返回端口映射管理实例
+   2. 若启用SFF管理，创建SFF管理器并启动管理线程，控制QSFP28/QSFP+的tx_disabe: `sff_manager = SffManagerTask(self.namespaces, self.stop_event, platform_chassis, helper_logger); .start()`
+      ```
+      sff_mgr 的核心作用，是确保符合 SFF 标准的光模块以确定性方式完成链路拉起；即仅当主机发送就绪信号（host_tx_ready）置为真时，才开启发送端（TX）；一旦该信号变为假，则关闭发送端（TX）。此举可规避链路稳定性问题、杜绝接口频繁抖动；同时关闭发送端还能降低功耗，并避免管理员关闭接口时出现机房安全隐患。
+      启用 sff_mgr 的前置要求：无论光模块是上电重启，还是整机开机场景，模块解除复位后，平台必须保持发送端（TX）处于关闭状态。此举是为确保在主机发送就绪信号（host_tx_ready）生效前，模块不会开启发送、向外发光。控制QSFP28/QSFP+的tx_disabe
+      ```
+      1. 创建 数据库端口数据变更 观察器，仅作为管理类，无单独线程处理事件，处理事件见下方: `PortChangeObserver(..,self.on_port_update_event, self.PORT_TBL_MAP)`
+         1. 从 CONFIG_DB.PORT 中获取每个逻辑端口 EthernetX 的角色
+         2. 订阅DB表:
+            1. CONFIG_DB.PORT
+            2. STATE_DB.TRANSCEIVER_INFO (仅保留字段 STATE_DB.TRANSCEIVER_INFO|*.type )
+            3. STATE_DB.PORT_TABLE (仅保留字段 STATE_DB.PORT_TABLE|*.host_tx_ready )
+      2. 循环执行，每次循环前检查是否有接收到终止信号:
+         1. 处理 数据库端口数据更新 事件，若无事件更新(1000ms=1s)则进入下一次循环: `if not port_change_observer.handle_port_update_event(): continue`
+            1. 1000 ms 无事件则返回
+            2. 过滤处保留字段
+            3. 仅识别发生 Redis 写入（SET）/删除（DEL）的操作
+            4. 避免实际数据与上次事件的缓存一致而导致的伪更新，跳过
+            5. 对于key的更新，封装成 PortChangeEvent 事件，调用 `self.on_port_update_event(PortChangeEvent)` 处理
+               1. 跳过 端口名非`Ethernet*` 及 物理端口索引`index=None`不可用 的端口变更事件
+               2. 实际是 维护一张端口属性状态表/字典`port_dict`:
+                  - <lport-EthernetXX>  (删除 CONFIG_DB.PORT|EthernetX 时删除)
+                    - index: `"0"` (0-255)
+                    - subport: `"0"` (0-255) (子端口的index)
+                    - lanes: `41,42,43,44` (SW CHIP ASIC 的通道)
+                    - host_tx_ready: `"true"` or `"false"`
+                    - admin_status: up or down
+                    - type: `QSFP28` or `QSFP+` or `..` (XCVR 光模块类型)  (删除表 STATE_DB.PORT_TABLE|*.host_tx_ready 时删除该key，即光模块插拔)
+         2. 遍历`port_dict`表，处理每个逻辑端口 配置库（CONFIG）变更、状态库（STATE_DB）内的模块插拔事件，以及主机发送就绪（host_tx_ready）状态变更事件
+            1. 物理端口索引index<0 或 通道lanes 或 光模块类型type 不可用， 或 光模块类型非QSFP28/QSFP+，则跳过该端口
+            2. 若不存在 host_tx_ready 属性，则从数据库获取，失败时默认为 false
+            3. 若不存在 admin_status 属性，则从数据库获取，失败时默认为 down
+            4. 动作识别: 插入光模块
+               1. 先前的数据中，不存在该 逻辑端口 lport
+               2. 先前的数据中，不存在光模块类型 type
+               3. 现在存在了（见上方，不存在的话就跳过了）
+            5. 动作识别: host_tx_ready 变更
+               1. 先前的数据中，不存在该 逻辑端口 lport
+               2. 先前的数据中，不存在 host_tx_ready
+               3. 先前的数据中，host_tx_ready 与现在不一样
+            6. 动作识别: admin_status 变更
+               1. 先前的数据中，不存在该 逻辑端口 lport
+               2. 先前的数据中，不存在 admin_status
+               3. 先前的数据中，admin_status 与现在不一样
+            7. 若上方的动作均没有，则跳过该端口
+            8. 获取 端口 的 SFP 光模块 抽象管理实例: `sfp = self.platform_chassis.get_sfp(pport)`
+            9. 再次确保 SFP 光模块 需要 在位 ，不在位则删除 type，并跳过该端口: `if not sfp.get_presence(): continue`
+            10. 检查 SFP 光模块 管理实例 是否支持 XcvrApi ， 不支持则跳过该端口: `if sfp.get_xcvr_api() is None: continue`
+            11. 检查 SFP 光模块 是否为 "扁平存储光模块 / 直连存储型光收发器" ，而非 " 分页式存储器件 / 分页内存设备"，若是则跳过该端口: `if api.is_flat_memory(): continue`
+            12. 检查 SFP 光模块 是否为 "铜缆 / 铜线电缆" 类型，若是则跳过该端口: `if api.is_copper(): continue`
+            13. 检查 SFP 光模块 管理实例 是否支持 tx_disable ，不支持则跳过该端口: `if not api.get_tx_disable_support(): continue`
+            14. 若动作为 插入光模块 ，且 admin_status = up ，设置 光模块 低功耗 模式为 False，关闭低功耗模式: `sfp.set_lpmode(False) if isinstance(api, Sff8472Api) else api.set_lpmode(False)`
+            15. 若 active_lanes 为空，则为 逻辑端口 获取其 active_lanes 并保存到 port_dict: `active_lanes = self.get_active_lanes_for_lport(lport, subport, len(lanes_list), self.DEFAULT_NUM_LANES_PER_PPORT=4)`
+                1. lanes 数量需为 DEFAULT_NUM_LANES_PER_PPORT=4 的整数倍，*否则跳过该端口*
+                2. active lanes = `[False] * DEFAULT_NUM_LANES_PER_PPORT = [False, False, False, False]`
+                3. 若 subport 为 0 （也可能是没有该字段），意味着是 全部 lanes 均为 active
+                4. 否则 active 的 lanes 的 为 范围 [subport - 1 , len(lanes_list)] 为 active
+            16. 目标的 target_tx_disable_flag (tx disable) 是 只有在 `host_tx_ready=true & admin_status is up` 时才开启 Tx 而关闭 tx_disable : `target_tx_disable_flag = not (data[self.HOST_TX_READY] == 'true' and data[self.ADMIN_STATUS] == 'up')`
+            17. 获取当前实际 tx disable 情况 (list, *True是tx disabled*) ，若为none则设为 非 target_tx_disable_flag: `cur_tx_disable_array = api.get_tx_disable(); if is none: cur_tx_disable_array = [not target_tx_disable_flag] * self.DEFAULT_NUM_LANES_PER_PPORT`
+            18. 设置目标的 tx_disabe ，所有 通道 lanes 都要设置: `api.tx_disable_channel(mask=int, target_tx_disable_flag)`
+   3. 若不禁用CMIS管理，创建CMIS管理器并启动管理线程: `cmis_manager = CmisManagerTask(self.namespaces, port_mapping_data, self.stop_event, self.skip_cmis_mgr); .start()`
+   4. 创建 DOM 信息更新任务管理器并启动管理线程，定期在数据库中更新各类光模块诊断信息等: `dom_info_update = DomInfoUpdateTask(self.namespaces, port_mapping_data, self.sfp_obj_dict, self.stop_event, self.skip_cmis_mgr); .start()`
+   5. 创建 SFP 状态更新任务器并启动线程，监听并处理SFP修改事件: `sfp_state_update = SfpStateUpdateTask(self.namespaces, port_mapping_data, self.sfp_obj_dict, self.stop_event, self.sfp_error_event); .start()`
+   6. 持续接收中断信号，接收到后停止相关线程，并注销初始化`self.deinit()`
+      - 清除数据表数据: `STATE_DB.TRANSCEIVER_*`, `TRANSCEIVER_INFO`除外
 
 
 > SYSLOG_IDENTIFIER = 'xcvrd'
