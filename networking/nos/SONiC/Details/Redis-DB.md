@@ -597,6 +597,14 @@ Read: docker/pmon/xcvrd
 
 ## TRANSCEIVER_STATUS_SW
 
+FrontPort 前面板端口光模块信息状态等。
+
+```
+Write: docker/pmon/xcvrd
+```
+
+- <port_name>  (Ethernet*)
+  - cmis_state: `"UNKNOWN"`
 
 
 ## TRANSCEIVER_VDM_REAL_VALUE

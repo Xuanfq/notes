@@ -29,8 +29,8 @@
       - pd-plugin.json        # pddf 插件数据
       - pddf-device.json      # pddf 设备相关如驱动API的拓扑管理与配置
     - plugins/
-      - led_control.py        # option, ledd 插件, `class LedControl(LedControlBase)`实现类, 继承`src/sonic-platform-common/sonic_led/led_control_base.py`
-      - psuutil.py            # option, psud 插件, `PsuUtil(PsuBase)`实现类, 继承`src/sonic-platform-common/sonic_psu/psu_base.py` (可由`sonic_platform`替代实现)
+      - led_control.py        # option, ledd 插件, `class LedControl(LedControlBase)`实现类, 继承`src/sonic-platform-common/sonic_led/led_control_base.py` (前面板端口状态 LED 控制，若启用该功能必须实现该插件)
+      - psuutil.py            # option, psud 插件, `PsuUtil(PsuBase)`实现类, 继承`src/sonic-platform-common/sonic_psu/psu_base.py` (该方式将阉割掉主要的重要的实时监控功能，不建议，可由`sonic_platform`替代实现)
       - eeprom.py             # option, syseepromd 插件, `PsuUtil(PsuBase)`实现类, 继承`src/sonic-platform-common/sonic_eeprom/eeprom_tlvinfo.py` (可由`sonic_platform`替代实现)
       - sfputil.py            # option, xcvrd 插件, `SfpUtil(SfpUtilBase)`实现类, 继承`src/sonic-platform-common/sonic_sfp/sfputilbase.py` (可由`sonic_platform`替代实现)
     - installer.conf          # 机器安装配置, 安装时将覆盖其他如onie-image.conf等配置

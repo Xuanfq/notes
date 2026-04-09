@@ -827,6 +827,7 @@ Chassis 模块继承自 `src/sonic-platform-common/sonic_platform_base/module_ba
 
 **重要文件**：
 - /usr/share/sonic/platform/plugins/led_control.py (继承`src/sonic-platform-common/sonic_led/led_control_base.py`)
+  - 若需要该LED控制功能，将必须有该插件
 
 
 ### 核心总体流程
@@ -843,7 +844,7 @@ Chassis 模块继承自 `src/sonic-platform-common/sonic_platform_base/module_ba
    3. 加载平台特定 LED 控制模块
 
       - 尝试加载平台特定的 `led_control` 模块中的 `class LedControl(sonic_led.led_control_base.LedControlBase)` 类，位于**`/usr/share/sonic/platform/plugins/led_control.py`**，继承并实现**`src/sonic-platform-common/sonic_led/led_control_base.py`**
-      - 如果加载失败，记录错误并退出（错误码：LEDUTIL_LOAD_ERROR=1）
+      - 如果*加载失败，记录错误并退出*（错误码：LEDUTIL_LOAD_ERROR=1）
 
       ```python
       self.led_control = self.load_platform_util(LED_MODULE_NAME, LED_CLASS_NAME)
@@ -1035,6 +1036,7 @@ Chassis 模块继承自 `src/sonic-platform-common/sonic_platform_base/module_ba
 
 **重要文件**：
 - /usr/share/sonic/platform/plugins/psuutil.py (继承`src/sonic-platform-common/sonic_psu/psu_base.py/PsuBase`, 类名需为`class PsuUtil(PsuBase)`)
+  - 若使用插件方式，将阉割掉主要的重要的功能
 
 
 ### 核心总体流程
@@ -1486,6 +1488,8 @@ Chassis 模块继承自 `src/sonic-platform-common/sonic_platform_base/module_ba
 
 **重要文件**：
 - /usr/share/sonic/platform/plugins/sfputil.py (继承`src/sonic-platform-common/sonic_sfp/sfputilbase.py/SfpUtilBase`, 类名需为`class SfpUtil(SfpUtilBase)`)(或通过`sonic_platform.platform.Platform().get_chassis().get_sfp(physical_port)`获取`SfpBase`，`src/sonic-platform-common/sonic_platform_base/sfp_base.py`，优先)
+  - 推荐 sonic_platform 方式，SFF Mgr 需要该方式实现
+  - 
 - /usr/share/sonic/platform/$hwsku/media_settings.json (优先) (ASIC 端 SerDes 自定义 SI信号完整性 参数配置，预加重参数)
 - /usr/share/sonic/platform/media_settings.json (次选)
 - /usr/share/sonic/platform/$hwsku/optics_si_settings.json (优先) (光模块 端 自定义 SI信号完整性 参数配置)
@@ -1528,7 +1532,7 @@ Chassis 模块继承自 `src/sonic-platform-common/sonic_platform_base/module_ba
           - <port_name>  (Ethernet*)
           - <{port_name}:{n} (ganged)>  (聚合端口) (e.g. Ethernet8是由两个端口聚合: "Ethernet8:1 (ganged)", "Ethernet8:2 (ganged)")
       11. 返回端口映射管理实例
-   2. 若启用SFF管理，创建SFF管理器并启动管理线程，控制QSFP28/QSFP+的tx_disabe: `sff_manager = SffManagerTask(self.namespaces, self.stop_event, platform_chassis, helper_logger); .start()`
+   2. 若启用SFF管理，创建SFF管理器并启动管理线程，控制QSFP28/QSFP+的tx_disabe (*需要`sonic_platform`实现*): `sff_manager = SffManagerTask(self.namespaces, self.stop_event, platform_chassis, helper_logger); .start()`
       ```
       sff_mgr 的核心作用，是确保符合 SFF 标准的光模块以确定性方式完成链路拉起；即仅当主机发送就绪信号（host_tx_ready）置为真时，才开启发送端（TX）；一旦该信号变为假，则关闭发送端（TX）。此举可规避链路稳定性问题、杜绝接口频繁抖动；同时关闭发送端还能降低功耗，并避免管理员关闭接口时出现机房安全隐患。
       启用 sff_mgr 的前置要求：无论光模块是上电重启，还是整机开机场景，模块解除复位后，平台必须保持发送端（TX）处于关闭状态。此举是为确保在主机发送就绪信号（host_tx_ready）生效前，模块不会开启发送、向外发光。控制QSFP28/QSFP+的tx_disabe
@@ -1587,7 +1591,11 @@ Chassis 模块继承自 `src/sonic-platform-common/sonic_platform_base/module_ba
             16. 目标的 target_tx_disable_flag (tx disable) 是 只有在 `host_tx_ready=true & admin_status is up` 时才开启 Tx 而关闭 tx_disable : `target_tx_disable_flag = not (data[self.HOST_TX_READY] == 'true' and data[self.ADMIN_STATUS] == 'up')`
             17. 获取当前实际 tx disable 情况 (list, *True是tx disabled*) ，若为none则设为 非 target_tx_disable_flag: `cur_tx_disable_array = api.get_tx_disable(); if is none: cur_tx_disable_array = [not target_tx_disable_flag] * self.DEFAULT_NUM_LANES_PER_PPORT`
             18. 设置目标的 tx_disabe ，所有 通道 lanes 都要设置: `api.tx_disable_channel(mask=int, target_tx_disable_flag)`
-   3. 若不禁用CMIS管理，创建CMIS管理器并启动管理线程: `cmis_manager = CmisManagerTask(self.namespaces, port_mapping_data, self.stop_event, self.skip_cmis_mgr); .start()`
+   3. 若不禁用CMIS管理，创建CMIS管理器并启动管理线程 (*需要`sonic_platform`实现*): `cmis_manager = CmisManagerTask(self.namespaces, port_mapping_data, self.stop_event, self.skip_cmis_mgr); .start()`
+      1. 若配置了 skip_cmis_mgr 或 platform_chassis 为空，则结束线程
+      2. 等待所有端口都配置完成，由于先前初始化时已等待，实际此处快速完成，见上方 (监控`APPL_DB.PORT_TABLE`出现`["PortConfigDone", "PortInitDone"]`其中一个key)
+      3. 设置所有逻辑端口的`STATE_DB.TRANSCEIVER_STATUS_SW.Ethernet*.cmis_state`为`UNKNOWN`
+      4. 
    4. 创建 DOM 信息更新任务管理器并启动管理线程，定期在数据库中更新各类光模块诊断信息等: `dom_info_update = DomInfoUpdateTask(self.namespaces, port_mapping_data, self.sfp_obj_dict, self.stop_event, self.skip_cmis_mgr); .start()`
    5. 创建 SFP 状态更新任务器并启动线程，监听并处理SFP修改事件: `sfp_state_update = SfpStateUpdateTask(self.namespaces, port_mapping_data, self.sfp_obj_dict, self.stop_event, self.sfp_error_event); .start()`
    6. 持续接收中断信号，接收到后停止相关线程，并注销初始化`self.deinit()`
