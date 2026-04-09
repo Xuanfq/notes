@@ -1595,7 +1595,66 @@ Chassis 模块继承自 `src/sonic-platform-common/sonic_platform_base/module_ba
       1. 若配置了 skip_cmis_mgr 或 platform_chassis 为空，则结束线程
       2. 等待所有端口都配置完成，由于先前初始化时已等待，实际此处快速完成，见上方 (监控`APPL_DB.PORT_TABLE`出现`["PortConfigDone", "PortInitDone"]`其中一个key)
       3. 设置所有逻辑端口的`STATE_DB.TRANSCEIVER_STATUS_SW.Ethernet*.cmis_state`为`UNKNOWN`
-      4. 
+      4. 获取是否启用 fast-reboot (`STATE_DB.FAST_RESTART_ENABLE_TABLE.system.enable`): `is_fast_reboot = is_fast_reboot_enabled()`
+      5. 创建 数据库端口数据变更 观察器，仅作为管理类，无单独线程处理事件，处理事件见下方: `PortChangeObserver(..,self.on_port_update_event, self.PORT_TBL_MAP)`
+         1. 从 CONFIG_DB.PORT 中获取每个逻辑端口 EthernetX 的角色
+         2. 订阅DB表:
+            1. CONFIG_DB.PORT
+            2. STATE_DB.TRANSCEIVER_INFO
+            3. STATE_DB.PORT_TABLE (仅保留字段 STATE_DB.PORT_TABLE|*.host_tx_ready )
+      6. 循环执行，每次循环前检查是否有接收到终止信号:
+         1. 处理 数据库端口数据更新 事件，若无事件更新(1000ms=1s)则进入下一步 (*与上方SFF管理不一样的是不进入下一次循环*): `if not port_change_observer.handle_port_update_event(): continue`
+            1. 1000 ms 无事件则返回
+            2. 过滤处保留字段
+            3. 仅识别发生 Redis 写入（SET）/删除（DEL）的操作
+            4. 避免实际数据与上次事件的缓存一致而导致的伪更新，跳过
+            5. 对于key的更新，封装成 PortChangeEvent 事件，调用 `self.on_port_update_event(PortChangeEvent)` 处理
+               1. 若是 逻辑端口 lport 是 `PortInitDone` 或 `PortConfigDone`，则记录并返回(处理完毕):
+                  - self.isPortInitDone = True
+                  - self.isPortConfigDone = True
+               2. 跳过 端口名非`Ethernet*` 及 物理端口索引`index=None`不可用 的端口变更事件
+               3. 实际是 维护一张端口属性状态表/字典`port_dict`:
+                  - <lport-EthernetXX>  (删除 `CONFIG_DB.PORT|EthernetX` 时删除)
+                    - index: `"0"` (0-255)
+                    - subport: `"0"` (0-255) (子端口的index)
+                    - lanes: `41,42,43,44` (SW CHIP ASIC 的通道)
+                    - host_tx_ready: `"true"` or `"false"`
+                    - admin_status: up or down
+                    - asic_id: ``
+                    - forced_tx_disabled: `"False"`
+                    - speed: ``
+                    - laser_freq: ``
+                    - tx_power: ``
+                    - cmis_retries: `0`
+                    - cmis_expired: `None`
+               4. 接收到某个端口的 写入（SET）动作 时无论是哪个数据库表，尝试强制重启 CMIS 状态机为 `INSERTED`，即:
+                  1. 更新数据库 `STATE_DB.TRANSCEIVER_STATUS_SW.$lport.cmis_state` 为 `INSERTED`
+                     - <port_name>  (Ethernet*)
+                       - cmis_state: `"INSERTED"`
+                  2. 修改 端口属性状态表/字典`port_dict`:
+                     - cmis_retries: `0`
+                     - cmis_expired: `None`
+               5. 接收到某个端口的 删除（DEL）动作 时:
+                  ```
+                  在处理 DEL 事件时，必须考虑以下两种场景：
+                    1. 因光模块拔出触发的 PORT_DEL 事件
+                    2. 因动态端口拆分（DPB）触发的 PORT_DEL 事件               
+                  场景 1 较为简单，仅会产生 `STATE_DB|TRANSCEIVER_INFO` 端口删除事件，因此只需将 SW_CMIS_STATE 设置为 CMIS_STATE_REMOVED 即可。                  
+                  场景 2 相对复杂。首先，针对端口拆分前的端口，会依次产生 `CONFIG_DB|PORT` PORT_DEL 以及 `STATE_DB|PORT_TABLE` PORT_DEL 事件。
+                  随后，针对拆分后的端口，会产生 `CONFIG_DB|PORT` PORT_SET 以及 `STATE_DB|PORT_TABLE` PORT_SET 事件。
+                    在此之后（短暂延迟），拆分前的端口会产生 `STATE_DB|TRANSCEIVER_INFO` PORT_DEL 事件，
+                    最后，拆分后的端口会产生 `STATE_DB|TRANSCEIVER_INFO` PORT_SET 事件。
+                  ```
+                  1. 无论是哪个数据库表，尝试强制重启 CMIS 状态机为`REMOVED`，即:
+                     1. 更新数据库 `STATE_DB.TRANSCEIVER_STATUS_SW.$lport.cmis_state` 为 `REMOVED`
+                        - <port_name>  (Ethernet*)
+                          - cmis_state: `"REMOVED"`
+                     2. 修改 端口属性状态表/字典`port_dict`:
+                        - cmis_retries: `0`
+                        - cmis_expired: `None`
+                  2. 若是`CONFIG_DB.PORT|EthernetX`，在端口属性状态表/字典`port_dict`中删除该端口
+            6. 遍历`port_dict`表，处理每个逻辑端口 配置库状态库（CONFIG_DB|PORT, STATE_DB|PORT_TABLE）里的动态端口拆分事件、状态库（STATE_DB|TRANSCEIVER_INFO）内的模块插拔事件:
+               1. 
    4. 创建 DOM 信息更新任务管理器并启动管理线程，定期在数据库中更新各类光模块诊断信息等: `dom_info_update = DomInfoUpdateTask(self.namespaces, port_mapping_data, self.sfp_obj_dict, self.stop_event, self.skip_cmis_mgr); .start()`
    5. 创建 SFP 状态更新任务器并启动线程，监听并处理SFP修改事件: `sfp_state_update = SfpStateUpdateTask(self.namespaces, port_mapping_data, self.sfp_obj_dict, self.stop_event, self.sfp_error_event); .start()`
    6. 持续接收中断信号，接收到后停止相关线程，并注销初始化`self.deinit()`

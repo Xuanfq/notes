@@ -604,7 +604,7 @@ Write: docker/pmon/xcvrd
 ```
 
 - <port_name>  (Ethernet*)
-  - cmis_state: `"UNKNOWN"`
+  - cmis_state: `"UNKNOWN"` or `"INSERTED"`
 
 
 ## TRANSCEIVER_VDM_REAL_VALUE
