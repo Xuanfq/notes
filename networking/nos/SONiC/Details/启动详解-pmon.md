@@ -1500,6 +1500,10 @@ Chassis 模块继承自 `src/sonic-platform-common/sonic_platform_base/module_ba
 - CMIS: 
 - DOM: Digital Optical Monitor，数字光监控（光模块核心监测功能，收发光功率、温度、电压等参数）
 
+**CMIS状态机**：
+- 每次重试都应从 INSERTED 状态重新开始
+- 超时会将状态重置为 INSERTED，并将重试计数加一
+
 
 ### 核心总体流程
 
@@ -1532,7 +1536,7 @@ Chassis 模块继承自 `src/sonic-platform-common/sonic_platform_base/module_ba
           - <port_name>  (Ethernet*)
           - <{port_name}:{n} (ganged)>  (聚合端口) (e.g. Ethernet8是由两个端口聚合: "Ethernet8:1 (ganged)", "Ethernet8:2 (ganged)")
       11. 返回端口映射管理实例
-   2. 若启用SFF管理，创建SFF管理器并启动管理线程，控制QSFP28/QSFP+的tx_disabe (*需要`sonic_platform`实现*): `sff_manager = SffManagerTask(self.namespaces, self.stop_event, platform_chassis, helper_logger); .start()`
+   2. 若启用SFF管理，创建SFF管理器并启动管理线程，控制QSFP28/QSFP+的tx_disabe (*需要`sonic_platform`实现并支持`XcvrApi`*): `sff_manager = SffManagerTask(self.namespaces, self.stop_event, platform_chassis, helper_logger); .start()`
       ```
       sff_mgr 的核心作用，是确保符合 SFF 标准的光模块以确定性方式完成链路拉起；即仅当主机发送就绪信号（host_tx_ready）置为真时，才开启发送端（TX）；一旦该信号变为假，则关闭发送端（TX）。此举可规避链路稳定性问题、杜绝接口频繁抖动；同时关闭发送端还能降低功耗，并避免管理员关闭接口时出现机房安全隐患。
       启用 sff_mgr 的前置要求：无论光模块是上电重启，还是整机开机场景，模块解除复位后，平台必须保持发送端（TX）处于关闭状态。此举是为确保在主机发送就绪信号（host_tx_ready）生效前，模块不会开启发送、向外发光。控制QSFP28/QSFP+的tx_disabe
@@ -1591,7 +1595,7 @@ Chassis 模块继承自 `src/sonic-platform-common/sonic_platform_base/module_ba
             16. 目标的 target_tx_disable_flag (tx disable) 是 只有在 `host_tx_ready=true & admin_status is up` 时才开启 Tx 而关闭 tx_disable : `target_tx_disable_flag = not (data[self.HOST_TX_READY] == 'true' and data[self.ADMIN_STATUS] == 'up')`
             17. 获取当前实际 tx disable 情况 (list, *True是tx disabled*) ，若为none则设为 非 target_tx_disable_flag: `cur_tx_disable_array = api.get_tx_disable(); if is none: cur_tx_disable_array = [not target_tx_disable_flag] * self.DEFAULT_NUM_LANES_PER_PPORT`
             18. 设置目标的 tx_disabe ，所有 通道 lanes 都要设置: `api.tx_disable_channel(mask=int, target_tx_disable_flag)`
-   3. 若不禁用CMIS管理，创建CMIS管理器并启动管理线程 (*需要`sonic_platform`实现*): `cmis_manager = CmisManagerTask(self.namespaces, port_mapping_data, self.stop_event, self.skip_cmis_mgr); .start()`
+   3. 若不禁用CMIS管理，创建CMIS管理器并启动管理线程 (*需要`sonic_platform`实现并支持`XcvrApi`*): `cmis_manager = CmisManagerTask(self.namespaces, port_mapping_data, self.stop_event, self.skip_cmis_mgr); .start()`
       1. 若配置了 skip_cmis_mgr 或 platform_chassis 为空，则结束线程
       2. 等待所有端口都配置完成，由于先前初始化时已等待，实际此处快速完成，见上方 (监控`APPL_DB.PORT_TABLE`出现`["PortConfigDone", "PortInitDone"]`其中一个key)
       3. 设置所有逻辑端口的`STATE_DB.TRANSCEIVER_STATUS_SW.Ethernet*.cmis_state`为`UNKNOWN`
@@ -1625,8 +1629,9 @@ Chassis 模块继承自 `src/sonic-platform-common/sonic_platform_base/module_ba
                     - speed: ``
                     - laser_freq: ``
                     - tx_power: ``
-                    - cmis_retries: `0`
-                    - cmis_expired: `None`
+                    - cmis_retries: `0` (非数据库)
+                    - cmis_expired: `None` (非数据库)
+                    - appl: `0` (非on_port_update_event维护)
                4. 接收到某个端口的 写入（SET）动作 时无论是哪个数据库表，尝试强制重启 CMIS 状态机为 `INSERTED`，即:
                   1. 更新数据库 `STATE_DB.TRANSCEIVER_STATUS_SW.$lport.cmis_state` 为 `INSERTED`
                      - <port_name>  (Ethernet*)
@@ -1654,7 +1659,33 @@ Chassis 模块继承自 `src/sonic-platform-common/sonic_platform_base/module_ba
                         - cmis_expired: `None`
                   2. 若是`CONFIG_DB.PORT|EthernetX`，在端口属性状态表/字典`port_dict`中删除该端口
             6. 遍历`port_dict`表，处理每个逻辑端口 配置库状态库（CONFIG_DB|PORT, STATE_DB|PORT_TABLE）里的动态端口拆分事件、状态库（STATE_DB|TRANSCEIVER_INFO）内的模块插拔事件:
-               1. 
+               1. 从数据库获取 光模块CMIS最新状态: `STATE_DB.TRANSCEIVER_STATUS_SW.$lport.cmis_state`
+                  1. 若状态为 `REMOVED` `FAILED` `UNKNOWN` ，更新`port_dict`表:
+                     -  <lport-EthernetXX>
+                        - appl: `0`
+                        - host_lanes_mask: `0`
+                  2. 若状态为 `READY` `REMOVED` `FAILED` `UNKNOWN` ，进入下一次循环
+               2. 若不存在 host_tx_ready 属性，则从数据库获取，失败时默认为 false (Xcvrd 并未运行，或当前为首次运行)
+               3. 若不存在 admin_status 属性，则从数据库获取，失败时默认为 down (Xcvrd 并未运行，或当前为首次运行)
+               4. 物理端口索引index<0 或 端口速率speed为0 或 子端口subport<0 ，则跳过该端口进入下一次循环
+               5. 获取 端口 的 SFP 光模块 抽象管理实例: `sfp = self.platform_chassis.get_sfp(pport) is None`
+               6. 再次确保 SFP 光模块 需要 在位 ，若 光模块 不存在，更新数据库 光模块CMIS最新状态为`REMOVED` 并跳过该端口
+               7. 检查 SFP 光模块 管理实例 是否支持 XcvrApi ，不支持则更新数据库 光模块CMIS最新状态为`READY` 并跳过该端口: `if sfp.get_xcvr_api() is None`
+               8. 检查 SFP 光模块 是否为 "扁平存储光模块 / 直连存储型光收发器" ，而非 " 分页式存储器件 / 分页内存设备"，若是则更新数据库 光模块CMIS最新状态为`READY` 并跳过该端口: `if api.is_flat_memory()`
+               9. 检查 SFP 光模块 是否为 CMIS类型 的光模块(`['QSFP-DD', 'QSFP_DD', 'OSFP', 'OSFP-8X', 'QSFP+C']`)，若不是则更新数据库 光模块CMIS最新状态为`READY` 并跳过该端口: `type = api.get_module_type_abbreviation()`
+               10. 检查 SFP 光模块 是否遵循 C-CMIS规格书 设计，若是且`port_dict`中没有对应数据，则从数据库中获取最新的配置数据:
+                   - `CONFIG_DB.PORT.EthernetX.tx_power`
+                   - `CONFIG_DB.PORT.EthernetX.laser_freq`
+               11. 若调用 XcvrApi 相关函数过程中，出现:
+                   1. AttributeError 异常，则更新数据库 光模块CMIS最新状态为`READY` 并跳过该端口
+                   2. 其他 异常，则更新数据库 光模块CMIS最新状态为`FAILED` 并跳过该端口
+               12. 若属性 `host_lanes_mask <= 0 or appl < 1` 且 光模块CMIS状态不为`INSERTED` ，则更新数据库 光模块CMIS最新状态为`FAILED` 并跳过该端口
+               13. 若属性 重试次数`cmis_retries` 大于 最大重试次数`3` ，则更新数据库 光模块CMIS最新状态为`FAILED` 并跳过该端口
+               14. CMIS 状态转移:
+                   1. 处于 `INSERTED` 状态时:
+                      1. 获取与指定主机侧配置相匹配的 CMIS 应用编码，更新到属性`appl`中，实际上是通过`cmis.py`获取 CMIS 光模块的应用能力通告信息，*检查光模块是否支持特定数量的lane和速率*，不支持则返回None: `self.port_dict[lport]['appl'] = get_cmis_application_desired(api, host_lane_count, host_speed)`
+                      2. `appl`为 None 时，则更新数据库 光模块CMIS最新状态为`FAILED` 并跳过该端口
+                      3. 
    4. 创建 DOM 信息更新任务管理器并启动管理线程，定期在数据库中更新各类光模块诊断信息等: `dom_info_update = DomInfoUpdateTask(self.namespaces, port_mapping_data, self.sfp_obj_dict, self.stop_event, self.skip_cmis_mgr); .start()`
    5. 创建 SFP 状态更新任务器并启动线程，监听并处理SFP修改事件: `sfp_state_update = SfpStateUpdateTask(self.namespaces, port_mapping_data, self.sfp_obj_dict, self.stop_event, self.sfp_error_event); .start()`
    6. 持续接收中断信号，接收到后停止相关线程，并注销初始化`self.deinit()`

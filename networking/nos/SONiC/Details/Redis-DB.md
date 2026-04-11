@@ -88,11 +88,12 @@ Read: docker/pmon/xcvrd
 
 - <port_name>  (Ethernet*)
   - index: `"0"` (0-255)
-  - subport: `"0"` (0-255) (子端口的index)
+  - subport: `"0"` (0-255) (物理端口拆分 breakout 后的逻辑子端口，属于index的子端口，若为 0 或 不存在该字段 则表示 non-breakout)
   - lanes: `41,42,43,44` (SW CHIP ASIC 的通道)
   - 
   - admin_status: `"up"` or `"down"`
-  - 
+  - laser_freq: `"1"`
+  - tx_power: `"0.0"`
   - role: `Int`/`Inb`/`Rec`/`Dpc` etc.
     ```
     - 判断是否为前面板端口：`sonic_py_common.multi_asic.is_front_panel_port(port_name, port_role)`
@@ -604,7 +605,11 @@ Write: docker/pmon/xcvrd
 ```
 
 - <port_name>  (Ethernet*)
-  - cmis_state: `"UNKNOWN"` or `"INSERTED"`
+  - cmis_state: 
+    - `UNKNOWN`
+    - `READY`
+    - `FAILED`
+    - `REMOVED`
 
 
 ## TRANSCEIVER_VDM_REAL_VALUE
