@@ -1504,6 +1504,12 @@ Chassis 模块继承自 `src/sonic-platform-common/sonic_platform_base/module_ba
 - 每次重试都应从 INSERTED 状态重新开始
 - 超时会将状态重置为 INSERTED，并将重试计数加一
 
+**光模块通道lanes**：
+| 侧别                    | 含义                               | 举例（400G-DR4 模块）       |
+| :---------------------- | :--------------------------------- | :-------------------------- |
+| **主机侧 (Host Lanes)** | 模块金手指到设备 ASIC 的电信号通道 | 8 条电通道（8×50G PAM4）    |
+| **光侧 (Media Lanes)**  | 模块内部到光纤的物理光通道         | 4 条光通道（4×100G 光信号） |
+
 
 ### 核心总体流程
 
@@ -1619,19 +1625,22 @@ Chassis 模块继承自 `src/sonic-platform-common/sonic_platform_base/module_ba
                2. 跳过 端口名非`Ethernet*` 及 物理端口索引`index=None`不可用 的端口变更事件
                3. 实际是 维护一张端口属性状态表/字典`port_dict`:
                   - <lport-EthernetXX>  (删除 `CONFIG_DB.PORT|EthernetX` 时删除)
-                    - index: `"0"` (0-255)
-                    - subport: `"0"` (0-255) (子端口的index)
-                    - lanes: `41,42,43,44` (SW CHIP ASIC 的通道)
-                    - host_tx_ready: `"true"` or `"false"`
-                    - admin_status: up or down
+                    - index: `"0"` (0-255) (数据库)
+                    - subport: `"0"` (0-255) (子端口的index) (数据库)
+                    - lanes: `41,42,43,44` (SW CHIP ASIC 的通道) (数据库)
+                    - host_tx_ready: `"true"` or `"false"` (数据库)
+                    - admin_status: up or down (数据库)
+                    - forced_tx_disabled: `"False"` (数据库)
+                    - speed: `` (数据库)
+                    - laser_freq: `` (数据库)
+                    - tx_power: `` (数据库)
                     - asic_id: ``
-                    - forced_tx_disabled: `"False"`
-                    - speed: ``
-                    - laser_freq: ``
-                    - tx_power: ``
-                    - cmis_retries: `0` (非数据库)
-                    - cmis_expired: `None` (非数据库)
-                    - appl: `0` (非on_port_update_event维护)
+                    - cmis_retries: `0`
+                    - cmis_expired: `None`
+                    - appl: `0` (通过`cmis.py`获取的 CMIS 光模块的应用能力通告信息，0-16)
+                    - host_lanes_mask: `0` (光模块 主机侧金手指侧 有效激活通道lanes的掩码mask)
+                    - media_lanes_mask: `0`
+                    - 
                4. 接收到某个端口的 写入（SET）动作 时无论是哪个数据库表，尝试强制重启 CMIS 状态机为 `INSERTED`，即:
                   1. 更新数据库 `STATE_DB.TRANSCEIVER_STATUS_SW.$lport.cmis_state` 为 `INSERTED`
                      - <port_name>  (Ethernet*)
@@ -1683,9 +1692,23 @@ Chassis 模块继承自 `src/sonic-platform-common/sonic_platform_base/module_ba
                13. 若属性 重试次数`cmis_retries` 大于 最大重试次数`3` ，则更新数据库 光模块CMIS最新状态为`FAILED` 并跳过该端口
                14. CMIS 状态转移:
                    1. 处于 `INSERTED` 状态时:
-                      1. 获取与指定主机侧配置相匹配的 CMIS 应用编码，更新到属性`appl`中，实际上是通过`cmis.py`获取 CMIS 光模块的应用能力通告信息，*检查光模块是否支持特定数量的lane和速率*，不支持则返回None: `self.port_dict[lport]['appl'] = get_cmis_application_desired(api, host_lane_count, host_speed)`
+                      1. 获取 光模块 主机侧金手指侧配置相匹配的 CMIS 应用编码，更新到属性`appl`中，实际上是通过`cmis.py`获取 CMIS 光模块的应用能力通告信息，*检查光模块是否支持特定数量的lane和速率*，不支持则返回None: `get_cmis_application_desired(api, host_lane_count, host_speed)`
                       2. `appl`为 None 时，则更新数据库 光模块CMIS最新状态为`FAILED` 并跳过该端口
-                      3. 
+                      3. 获取 光模块 主机侧金手指侧 有效激活通道lanes的掩码mask ，1有效 ，对于breakout下的子端口lanes划分尤为重要，更新到属性`host_lanes_mask`中: `self.get_cmis_host_lanes_mask(api, appl, host_lane_count, subport)`
+                         1. `api.get_host_lane_assignment_option(appl)`: 是一个位掩码，其第 N 位若为1，表示从第 N 条通道开始的一段连续通道可用于某个子端口，这个值由模块固件根据 appl 应用代码返回，不同应用下的合法起始通道位置不同。
+                      4. `host_lanes_mask`为 0/负值 时，则更新数据库 光模块CMIS最新状态为`FAILED` 并跳过该端口
+                      5. 获取 光模块 光侧光纤链路的通道数 ，更新到属性`media_lane_count`中: `int(api.get_media_lane_count(appl))`
+                      6. 获取 光模块 光侧光纤链路的通道可以从哪些位置开始分配， 掩码mask ，1有效 ，更新到属性`media_lane_assignment_options`中 (同api.get_host_lane_assignment_option): `int(api.get_media_lane_assignment_option(appl))`
+                      7. 获取 光模块 光侧光纤链路的 有效激活通道lanes的掩码mask ，1有效 ，对于breakout下的子端口lanes划分尤为重要，更新到属性`media_lanes_mask`中 (算法同host_lanes_mask): `self.get_cmis_media_lanes_mask(api, appl, lport, subport)`
+                      8. `media_lanes_mask`为 0/负值 时，则更新数据库 光模块CMIS最新状态为`FAILED` 并跳过该端口
+                      9. 若 `host_tx_ready` 或 `admin_status` 还没有ready或up:
+                         1. 若启用 fast-reboot 且 CMIS 数据通路datapath处于 DataPathActivated 激活状态 ，则跳过 datapath 重新初始化
+                         2. 否则，强制 datapath 重新初始化:
+                            1. 关闭 光模块 光侧光纤链路的通道 (或breakout对应通道): `api.tx_disable_channel(media_lanes_mask, True)`
+                            2. 更新到属性`forced_tx_disabled`为 True
+                            3. 获取 光模块 数据通路发送关闭时长(s) (从软件发出关闭命令到物理激光真正熄灭的延迟时间; 或者是一次关闭操作的最小持续时间; 防止频繁开关震荡): `txoff_duration=api.get_datapath_tx_turnoff_duration()/1000`
+                            4. 更新 属性`cmis_expired` 为 数据通路发送关闭时长txoff_duration + 缓冲2ms 后过期: `self.update_cmis_state_expiration_time(lport, txoff_duration)`
+                            5. 
    4. 创建 DOM 信息更新任务管理器并启动管理线程，定期在数据库中更新各类光模块诊断信息等: `dom_info_update = DomInfoUpdateTask(self.namespaces, port_mapping_data, self.sfp_obj_dict, self.stop_event, self.skip_cmis_mgr); .start()`
    5. 创建 SFP 状态更新任务器并启动线程，监听并处理SFP修改事件: `sfp_state_update = SfpStateUpdateTask(self.namespaces, port_mapping_data, self.sfp_obj_dict, self.stop_event, self.sfp_error_event); .start()`
    6. 持续接收中断信号，接收到后停止相关线程，并注销初始化`self.deinit()`
