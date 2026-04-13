@@ -92,8 +92,9 @@ Read: docker/pmon/xcvrd
   - lanes: `41,42,43,44` (SW CHIP ASIC 的通道)
   - 
   - admin_status: `"up"` or `"down"`
-  - laser_freq: `"1"`
-  - tx_power: `"0.0"`
+  - laser_freq: `"1"` (激光频率)
+  - tx_power: `"0.0"` (ZR/ZR+相干光模块)
+  - appl: `0` (0-15) (见字典值XcvrApi.get_application_advertisement())
   - role: `Int`/`Inb`/`Rec`/`Dpc` etc.
     ```
     - 判断是否为前面板端口：`sonic_py_common.multi_asic.is_front_panel_port(port_name, port_role)`
@@ -544,6 +545,10 @@ Read: docker/pmon/xcvrd
 
 - <port_name>  (Ethernet*)
   - type: `QSFP28` or `QSFP+` or `..` (XCVR_TYPE)
+  - <active_apsel_hostlane{lane_number}>(1-8): `N/A` or `XcvrApi.get_active_apsel_hostlane().get('ActiveAppSelLane{}'.format(lane + 1))`
+  - host_lane_count: `N/A` or `XcvrApi.get_application_advertisement().get(active_apsel_hostlane{lane_number}).get('host_lane_count')`
+  - media_lane_count: `N/A` or `XcvrApi.get_application_advertisement().get(active_apsel_hostlane{lane_number}).get('media_lane_count')`
+  - 
 
 - <{port_name}:{n} (ganged)>  (聚合端口) (e.g. Ethernet8是由两个端口聚合: "Ethernet8:1 (ganged)", "Ethernet8:2 (ganged)")
 

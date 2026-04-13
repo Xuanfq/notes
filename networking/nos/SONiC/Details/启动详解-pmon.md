@@ -1500,15 +1500,49 @@ Chassis 模块继承自 `src/sonic-platform-common/sonic_platform_base/module_ba
 - CMIS: 
 - DOM: Digital Optical Monitor，数字光监控（光模块核心监测功能，收发光功率、温度、电压等参数）
 
-**CMIS状态机**：
-- 每次重试都应从 INSERTED 状态重新开始
-- 超时会将状态重置为 INSERTED，并将重试计数加一
-
 **光模块通道lanes**：
 | 侧别                    | 含义                               | 举例（400G-DR4 模块）       |
 | :---------------------- | :--------------------------------- | :-------------------------- |
 | **主机侧 (Host Lanes)** | 模块金手指到设备 ASIC 的电信号通道 | 8 条电通道（8×50G PAM4）    |
 | **光侧 (Media Lanes)**  | 模块内部到光纤的物理光通道         | 4 条光通道（4×100G 光信号） |
+
+
+### CMIS状态机
+
+```mermaid
+stateDiagram-v2
+   [*] --> UNKNOWN
+
+   UNKNOWN --> 前置检查 : 进入循环
+
+   前置检查 --> REMOVED : 不在位
+   前置检查 --> REMOVED : 删除数据库<br/>CONFIG_DB.PORT<br/>STATE_DB.TRANSCEIVER_INFO<br/>STATE_DB.PORT_TABLE|.host_tx_ready
+   前置检查 --> FAILED : XcvrApi异常/重试超限
+   前置检查 --> READY : 非XcvrApi/非分页式存储
+   前置检查 --> READY : 非CMIS光模块<br/>(QSFP-DD/QSFP_DD/OSFP/OSFP-8X/QSFP+C)
+   前置检查 --> INSERTED : 修改数据库<br/>CONFIG_DB.PORT<br/>STATE_DB.TRANSCEIVER_INFO<br/>STATE_DB.PORT_TABLE|.host_tx_ready
+
+   REMOVED --> [*]
+   FAILED --> [*]
+   READY --> [*]
+
+   INSERTED --> FAILED : appl invalid
+   INSERTED --> FAILED : host/media mask invalid
+   INSERTED --> READY : !(host_tx_ready & admin_status) then<br/> !fast-reboot or !DataPathActivated: <br/>-> forced_tx_disabled
+   INSERTED --> DP_PRE_INIT_CHECK : appl/lane/mask valid &<br>host_tx_ready & admin_status
+
+   DP_PRE_INIT_CHECK --> INSERTED : forced_tx_disabled & !DataPathDeactivated & !DataPathInitialized & timeout
+   DP_PRE_INIT_CHECK --> INSERTED : appl需要更新 & DP通道的AppSel停用失败
+   DP_PRE_INIT_CHECK --> READY : appl/laser_freq不需要更新
+   DP_PRE_INIT_CHECK --> DP_DEINIT : appl/laser_freq需要更新
+
+```
+
+- [INSERTED] !(host_tx_ready & admin_status) then !fast-reboot or !DataPathActivated: 关闭光模块光侧光纤链路的通道 tx_disable 以实现 fast-reboot
+- [DP_PRE_INIT_CHECK] 应用自定义 ZR/ZR+相干光模块 tx_power: 配置目标输出功率 tx_power
+- [DP_PRE_INIT_CHECK] 应用自定义 appl: 状态转移至DP_DEINIT以触发更新
+- [DP_PRE_INIT_CHECK] 应用自定义 ZR/ZR+相干光模块 laser_freq: 状态转移至DP_DEINIT以触发更新
+- [DP_DEINIT] 
 
 
 ### 核心总体流程
@@ -1708,7 +1742,30 @@ Chassis 模块继承自 `src/sonic-platform-common/sonic_platform_base/module_ba
                             2. 更新到属性`forced_tx_disabled`为 True
                             3. 获取 光模块 数据通路发送关闭时长(s) (从软件发出关闭命令到物理激光真正熄灭的延迟时间; 或者是一次关闭操作的最小持续时间; 防止频繁开关震荡): `txoff_duration=api.get_datapath_tx_turnoff_duration()/1000`
                             4. 更新 属性`cmis_expired` 为 数据通路发送关闭时长txoff_duration + 缓冲2ms 后过期: `self.update_cmis_state_expiration_time(lport, txoff_duration)`
-                            5. 
+                            5. 将端口 主机侧金手指侧 有效激活通道 写入数据库`STATE_DB.TRANSCEIVER_INFO`，由于对光模块光纤链路通道进行了关闭操作，所以数据值均为`N/A`: `self.post_port_active_apsel_to_db(api, lport, host_lanes_mask, reset_apsel=True)`
+                               - <active_apsel_hostlane{lane_number}>(1-8): `N/A` or `XcvrApi.get_active_apsel_hostlane().get('ActiveAppSelLane{}'.format(lane + 1))`
+                               - host_lane_count: `N/A` or `XcvrApi.get_application_advertisement().get(active_apsel_hostlane{lane_number}).get('host_lane_count')`
+                               - media_lane_count: `N/A` or `XcvrApi.get_application_advertisement().get(active_apsel_hostlane{lane_number}).get('media_lane_count')`
+                            6. 更新数据库 光模块CMIS最新状态为`READY` 并跳过该端口
+                      10. 更新数据库 光模块CMIS最新状态为`DP_PRE_INIT_CHECK`
+                   2. 处于 `DP_PRE_INIT_CHECK` 状态时:
+                      1. [检查tx_disable操作是否成功] 检查是否配置了`forced_tx_disabled`，若是:
+                         ```
+                         当收发器处于低功耗模式时，即使Tx被禁用，其数据通路也将保持 DataPathDeactivated（数据通路未激活）状态；
+                         若在CMIS初始化完成后禁用Tx，收发器将进入 DataPathInitialized（数据通路已初始化）状态
+                         ```
+                         1. 若数据通路不处于`['DataPathDeactivated', 'DataPathInitialized']`，则检查`cmis_expired`是否过期，没过期则跳过该端口，过期则更新数据库 光模块CMIS最新状态为`INSERTED`，重试次数加一 并跳过该端口 
+                         2. 若数据通路处于`['DataPathDeactivated', 'DataPathInitialized']`，则说明处于`tx_disabled`，更新到属性`forced_tx_disabled`为 False
+                      2. [配置自定义ZR/ZR+相干光模块功耗tx_power] 若是 ZR/ZR+ 相干光模块 (`api.is_coherent_module()`) ，其tx_power不为0且功率值不匹配，配置目标tx_power输出功率`api.set_tx_power(tx_power)`，若tx_power不在光模块支持范围内`api.get_supported_power_config()`记录警告日志
+                      3. [配置自定义appl][设置DP通道的AppSel为0未使用状态] 当需要配置非默认应用编码(即非INSERTED状态下自动计算的主机侧光侧lane映射)时(`for lane in range(self.CMIS_MAX_HOST_LANES):if api.get_application(lane) != 0 and api.get_application(lane) != appl`)，将所有 DP 通道的 AppSel 设置为未使用状态（0）`api.decommission_all_datapaths()`，若设置失败，则更新数据库 光模块CMIS最新状态为`INSERTED`，重试次数加一 并跳过该端口
+                      4. [配置自定义appl][触发更新] 检查是否需要更新并应用自定义appl，需要则标记更新 need_update: `need_update = self.is_cmis_application_update_required(api, appl, host_lanes_mask)`
+                      5. [配置自定义ZR/ZR+相干光模块激光频率laser_freq][触发更新] 对于 ZR 模块，在选择新通道时需要重新初始化数据通路。如果用户请求的频率与模块当前配置的频率不一致，则强制重新初始化数据通路。若频率符合光模块则 设置标记更新 need_update，否则更新 属性`laser_freq`为0: `if self.validate_frequency_and_grid(api, lport, freq): need_update = True`
+                      6. [不触发更新] 若不需要更新，将端口 主机侧金手指侧 有效激活通道 写入数据库`STATE_DB.TRANSCEIVER_INFO`，更新数据库 光模块CMIS最新状态为`READY` 并跳过该端口，数据值非均为`N/A`: `self.post_port_active_apsel_to_db(api, lport, host_lanes_mask, reset_apsel=True)`
+                         - <active_apsel_hostlane{lane_number}>(1-8): `N/A` or `XcvrApi.get_active_apsel_hostlane().get('ActiveAppSelLane{}'.format(lane + 1))`
+                         - host_lane_count: `N/A` or `XcvrApi.get_application_advertisement().get(active_apsel_hostlane{lane_number}).get('host_lane_count')`
+                         - media_lane_count: `N/A` or `XcvrApi.get_application_advertisement().get(active_apsel_hostlane{lane_number}).get('media_lane_count')`
+                      7. [触发更新] 若需要更新，更新数据库 光模块CMIS最新状态为`DP_DEINIT` 并跳过该端口
+                   3. 
    4. 创建 DOM 信息更新任务管理器并启动管理线程，定期在数据库中更新各类光模块诊断信息等: `dom_info_update = DomInfoUpdateTask(self.namespaces, port_mapping_data, self.sfp_obj_dict, self.stop_event, self.skip_cmis_mgr); .start()`
    5. 创建 SFP 状态更新任务器并启动线程，监听并处理SFP修改事件: `sfp_state_update = SfpStateUpdateTask(self.namespaces, port_mapping_data, self.sfp_obj_dict, self.stop_event, self.sfp_error_event); .start()`
    6. 持续接收中断信号，接收到后停止相关线程，并注销初始化`self.deinit()`
