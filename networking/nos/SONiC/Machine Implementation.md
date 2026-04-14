@@ -22,9 +22,8 @@
       - `$dev0`/
       - `$dev1`/
       - pmon_daemon_control.json  # 特定 sku 的 pmon daemon 配置, 优先级高于上层配置
-      - pcie.yaml             # option, pcied 默认模块配置, 调用方`src/sonic-platform-common/sonic_platform_base/sonic_pcie/pcie_common.py`
-      - pcie_xxx.yaml         # option, pcied 默认模块配置, 平台继承`src/sonic-platform-common/sonic_platform_base/sonic_pcie/pcie_common.py`, 并覆盖`self._conf_rev`
-      - sensors.yaml          # 
+      - media_settings.json   # option, xcvrd, ASIC端SerDes自定义SI信号完整性参数配置, 预加重参数 (优先)
+      - optics_si_settings.json   # option, xcvrd 光模块端自定义SI信号完整性参数配置 (优先)
     - pddf/
       - pd-plugin.json        # pddf 插件数据
       - pddf-device.json      # pddf 设备相关如驱动API的拓扑管理与配置
@@ -36,13 +35,18 @@
     - installer.conf          # 机器安装配置, 安装时将覆盖其他如onie-image.conf等配置
     - asic.conf               # option, 配置asic数量及ID等, 如`NUM_ASIC=16 \n DEV_ID_ASIC_0=nokia-bdb:1:0 \n DEV_ID_ASIC_1=nokia-bdb:1:1 \n ...`
     - platform_env.conf       # option, 配置平台环境变量, 
+    - chassisdb.conf              # pmon 启动时若该文件存在, 且disaggregated_chassis!=1则为模块化机箱IS_MODULAR_CHASSIS (用于配置Chassis本地网口, midplane模块子网等)
+    - platform_wait               # pmon 启动时硬件就绪检查脚本, 用以等待硬件就绪
+    - psu_sensors_conf_updater    # pmon 启动时执行的PSU传感器配置更新器(source脚本), 加载sensors.conf前执行
     - sensors.conf            # lm-sensors sensors配置
     - fancontrol              # lm-sensors fancontrol配置
     - pmon_daemon_control.json    # pmon daemon 监控配置, 控制是否跳过某些监控 daemon
     - thermal_policy.json         # option, thermalctld 风控策略配置，由`src/sonic-platform-common/sonic_platform_base/sonic_thermal_control/thermal_manager_base.py`读取 (可由`sonic_platform`实现覆盖,chassis.get_thermal_manager()) 
-    - chassisdb.conf
-    - platform_wait
-    - psu_sensors_conf_updater
+    - pcie.yaml             # pcied 默认模块配置, 调用方`src/sonic-platform-common/sonic_platform_base/sonic_pcie/pcie_common.py` (可由`sonic_platform.pcie.Pcie()`重写配置读取替代实现, 不建议)
+    - pcie_xxx.yaml         # pcied 模块配置, 平台继承`src/sonic-platform-common/sonic_platform_base/sonic_pcie/pcie_common.py`, 需要覆盖其中的`self._conf_rev`来识别`xxx`
+    - sensors.yaml          # option, sensormond 中 需要监控的 电压和电流的传感器 (可由`PDDF.Chassis().get_all_voltage/current_sensors()`替代实现)
+    - media_settings.json       # ASIC端SerDes自定义SI信号完整性参数配置, 预加重参数 (次选)
+    - optics_si_settings.json   # 光模块端自定义SI信号完整性参数配置 (次选)
 - platform/`@SWITCH-CHIP-VENDOR-FULL-L@`/
   - sonic-platform-modules-`@VENDOR-FULL-L@`/
     - debian/     # 参照[Debian软件包打包完全指南](./Reference/Debian软件包打包完全指南.md)

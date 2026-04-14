@@ -112,6 +112,7 @@ Read: docker/pmon/xcvrd
         - Ethernet*         (port_name)(don't '.')
         - ...
     ```
+  - dom_polling: `disabled` or `enabled` (拉取光模块dom信息到数据库) (breakout时位于subport=1的端口配置中, 否则位于subport=0)
 
 ## STORMOND_CONFIG
 
@@ -615,6 +616,13 @@ Write: docker/pmon/xcvrd
     - `READY`
     - `FAILED`
     - `REMOVED`
+    - `INSERTED`
+    - `DP_PRE_INIT_CHECK`
+    - `DP_DEINIT`
+    - `AP_CONFIGURED`
+    - `DP_INIT`
+    - `DP_TXON`
+    - `DP_ACTIVATION`
 
 
 ## TRANSCEIVER_VDM_REAL_VALUE
@@ -732,7 +740,7 @@ Write: docker/pmon/sensormond
   - ... (Ref STATE.CURRENT_INFO)
 
 
-## TEMPERATURE_INFO_${SLOT}`
+## TEMPERATURE_INFO_${SLOT}
 
 `SLOT`值为`{chassis.get_my_slot() if self.is_chassis_system else chassis.get_dpu_id()}`
 
@@ -773,6 +781,11 @@ Write: docker/pmon/thermalctld
 ```
 Read: docker/pmon/xcvrd
 ```
+
+- <port_name>  (Ethernet*)
+  - flap_count: `0`  (端口up/down抖动计数 or 链路up/down振荡次数 ?)
+
+
 
 - PortConfigDone
 
