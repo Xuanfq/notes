@@ -541,40 +541,92 @@ Read: docker/pmon/xcvrd
 FrontPort 前面板端口光模块信息状态等。
 
 ```
-Read: docker/pmon/xcvrd
+Write: docker/pmon/xcvrd
 ```
 
 - <port_name>  (Ethernet*)
   - type: `QSFP28` or `QSFP+` or `..` (XCVR_TYPE)
+  - 
   - <active_apsel_hostlane{lane_number}>(1-8): `N/A` or `XcvrApi.get_active_apsel_hostlane().get('ActiveAppSelLane{}'.format(lane + 1))`
   - host_lane_count: `N/A` or `XcvrApi.get_application_advertisement().get(active_apsel_hostlane{lane_number}).get('host_lane_count')`
   - media_lane_count: `N/A` or `XcvrApi.get_application_advertisement().get(active_apsel_hostlane{lane_number}).get('media_lane_count')`
   - 
+  - cmis_rev: `sfp.get_transceiver_info()['']`  (no field if non-cmis module)
+  - type: `sfp.get_transceiver_info()['']`  (or `sfputil.get_transceiver_info_dict()`)
+  - vendor_rev: `sfp.get_transceiver_info()['']`
+  - serial: `sfp.get_transceiver_info()['']`
+  - manufacturer: `sfp.get_transceiver_info()['']`
+  - model: `sfp.get_transceiver_info()['']`
+  - vendor_oui: `sfp.get_transceiver_info()['']`
+  - vendor_date: `sfp.get_transceiver_info()['']`
+  - connector: `sfp.get_transceiver_info()['']`
+  - encoding: `sfp.get_transceiver_info()['']`
+  - ext_identifier: `sfp.get_transceiver_info()['']`
+  - ext_rateselect_compliance: `sfp.get_transceiver_info()['']`
+  - cable_type: `sfp.get_transceiver_info()['']`
+  - cable_length: `sfp.get_transceiver_info()['']`
+  - specification_compliance: `sfp.get_transceiver_info()['']`
+  - nominal_bit_rate: `sfp.get_transceiver_info()['']`
+  - application_advertisement', `sfp.get_transceiver_info()['']` or `'N/A'`
+  - is_replaceable', `sfp.is_replaceable()` or `False`(sfputil)
+  - dom_capability: `sfp.get_transceiver_info()['']` or `'N/A'`
 
 - <{port_name}:{n} (ganged)>  (聚合端口) (e.g. Ethernet8是由两个端口聚合: "Ethernet8:1 (ganged)", "Ethernet8:2 (ganged)")
 
 
+## TRANSCEIVER_PM
+
+```
+Write: docker/pmon/xcvrd
+```
+
+
+
 ## TRANSCEIVER_FIRMWARE_INFO
+
+```
+Write: docker/pmon/xcvrd
+```
 
 
 
 ## TRANSCEIVER_DOM_SENSOR
 
+```
+Write: docker/pmon/xcvrd
+```
+
 
 
 ## TRANSCEIVER_DOM_FLAG
 
+```
+Write: docker/pmon/xcvrd
+```
+
 
 
 ## TRANSCEIVER_DOM_FLAG_CHANGE_COUNT
+
+```
+Write: docker/pmon/xcvrd
+```
 
 
 
 ## TRANSCEIVER_DOM_FLAG_SET_TIME
 
 
+```
+Write: docker/pmon/xcvrd
+```
+
 
 ## TRANSCEIVER_DOM_FLAG_CLEAR_TIME
+
+```
+Write: docker/pmon/xcvrd
+```
 
 
 
@@ -584,21 +636,41 @@ Read: docker/pmon/xcvrd
 
 ## TRANSCEIVER_STATUS
 
+```
+Write: docker/pmon/xcvrd
+```
+
 
 
 ## TRANSCEIVER_STATUS_FLAG
+
+```
+Write: docker/pmon/xcvrd
+```
 
 
 
 ## TRANSCEIVER_STATUS_FLAG_CHANGE_COUNT
 
+```
+Write: docker/pmon/xcvrd
+```
+
 
 
 ## TRANSCEIVER_STATUS_FLAG_SET_TIME
 
+```
+Write: docker/pmon/xcvrd
+```
+
 
 
 ## TRANSCEIVER_STATUS_FLAG_CLEAR_TIME
+
+```
+Write: docker/pmon/xcvrd
+```
 
 
 
@@ -627,21 +699,41 @@ Write: docker/pmon/xcvrd
 
 ## TRANSCEIVER_VDM_REAL_VALUE
 
+```
+Write: docker/pmon/xcvrd
+```
+
 
 
 ## TRANSCEIVER_VDM_HALARM_THRESHOLD
+
+```
+Write: docker/pmon/xcvrd
+```
 
 
 
 ## TRANSCEIVER_VDM_LALARM_THRESHOLD
 
+```
+Write: docker/pmon/xcvrd
+```
+
 
 
 ## TRANSCEIVER_VDM_HWARN_THRESHOLD
 
+```
+Write: docker/pmon/xcvrd
+```
+
 
 
 ## TRANSCEIVER_VDM_LWARN_THRESHOLD
+
+```
+Write: docker/pmon/xcvrd
+```
 
 
 

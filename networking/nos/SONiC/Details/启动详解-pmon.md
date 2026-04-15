@@ -1496,6 +1496,8 @@ Chassis 模块继承自 `src/sonic-platform-common/sonic_platform_base/module_ba
 ## sonic-xcvrd
 
 **核心功能**：光模块信息更新守护进程, 写入 State DB
+- SFF Manager: 管理非铜缆的QSFP28/QSFP+
+- CMIS Managar: 管理CMIS标准的支持XcvrApi的光模块QSFP-DD/QSFP_DD/OSFP/OSFP-8X/QSFP+C
 
 **重要参数**：
 - skip_cmis_mgr: 禁用CMIS管理
@@ -1529,29 +1531,6 @@ Chassis 模块继承自 `src/sonic-platform-common/sonic_platform_base/module_ba
 | **光侧 (Media Lanes)**  | 模块内部到光纤的物理光通道         | 4 条光通道 (4×100G 光信号) |
 
 
-### 功能概况
-
-- SFF Manager: 管理非铜缆的QSFP28/QSFP+
-  - 订阅数据库变更事件以处理逻辑端口
-    - CONFIG_DB.PORT
-    - STATE_DB.TRANSCEIVER_INFO|.type
-    - STATE_DB.PORT_TABLE|.host_tx_ready
-  - 主要功能:
-    - admin_status & 插入光模块: 关闭低功耗模式
-    - admin_status & host_tx_ready: (关闭tx_disable)打开激光发射器, 否则关闭激光发射器进行节能
-
-- CMIS Managar: 管理CMIS标准的支持XcvrApi的光模块QSFP-DD/QSFP_DD/OSFP/OSFP-8X/QSFP+C
-  - 订阅数据库变更事件以处理逻辑端口
-    - CONFIG_DB.PORT
-    - STATE_DB.TRANSCEIVER_INFO
-    - STATE_DB.PORT_TABLE|.host_tx_ready
-  - 主要功能:
-    - 配置自定义 appl 修改应用能力配置
-    - 配置自定义 ZR/ZR+相干光模块发射功率 tx_power
-    - 配置自定义 ZR/ZR+相干光模块激光频率 laser_freq
-    - 配置自定义 光模块端自定义SI信号完整性参数配置 optics_si_settings.json
-    - 关闭光模块光侧光纤链路的通道(打开tx_disable)以实现重新初始化
-
 
 ### 重要原理
 
@@ -1564,7 +1543,71 @@ Chassis 模块继承自 `src/sonic-platform-common/sonic_platform_base/module_ba
 - `host_tx_ready`, 主机侧 tx signal ready. 确保 数据通路 仅在主机发送信号正常时 host_tx_ready=true 才被激活. 这是由于部分符合 CMIS 规范的模块可能具备 ** 自动抑制 (auto-squelch) ** 功能, 若主机侧未提供有效发送信号, 即使主机尝试启用数据通路, 模块也不会将数据通路切换至激活状态
 
 
-### CMIS状态转移
+### SFF
+
+管理非铜缆的QSFP28/QSFP+
+
+#### 重要事件
+
+- admin_status & 插入光模块: 关闭低功耗模式
+- admin_status & host_tx_ready: (关闭tx_disable)打开激光发射器, 否则关闭激光发射器进行节能
+
+
+#### 数据库
+
+- 数据库订阅
+  - CONFIG_DB.PORT
+  - STATE_DB.TRANSCEIVER_INFO|.type
+  - STATE_DB.PORT_TABLE|.host_tx_ready
+- 数据库更新
+  - N/A
+
+
+### CMIS
+
+管理CMIS标准的支持XcvrApi的光模块QSFP-DD/QSFP_DD/OSFP/OSFP-8X/QSFP+C
+
+#### 重要事件
+
+- [INSERTED] !(host_tx_ready & admin_status) then !fast-reboot or !DataPathActivated: 关闭光模块光侧光纤链路的通道(打开tx_disable)以强制数据通路重新初始化以等待主机侧TX信号Ready (Ready后会更新数据库触发状态切换为INSERTED)
+- [DP_PRE_INIT_CHECK] 配置自定义 ZR/ZR+相干光模块发射功率 tx_power: 配置目标输出功率 tx_power
+- [DP_PRE_INIT_CHECK] 配置自定义 appl 修改应用能力配置: 状态转移至DP_DEINIT以触发配置
+- [DP_PRE_INIT_CHECK] 配置自定义 ZR/ZR+相干光模块激光频率 laser_freq: 状态转移至DP_DEINIT以触发配置
+- [DP_DEINIT] 关闭光模块光侧光纤链路的通道(打开tx_disable)以实现重新初始化
+- [AP_CONFIGURED] 配置自定义 appl 修改应用能力配置: 执行配置
+- [AP_CONFIGURED] 配置自定义 ZR/ZR+相干光模块激光频率 laser_freq: 执行配置
+- [AP_CONFIGURED] 配置自定义 光模块端自定义SI信号完整性参数配置 optics_si_settings.json: 执行配置
+- 除数据库操作重试次数置0外, 每次转移到INSERTED, 重试次数+1
+
+
+#### 数据库
+
+- 数据库订阅
+  - CONFIG_DB.PORT
+  - STATE_DB.TRANSCEIVER_INFO
+  - STATE_DB.PORT_TABLE|*.host_tx_ready
+- 数据库更新
+  - STATE_DB.TRANSCEIVER_STATUS_SW
+    - <port_name>  (Ethernet*)
+      - cmis_state: 
+        - `UNKNOWN`
+        - `READY`
+        - `FAILED`
+        - `REMOVED`
+        - `INSERTED`
+        - `DP_PRE_INIT_CHECK`
+        - `DP_DEINIT`
+        - `AP_CONFIGURED`
+        - `DP_INIT`
+        - `DP_TXON`
+        - `DP_ACTIVATION`
+  - STATE_DB.TRANSCEIVER_INFO
+    - <port_name>  (Ethernet*)
+      - <active_apsel_hostlane{lane_number}>(1-8): `N/A` or `XcvrApi.get_active_apsel_hostlane().get('ActiveAppSelLane{}'.format(lane + 1))`
+      - host_lane_count: `N/A` or `XcvrApi.get_application_advertisement().get(active_apsel_hostlane{lane_number}).get('host_lane_count')`
+      - media_lane_count: `N/A` or `XcvrApi.get_application_advertisement().get(active_apsel_hostlane{lane_number}).get('media_lane_count')`
+
+#### 状态转移
 
 ```mermaid
 %%{init: {'flowchart': {'nodeSpacing': 80, 'rankSpacing': 150}}}%%
@@ -1636,15 +1679,140 @@ direction TB
    DP_ACTIVATION --> READY : DataPathActivated
 ```
 
-- [INSERTED] !(host_tx_ready & admin_status) then !fast-reboot or !DataPathActivated: 关闭光模块光侧光纤链路的通道(打开tx_disable)以强制数据通路重新初始化以等待主机侧TX信号Ready (Ready后会更新数据库触发状态切换为INSERTED)
-- [DP_PRE_INIT_CHECK] 配置自定义 ZR/ZR+相干光模块发射功率 tx_power: 配置目标输出功率 tx_power
-- [DP_PRE_INIT_CHECK] 配置自定义 appl 修改应用能力配置: 状态转移至DP_DEINIT以触发配置
-- [DP_PRE_INIT_CHECK] 配置自定义 ZR/ZR+相干光模块激光频率 laser_freq: 状态转移至DP_DEINIT以触发配置
-- [DP_DEINIT] 关闭光模块光侧光纤链路的通道(打开tx_disable)以实现重新初始化
-- [AP_CONFIGURED] 配置自定义 appl 修改应用能力配置: 执行配置
-- [AP_CONFIGURED] 配置自定义 ZR/ZR+相干光模块激光频率 laser_freq: 执行配置
-- [AP_CONFIGURED] 配置自定义 光模块端自定义SI信号完整性参数配置 optics_si_settings.json: 执行配置
-- 除数据库操作重试次数置0外, 每次转移到INSERTED, 重试次数+1
+
+### DOM
+
+定期更新各类光模块诊断/监控信息到数据库中 (光模块核心监测功能, 收发光功率, 温度, 电压等参数)
+
+#### 重要事件
+
+- 更新各类光模块诊断/监控信息到数据库中 (光模块核心监测功能, 收发光功率, 温度, 电压等参数)
+  - 变更时更新
+    - TRANSCEIVER_DOM_FLAG
+    - TRANSCEIVER_STATUS_FLAG
+    - TRANSCEIVER_VDM_XXX_FLAG
+  - 周期性更新
+    - TRANSCEIVER_FIRMWARE_INFO
+    - TRANSCEIVER_DOM_SENSOR
+    - TRANSCEIVER_DOM_FLAG
+    - TRANSCEIVER_STATUS
+    - TRANSCEIVER_STATUS_FLAG
+    - TRANSCEIVER_VDM_REAL_VALUE
+    - TRANSCEIVER_VDM_XXX_FLAG
+    - TRANSCEIVER_PM
+
+
+#### 数据库
+
+- 数据库订阅
+  - CONFIG_DB.PORT
+  - APPL_DB.PORT_TABLE|.flap_count
+- 数据库更新
+  - STATE_DB
+    - TRANSCEIVER_DOM_SENSOR
+    - TRANSCEIVER_DOM_FLAG
+    - TRANSCEIVER_DOM_FLAG_CHANGE_COUNT
+    - TRANSCEIVER_DOM_FLAG_SET_TIME
+    - TRANSCEIVER_DOM_FLAG_CLEAR_TIME
+    - TRANSCEIVER_VDM_REAL_VALUE
+    - TRANSCEIVER_VDM_{['halarm', 'lalarm', 'hwarn', 'lwarn'].upper()}_THRESHOLD
+    - TRANSCEIVER_VDM_{['halarm', 'lalarm', 'hwarn', 'lwarn'].upper()}_FLAG
+    - TRANSCEIVER_VDM_{['halarm', 'lalarm', 'hwarn', 'lwarn'].upper()}_FLAG_CHANGE_COUNT
+    - TRANSCEIVER_VDM_{['halarm', 'lalarm', 'hwarn', 'lwarn'].upper()}_FLAG_SET_TIME
+    - TRANSCEIVER_STATUS
+    - TRANSCEIVER_STATUS_FLAG
+    - TRANSCEIVER_STATUS_FLAG_CHANGE_COUNT
+    - TRANSCEIVER_STATUS_FLAG_SET_TIME
+    - TRANSCEIVER_STATUS_FLAG_CLEAR_TIME
+    - TRANSCEIVER_PM
+    - TRANSCEIVER_FIRMWARE_INFO
+
+
+### SFP
+
+
+#### 重要事件
+
+- 
+
+
+#### 数据库
+
+- 数据库订阅
+  - CONFIG_DB.PORT
+  - APPL_DB.PORT_TABLE|.flap_count
+- 数据库更新
+  - STATE_DB
+    - 
+
+
+#### 状态转移
+
+状态迁移流程：
+
+1. 系统启动时处于“INIT”（初始化）状态，调用 get_transceiver_change_event
+   以 RETRY_PERIOD_FOR_SYSTEM_READY_MSECS 为超时时间进行重试，
+   直至达到 RETRY_TIMES_FOR_SYSTEM_READY 次；若仍未就绪，则切换至“EXIT”（退出）状态
+2. 当 'system_become_ready' 事件返回后，系统进入“SYSTEM_READY”（系统就绪）状态，
+   并开始监听所有SFP模块的插入/移除事件。
+   在此状态下，若收到任意系统级事件，均视为异常，并切换回“INIT”状态
+3. 当系统回到“INIT”状态时，将继续处理系统故障事件并重试，
+   直至达到 RETRY_TIMES_FOR_SYSTEM_READY 次；若仍失败，则切换至“EXIT”状态
+
+状态定义
+- 初始状态：INIT，在收到系统就绪信号或正常事件之前
+- 终止状态：EXIT
+- 其他状态：NORMAL，在收到系统就绪信号或正常事件之后
+
+事件定义
+- SYSTEM_NOT_READY：系统未就绪
+- SYSTEM_BECOME_READY：系统已就绪
+- NORMAL_EVENT：正常事件
+  - SFP模块插入/移除
+  - sfputil.get_change_event 以状态 true 返回超时
+- SYSTEM_FAIL：系统故障
+
+状态迁移规则：
+1. SYSTEM_NOT_READY（系统未就绪）
+    - INIT 状态下
+      - 重试次数 < RETRY_TIMES_FOR_SYSTEM_READY
+            重试次数 +1
+      - 否则
+            达到最大重试次数，视为致命错误，切换至 EXIT
+    - NORMAL 状态下
+        视为异常，切换至 INIT
+2. SYSTEM_BECOME_READY（系统已就绪）
+    - INIT 状态下
+        切换至 NORMAL
+    - NORMAL 状态下
+        记录该事件
+        不执行额外操作
+3. NORMAL_EVENT（正常事件）
+    - INIT 状态下（适用于未实现 SYSTEM_BECOME_READY 的厂商）
+        切换至 NORMAL
+        正常处理该事件
+    - NORMAL 状态下
+        正常处理该事件
+4. SYSTEM_FAIL（系统故障）
+    - INIT 状态下
+      - 重试次数 < RETRY_TIMES_FOR_SYSTEM_READY
+            重试次数 +1
+      - 否则
+            达到最大重试次数，视为致命错误，切换至 EXIT
+    - NORMAL 状态下
+        视为异常，切换至 INIT
+
+| 当前状态 |          触发事件       |       下一状态  |
+| -- | -- | -- |
+| INIT |              SYSTEM NOT READY |       INIT / EXIT |
+| INIT |              SYSTEM FAIL | INIT / EXIT |
+| INIT |              SYSTEM BECOME READY |    NORMAL |
+| NORMAL |            SYSTEM BECOME READY |    NORMAL |
+| NORMAL |            SYSTEM FAIL           | INIT |
+| INIT/NORMAL |       NORMAL EVENT |         NORMAL |
+| NORMAL |            SYSTEM NOT READY |       INIT |
+| EXIT |              -| - |
+
 
 
 
@@ -1771,10 +1939,10 @@ direction TB
                     - speed: `` (数据库)
                     - laser_freq: `` (数据库)
                     - tx_power: `` (数据库)
-                    - asic_id: ``
+                    - asic_id: `` (数据库)
+                    - appl: `0` (数据库) (通过`cmis.py`获取的 CMIS 光模块的应用能力通告信息, 0-16)
                     - cmis_retries: `0`
                     - cmis_expired: `None`
-                    - appl: `0` (通过`cmis.py`获取的 CMIS 光模块的应用能力通告信息, 0-16)
                     - host_lanes_mask: `0` (光模块 主机侧金手指侧 有效激活通道lanes的掩码mask)
                     - media_lanes_mask: `0`
                     - 
@@ -1911,7 +2079,7 @@ direction TB
       3. 循环执行, 每次循环前检查是否有接收到终止信号:
          1. 若时间距离上一次周期性更新已经过去60s及以上, 标记需要执行周期性更新: `is_periodic_db_update_needed = True`
          2. 处理 数据库端口配置变更(`CONFIG_DB.PORT`) 事件, 若无事件更新(1000ms=1s)则进入下一步 (实际上维护本地PortMapping):
-            1. 若是 端口 删除/DEL 操作, 为避免竞态条件, 移除 CONFIG_DB 中的 端口相关表: `xcvrd.del_port_sfp_dom_info_from_db(...)`
+            1. 若是 端口 删除/DEL 操作, 为避免竞态条件, 移除 STATE_DB 中的 端口相关表: `xcvrd.del_port_sfp_dom_info_from_db(...)`
                - TRANSCEIVER_DOM_SENSOR
                - TRANSCEIVER_DOM_FLAG
                - TRANSCEIVER_DOM_FLAG_CHANGE_COUNT
@@ -1948,7 +2116,19 @@ direction TB
                - TRANSCEIVER_PM
             5. 执行端口的dom信息获取与同步
          4. 若执行了周期性更新, 则取消标记并记录下一次更新时间
-   5. 创建 SFP 状态更新任务器并启动线程, 监听并处理SFP修改事件: `sfp_state_update = SfpStateUpdateTask(self.namespaces, port_mapping_data, self.sfp_obj_dict, self.stop_event, self.sfp_error_event); .start()`
+   5. 创建 SFP 状态更新任务器并启动线程, 监听并处理SFP状态变更事件: `sfp_state_update = SfpStateUpdateTask(self.namespaces, port_mapping_data, self.sfp_obj_dict, self.stop_event, self.sfp_error_event); .start()`
+      1. 初始化: `self.init()`
+         1. 获取端口映射表: `port_mapping_data = port_event_helper.get_port_mapping(self.namespaces)`
+         2. 更新端口 SFP 信息及 DOM 阈值参数到数据库表 (遍历一次逻辑端口)
+            1. SFP 信息 (`STATE_DB.TRANSCEIVER_INFO`): `sfp.get_transceiver_info()`  (or `sfputil.get_transceiver_info_dict()`)
+            2. 若获取 SFP 信息失败, 意味着 SFP EEPROM 未 READY , 记录该端口到`retry_eeprom_set`以后续重试
+            3. DOM 阈值信息 (`STATE_DB.TRANSCEIVER_DOM_THRESHOLD`): `sfp.get_transceiver_threshold_info()`
+            4. DOM VDM阈值 (`STATE_DB.TRANSCEIVER_VDM_{['halarm', 'lalarm', 'hwarn', 'lwarn'].upper()}_THRESHOLD`): `sfp.get_vdm_thresholds()`
+            5. 若处于 非热重启`!is_warm_reboot_enabled()` 状态, 通知设置ASIC SI配置(预加重): `media_settings_parser.notify_media_setting(logical_port_name, transceiver_dict, xcvr_table_helper, port_mapping)`
+            6. 
+         3. 初始化端口SFP默认状态到数据库表`STATE_DB.TRANSCEIVER_STATUS_SW`, 0-REMOVED/1-INSERTED: `self._init_port_sfp_status_sw_tbl(port_mapping_data, self.xcvr_table_helper, self.main_thread_stop_event)`
+      2. 创建 数据库端口数据变更 观察器, 仅作为管理类, 无单独线程处理事件， 订阅DB:
+         - CONFIG_DB.PORT
    6. 持续接收中断信号, 接收到后停止相关线程, 并注销初始化`self.deinit()`
       - 清除数据表数据: `STATE_DB.TRANSCEIVER_*`, `TRANSCEIVER_INFO`除外
 
