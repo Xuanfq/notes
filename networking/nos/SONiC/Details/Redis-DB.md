@@ -632,6 +632,13 @@ Write: docker/pmon/xcvrd
 
 ## TRANSCEIVER_DOM_THRESHOLD
 
+```
+Write: docker/pmon/xcvrd
+```
+
+- <port_name>  (Ethernet*)
+   - `*`: `sfp.get_transceiver_threshold_info()[*]`
+
 
 
 ## TRANSCEIVER_STATUS
@@ -711,6 +718,11 @@ Write: docker/pmon/xcvrd
 Write: docker/pmon/xcvrd
 ```
 
+- <port_name>  (Ethernet*)
+   - `*`: `sfp.get_transceiver_vdm_thresholds()[*]`
+
+
+
 
 
 ## TRANSCEIVER_VDM_LALARM_THRESHOLD
@@ -718,6 +730,12 @@ Write: docker/pmon/xcvrd
 ```
 Write: docker/pmon/xcvrd
 ```
+
+- <port_name>  (Ethernet*)
+   - `*`: `sfp.get_transceiver_vdm_thresholds()[*]`
+
+
+
 
 
 
@@ -727,6 +745,12 @@ Write: docker/pmon/xcvrd
 Write: docker/pmon/xcvrd
 ```
 
+- <port_name>  (Ethernet*)
+   - `*`: `sfp.get_transceiver_vdm_thresholds()[*]`
+
+
+
+
 
 
 ## TRANSCEIVER_VDM_LWARN_THRESHOLD
@@ -734,6 +758,12 @@ Write: docker/pmon/xcvrd
 ```
 Write: docker/pmon/xcvrd
 ```
+
+- <port_name>  (Ethernet*)
+   - `*`: `sfp.get_transceiver_vdm_thresholds()[*]`
+
+
+
 
 
 

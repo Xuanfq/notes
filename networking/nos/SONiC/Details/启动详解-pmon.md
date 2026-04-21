@@ -1733,7 +1733,7 @@ direction TB
 
 #### 重要事件
 
-- 
+- /
 
 
 #### 数据库
@@ -1743,7 +1743,7 @@ direction TB
   - APPL_DB.PORT_TABLE|.flap_count
 - 数据库更新
   - STATE_DB
-    - 
+    - /
 
 
 #### 状态转移
@@ -2125,7 +2125,7 @@ direction TB
             3. DOM 阈值信息 (`STATE_DB.TRANSCEIVER_DOM_THRESHOLD`): `sfp.get_transceiver_threshold_info()`
             4. DOM VDM阈值 (`STATE_DB.TRANSCEIVER_VDM_{['halarm', 'lalarm', 'hwarn', 'lwarn'].upper()}_THRESHOLD`): `sfp.get_vdm_thresholds()`
             5. 若处于 非热重启`!is_warm_reboot_enabled()` 状态, 通知设置ASIC SI配置(预加重): `media_settings_parser.notify_media_setting(logical_port_name, transceiver_dict, xcvr_table_helper, port_mapping)`
-            6. 
+            6. ....
          3. 初始化端口SFP默认状态到数据库表`STATE_DB.TRANSCEIVER_STATUS_SW`, 0-REMOVED/1-INSERTED: `self._init_port_sfp_status_sw_tbl(port_mapping_data, self.xcvr_table_helper, self.main_thread_stop_event)`
       2. 创建 数据库端口数据变更 观察器, 仅作为管理类, 无单独线程处理事件， 订阅DB:
          - CONFIG_DB.PORT
