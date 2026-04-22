@@ -702,6 +702,10 @@ Write: docker/pmon/xcvrd
     - `DP_INIT`
     - `DP_TXON`
     - `DP_ACTIVATION`
+  - status: `0` or `1`  (SFP状态)
+    - 0 (SFP_STATUS_REMOVED)
+    - 1 (SFP_STATUS_INSERTED)
+  - error: `N/A` or `*`   (SFP错误描述)
 
 
 ## TRANSCEIVER_VDM_REAL_VALUE

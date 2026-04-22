@@ -1496,8 +1496,10 @@ Chassis 模块继承自 `src/sonic-platform-common/sonic_platform_base/module_ba
 ## sonic-xcvrd
 
 **核心功能**：光模块信息更新守护进程, 写入 State DB
-- SFF Manager: 管理非铜缆的QSFP28/QSFP+
-- CMIS Managar: 管理CMIS标准的支持XcvrApi的光模块QSFP-DD/QSFP_DD/OSFP/OSFP-8X/QSFP+C
+- SFF Manager: 管理非铜缆的QSFP28/QSFP+的tx_disable
+- CMIS Managar: 管理CMIS标准的支持XcvrApi的光模块QSFP-DD/QSFP_DD/OSFP/OSFP-8X/QSFP+C (光模块SI预加重)
+- DOM Info Updater: 定期更新各类光模块诊断/监控信息到数据库中 (光模块核心监测功能, 收发光功率, 温度, 电压等参数)
+- SFP State Updater: 监控跟踪SFP模块(包含所有类型的光模块)状态并同步数据到数据库 (ASIC SI预加重)
 
 **重要参数**：
 - skip_cmis_mgr: 禁用CMIS管理
@@ -1576,7 +1578,7 @@ Chassis 模块继承自 `src/sonic-platform-common/sonic_platform_base/module_ba
 - [DP_DEINIT] 关闭光模块光侧光纤链路的通道(打开tx_disable)以实现重新初始化
 - [AP_CONFIGURED] 配置自定义 appl 修改应用能力配置: 执行配置
 - [AP_CONFIGURED] 配置自定义 ZR/ZR+相干光模块激光频率 laser_freq: 执行配置
-- [AP_CONFIGURED] 配置自定义 光模块端自定义SI信号完整性参数配置 optics_si_settings.json: 执行配置
+- [AP_CONFIGURED] 配置自定义 **光模块端自定义SI信号完整性参数配置** optics_si_settings.json: 执行配置
 - 除数据库操作重试次数置0外, 每次转移到INSERTED, 重试次数+1
 
 
@@ -1730,10 +1732,16 @@ direction TB
 
 ### SFP
 
+监控跟踪SFP模块(包含所有类型的光模块)状态并同步数据到数据库
 
 #### 重要事件
 
-- /
+- 监控跟踪SFP模块插入移除等事件
+- 更新端口 SFP 信息及 DOM 阈值参数到数据库表
+  1. SFP 信息 (`STATE_DB.TRANSCEIVER_INFO`): `sfp.get_transceiver_info()`  (or `sfputil.get_transceiver_info_dict()`)
+  2. DOM 阈值信息 (`STATE_DB.TRANSCEIVER_DOM_THRESHOLD`): `sfp.get_transceiver_threshold_info()`
+  3. DOM VDM阈值 (`STATE_DB.TRANSCEIVER_VDM_{['halarm', 'lalarm', 'hwarn', 'lwarn'].upper()}_THRESHOLD`): `sfp.get_vdm_thresholds()`
+- **通知设置ASIC SI配置(预加重)**: `media_settings_parser.notify_media_setting(logical_port_name, transceiver_dict, xcvr_table_helper, port_mapping)`
 
 
 #### 数据库
@@ -1743,7 +1751,15 @@ direction TB
   - APPL_DB.PORT_TABLE|.flap_count
 - 数据库更新
   - STATE_DB
-    - /
+    - TRANSCEIVER_STATUS_SW
+      - status: 
+        - 0 (SFP_STATUS_REMOVED)
+        - 1 (SFP_STATUS_INSERTED)
+      - error: N/A
+    - TRANSCEIVER_DOM_THRESHOLD
+      - self.dom_db_utils.post_port_dom_thresholds_to_db(port_change_event.port_name)
+    - TRANSCEIVER_VDM_
+      - self.vdm_db_utils.post_port_vdm_thresholds_to_db(port_change_event.port_name)
 
 
 #### 状态转移
