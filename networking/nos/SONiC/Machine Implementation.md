@@ -21,9 +21,11 @@
     - `$hwsku`/               # 多sku的不同sku配置
       - `$dev0`/
       - `$dev1`/
+        - port_config.ini       # asic1 端口配置 (ycabled)
       - pmon_daemon_control.json  # 特定 sku 的 pmon daemon 配置, 优先级高于上层配置
       - media_settings.json   # option, xcvrd, ASIC端SerDes自定义SI信号完整性参数配置, 预加重参数 (优先)
       - optics_si_settings.json   # option, xcvrd 光模块端自定义SI信号完整性参数配置 (优先)
+      - port_config.ini       # 端口配置 (ycabled)
     - pddf/
       - pd-plugin.json        # pddf 插件数据
       - pddf-device.json      # pddf 设备相关如驱动API的拓扑管理与配置

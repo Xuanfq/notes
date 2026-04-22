@@ -2154,6 +2154,48 @@ direction TB
 
 ## sonic-ycabled
 
+SONiC Y型线缆线接口与更新守护服务
+
+Y-Cable: 通信 / 网络硬件术语, Y 型线缆 (一分二式分光 / 分线线缆, 常见于光模块, 交换机互联场景)
+
+**核心功能**：
+
+**重要文件**：
+- /usr/share/sonic/platform/plugins/sfputil.py (继承`src/sonic-platform-common/sonic_sfp/sfputilbase.py/SfpUtilBase`, 类名需为`class SfpUtil(SfpUtilBase)`)(或通过`sonic_platform.platform.Platform().get_chassis().get_sfp(physical_port)`获取`SfpBase`, `src/sonic-platform-common/sonic_platform_base/sfp_base.py`, 优先)
+  - 实际搭配:
+    - 优先:
+      - platform_chassis = `sonic_platform.platform.Platform().get_chassis()`
+      - platform_sfputil = `sonic_platform_base.sonic_sfp.sfputilhelper.SfpUtilHelper()`
+    - 次选:
+      - platform_chassis = `None`
+      - platform_sfputil = `/usr/share/sonic/platform/plugins/sfputil.py.SfpUtil(SfpUtilBase)` (`self.load_platform_util('sfputil', 'SfpUtil')`)
+- /usr/share/sonic/platform/$hwsku/port_config.ini  (单asic端口配置)
+- /usr/share/sonic/platform/$hwsku/asic?/port_config.ini  (多asic端口配置)
+
+
+
+### 核心总体流程
+
+1. 实例化初始化`DaemonYcable(daemon_base.DaemonBase)`: `ycable = DaemonYcable()`
+   
+   1. 初始化守护进程基类: `super(DaemonSyseeprom, self).__init__(SYSLOG_IDENTIFIER)`
+
+2. 运行daemon主体: `ycable.run()`
+
+   1. 初始化: `self.init()`
+      1. 加载`platform_chassis`和`platform_sfputil`
+         1. 尝试从数据库获取 platform-name 用以判断是否为`vs`虚拟平台`x86_64-kvm_x86_64-r0`: `CONFIG_DB.DEVICE_METADATA.localhost.platform`
+         2. 若不是则通过`sonic_platform`加载`platform_chassis`
+         3. 加载`sonic_platform_base.sonic_sfp.sfputilhelper.SfpUtilHelper()`为`platform_sfputil`
+         4. 若加载过程中出错, 则加载`platform_sfputil` = `/usr/share/sonic/platform/plugins/sfputil.py.SfpUtil(SfpUtilBase)`, 失败则退出
+      2. 若为多 ASIC 平台配置, 让swsscommon先从`database_global.json`加载详细命名空间配置: `if sonic_py_common.multi_asic.is_multi_asic(): swsscommon.SonicDBConfig.initializeGlobalConfig()`
+      3. `platform_sfputil`加载端口配置`port_config.ini`, 报错则退出
+      4. 
+
+
+> SYSLOG_IDENTIFIER = 'ycable'
+
+
 ---
 
 # src/lm-sensors (fancontrol)

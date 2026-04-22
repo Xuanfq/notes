@@ -72,7 +72,7 @@ Read: docker/pmon/pcied (sonic_py_common/device_info.py)
 
 - localhost
   - hostname: 
-  - platform: 
+  - platform: `x86_64-kvm_x86_64-r0` (platform name)
   - hwsku: 
   - yang_config_validation: `enable`
 
