@@ -127,6 +127,33 @@ Read: docker/pmon/stormond
   - fsstats_sync_interval: 86400 (s, 同步数据保存到JSON的时间间隔为24hour, 实际上距离上次同步后已过的时间与同步间隔的差值小于轮询间隔也会进行同步)
 
 
+## MUX_CABLE
+
+```
+Read: docker/pmon/ycabled
+```
+
+- <port_name>  (Ethernet*)
+  - state: `"active"`, `"standby"`, `"auto"`, `"manual"`, `"detach"`
+  - cable_type: `active-active` or `active-standby`
+  - soc_ipv4: x.x.x.x/24
+
+
+## LOOPBACK_INTERFACE
+
+```
+Read: docker/pmon/ycabled
+```
+
+- Loopback3
+  - 10.212.64.1/32  (LOOPBACK_INTERFACE_T0)  (port id 0 -> maps to  T0) (read_side=1)
+  - 10.1.0.38/32  (LOOPBACK_INTERFACE_T0_NIC)  (port id 0 -> maps to  T0) (read_side=1)
+  - 10.212.64.2/32  (LOOPBACK_INTERFACE_LT0)  (port id 1 -> maps to  LT0) (read_side=0)
+  - 10.1.0.39/32  (LOOPBACK_INTERFACE_LT0_NIC)  (port id 1 -> maps to  LT0) (read_side=0)
+
+
+
+
 ---
 
 
@@ -767,6 +794,108 @@ Write: docker/pmon/xcvrd
    - `*`: `sfp.get_transceiver_vdm_thresholds()[*]`
 
 
+## HW_MUX_CABLE_TABLE
+
+```
+Write: docker/pmon/ycabled
+```
+
+- <port_name>  (Ethernet*)
+  - state: `unknown`
+  - read_side: `-1` (`1` / `2` - active, other standby)
+  - active_side: `-1` / `1` / `2`
+
+
+## MUX_CABLE_STATIC_INFO
+
+```
+Write: docker/pmon/ycabled
+```
+
+- <port_name>  (Ethernet*)
+  - read_side:`'-1'`
+  - nic_lane1_precursor1: `'N/A'`
+  - nic_lane1_precursor2: `'N/A'`
+  - nic_lane1_maincursor: `'N/A'`
+  - nic_lane1_postcursor1: `'N/A'`
+  - nic_lane1_postcursor2: `'N/A'`
+  - nic_lane2_precursor1: `'N/A'`
+  - nic_lane2_precursor2: `'N/A'`
+  - nic_lane2_maincursor: `'N/A'`
+  - nic_lane2_postcursor1: `'N/A'`
+  - nic_lane2_postcursor2: `'N/A'`
+  - tor_self_lane1_precursor1: `'N/A'`
+  - tor_self_lane1_precursor2: `'N/A'`
+  - tor_self_lane1_maincursor: `'N/A'`
+  - tor_self_lane1_postcursor1: `'N/A'`
+  - tor_self_lane1_postcursor2: `'N/A'`
+  - tor_self_lane2_precursor1: `'N/A'`
+  - tor_self_lane2_precursor2: `'N/A'`
+  - tor_self_lane2_maincursor: `'N/A'`
+  - tor_self_lane2_postcursor1: `'N/A'`
+  - tor_self_lane2_postcursor2: `'N/A'`
+  - tor_peer_lane1_precursor1: `'N/A'`
+  - tor_peer_lane1_precursor2: `'N/A'`
+  - tor_peer_lane1_maincursor: `'N/A'`
+  - tor_peer_lane1_postcursor1: `'N/A'`
+  - tor_peer_lane1_postcursor2: `'N/A'`
+  - tor_peer_lane2_precursor1: `'N/A'`
+  - tor_peer_lane2_precursor2: `'N/A' `
+  - tor_peer_lane2_maincursor: `'N/A'`
+  - tor_peer_lane2_postcursor1: `'N/A'`
+  - tor_peer_lane2_postcursor2: `'N/A'`
+
+
+## MUX_CABLE_INFO
+
+```
+Write: docker/pmon/ycabled
+```
+
+- <port_name>  (Ethernet*)
+  - time_post: `%Y-%b-%d %H:%M:%S.%f`
+  - tor_active: `'unknown'`
+  - mux_direction: `'unknown'`
+  - manual_switch_count: `'N/A'`
+  - auto_switch_count: `'N/A'`
+  - link_status_self: `'unknown'`
+  - link_status_peer: `'unknown'`
+  - link_status_nic: `'unknown'`
+  - self_eye_height_lane1: `'N/A'`
+  - self_eye_height_lane2: `'N/A'`
+  - peer_eye_height_lane1: `'N/A'`
+  - peer_eye_height_lane2: `'N/A'`
+  - nic_eye_height_lane1: `'N/A'`
+  - nic_eye_height_lane2: `'N/A'`
+  - internal_temperature: `'N/A'`
+  - internal_voltage: `'N/A'`
+  - nic_temperature: `'N/A'`
+  - nic_voltage: `'N/A'`
+  - version_self_active: `'N/A'`
+  - version_self_inactive: `'N/A'`
+  - version_self_next: `'N/A'`
+  - version_peer_active: `'N/A'`
+  - version_peer_inactive: `'N/A'`
+  - version_peer_next: `'N/A'`
+  - version_nic_active: `'N/A'`
+  - version_nic_inactive: `'N/A'`
+  - version_nic_next: `'N/A'`
+
+  - self_link_state: 
+  - peer_link_state: 
+  - self_oper_state: 
+  - peer_oper_state: 
+  - server_version: 
+  - time_post: 
+  - self_mux_direction: 
+  - peer_mux_direction: 
+  - peer_mux_direction_probe_count: 
+  - mux_direction_probe_count: 
+  - link_state_probe_count: 
+  - peer_link_state_probe_count: 
+  - operation_state_probe_count: 
+  - peer_operation_state_probe_count: 
+  - grpc_connection_status: 
 
 
 
