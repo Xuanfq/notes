@@ -25,7 +25,17 @@
       - pmon_daemon_control.json  # 特定 sku 的 pmon daemon 配置, 优先级高于上层配置
       - media_settings.json   # option, xcvrd, ASIC端SerDes自定义SI信号完整性参数配置, 预加重参数 (优先)
       - optics_si_settings.json   # option, xcvrd 光模块端自定义SI信号完整性参数配置 (优先)
-      - port_config.ini       # 端口配置 (ycabled)
+      - port_config.ini       # 端口配置 (ycabled) (docker-saiserver-brcm)
+      - sai.profile.j2        # option, sai配置模板 (docker-syncd-brcm/-dnx) (docker-saiserver-brcm)
+      - sai.profile           # option, sai配置, 配置中的文件路径使用/usr/share/sonic/hwsku替代 (docker-syncd-brcm/-dnx) (docker-saiserver-brcm)
+      - config.bcm.j2         # option, bcm.user初始化配置模板 (docker-syncd-brcm/-dnx) (docker-saiserver-brcm)
+      - config.bcm            # option, bcm.user初始化配置模板 (docker-syncd-brcm/-dnx) (docker-saiserver-brcm) (可替代为通过sai.profile指定)
+      - *.config.bcm          # option, broadcom asic
+      - context_config.json   # option, broadcom asic  (src/sonic-sairedis/syncd/scripts/syncd_init_common.sh) (docker-gbsyncd-credo/broncos/milleniob)
+      - switch-tna-sai.conf   # option, barefoot asic  (src/sonic-sairedis/syncd/scripts/syncd_init_common.sh)
+      - gearbox_config.json   # option, broadcom asic gearbox配置 (docker-gbsyncd-credo/broncos/milleniob)
+      - psai.profile.j2       # option, broadcom asic gearbox配置 (docker-gbsyncd-credo/broncos/milleniob)
+      - psai.profile          # option, broadcom asic gearbox配置 (docker-gbsyncd-credo/broncos/milleniob)
     - pddf/
       - pd-plugin.json        # pddf 插件数据
       - pddf-device.json      # pddf 设备相关如驱动API的拓扑管理与配置
@@ -36,7 +46,7 @@
       - sfputil.py            # option, xcvrd 插件, `SfpUtil(SfpUtilBase)`实现类, 继承`src/sonic-platform-common/sonic_sfp/sfputilbase.py` (可由`sonic_platform`替代实现)
     - installer.conf          # 机器安装配置, 安装时将覆盖其他如onie-image.conf等配置
     - asic.conf               # option, 配置asic数量及ID等, 如`NUM_ASIC=16 \n DEV_ID_ASIC_0=nokia-bdb:1:0 \n DEV_ID_ASIC_1=nokia-bdb:1:1 \n ...`
-    - platform_env.conf       # option, 配置平台环境变量, 
+    - platform_env.conf       # option, 配置平台环境变量, asic驱动参数等
     - chassisdb.conf              # pmon 启动时若该文件存在, 且disaggregated_chassis!=1则为模块化机箱IS_MODULAR_CHASSIS (用于配置Chassis本地网口, midplane模块子网等)
     - platform_wait               # pmon 启动时硬件就绪检查脚本, 用以等待硬件就绪
     - psu_sensors_conf_updater    # pmon 启动时执行的PSU传感器配置更新器(source脚本), 加载sensors.conf前执行
@@ -49,6 +59,9 @@
     - sensors.yaml          # option, sensormond 中 需要监控的 电压和电流的传感器 (可由`PDDF.Chassis().get_all_voltage/current_sensors()`替代实现)
     - media_settings.json       # ASIC端SerDes自定义SI信号完整性参数配置, 预加重参数 (次选)
     - optics_si_settings.json   # 光模块端自定义SI信号完整性参数配置 (次选)
+    - led_proc_init.soc         # option, bcm.user led初始化 (docker-syncd-brcm/-dnx)
+    - syncd.conf                # option, syncd配置 (dockers/docker-pde/syncd_init_common.sh)
+    - common_config_support     # option, broadcom通用配置支持, 存在该文件时, 若存在多个.bcm或.yml时会自动合并配置
 - platform/`@SWITCH-CHIP-VENDOR-FULL-L@`/
   - sonic-platform-modules-`@VENDOR-FULL-L@`/
     - debian/     # 参照[Debian软件包打包完全指南](./Reference/Debian软件包打包完全指南.md)
@@ -163,6 +176,7 @@
 - 调用方:
   - `/usr/bin/pmon.sh`: `pmon.service`的启动脚本, 调用方式为`PLATFORM_ENV_CONF=/usr/share/sonic/device/$PLATFORM/platform_env.conf; [ -f "$PLATFORM_ENV_CONF" ] && source $PLATFORM_ENV_CONF`
   - docker-pmon / `/usr/bin/docker_init.sh`: 加载平台环境配置, `[ -e "$PLATFORM_ENV_CONF" ] && source $PLATFORM_ENV_CONF`
+  - `opennsl-modules_xxx_amd64.deb`: 博通驱动加载, 用于设置模块加载时的参数
 
 
 
