@@ -127,7 +127,11 @@ make configure PLATFORM=[ASIC_VENDOR]
       - pensando
     - 这些代码一般会被克隆到`platform/$(PLATFORM)`获其子目录
 - 对于设置的需要编译的不同的debian版本进行逐个配置：
-  - 实际调用`BLDENV=$debianname $(MAKE) -f Makefile.work $@`
+  - 实际调用`BLDENV=$debianname $(MAKE) -f Makefile.work configure`
+    - 调用`slave.mk`执行`configure`目标规则:
+      - 创建相关目录
+      - 生成平台标志文件 - `echo $(PLATFORM) > .platform`
+      - 生成架构标准文件 - `echo $(PLATFORM_ARCH) > .arch`
 
 
 

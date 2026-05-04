@@ -632,8 +632,8 @@ multi-user.target
   - syncd.service
       - Link: 
       - Desc: syncd service
-      - Exec: 
-      - Dep : sonic.target config-setup.service database.service swss.service
+      - Exec: /usr/local/bin/syncd.sh start; /usr/local/bin/syncd.sh wait
+      - Dep : opennsl-modules.service config-setup.service sonic.target config-setup.service database.service swss.service
   - sysmgr.service
       - Link: 
       - Desc: Sysmgr Container 系统管理容器
