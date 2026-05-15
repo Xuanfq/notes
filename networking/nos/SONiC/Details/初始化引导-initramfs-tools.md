@@ -63,6 +63,12 @@ loop=/image-202505.1022539-92b55b412/fs.squashfs loopfstype=squashfs
   - `/etc/init`
   - `/bin/init`
   - `/bin/sh`
+  - 重置密码步骤:
+    1. 添加参数`init=/bin/bash`并启动
+    2. bash下重新挂载为可读写: `mount -o remount,rw /`
+    3. bash下重置密码: `passwd admin`
+    4. bash下引导进入sonic: `exec /sbin/init`
+    5. 使用新密码登录sonic, 若有需要，再次在sonic下重置密码 (比如定制化SONiC对于密码会保存到数据库， 此时需要用该方法修改密码并保存到数据库)
 - `ro`: 以只读方式挂载根文件系统 (SONiC下/dev/sda3)
 - `rw`: 以读写方式挂载根文件系统 (SONiC下/dev/sda3)
 
