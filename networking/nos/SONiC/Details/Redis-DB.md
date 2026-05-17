@@ -37,6 +37,10 @@
   - 用Redis命令读取数据`FAST_RESTART_ENABLE_TABLE.system.enable`，enable为散列类型的key: `hget "FAST_RESTART_ENABLE_TABLE|system" enable`
 
 
+## 相关文档
+
+- src/sonic-swss/doc/swss-schema.md
+- 使用 swssconfig 应用配置: https://github.com/sonic-net/SONiC/wiki/Using-swssconfig-to-apply-configuration
 
 
 ----

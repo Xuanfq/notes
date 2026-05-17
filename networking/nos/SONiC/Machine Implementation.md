@@ -62,6 +62,8 @@
     - led_proc_init.soc         # option, bcm.user led初始化 (docker-syncd-brcm/-dnx)
     - syncd.conf                # option, syncd配置 (dockers/docker-pde/syncd_init_common.sh)
     - common_config_support     # option, broadcom通用配置支持, 存在该文件时, 若存在多个.bcm或.yml时会自动合并配置
+    - gbsyncd.ini               # option, 配置gbsyncd容器启动(platform=gbsyncd-credo/broncos/milleniob), 若无则不启动
+    - platform.json         # PDDF配置, 接口端口breakout模式等配置
 - platform/`@SWITCH-CHIP-VENDOR-FULL-L@`/
   - sonic-platform-modules-`@VENDOR-FULL-L@`/
     - debian/     # 参照[Debian软件包打包完全指南](./Reference/Debian软件包打包完全指南.md)

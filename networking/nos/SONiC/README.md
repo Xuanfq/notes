@@ -11,6 +11,8 @@
 ## Documentation
 
 - [Wiki](https://github.com/sonic-net/SONiC/wiki)
+- [Develop Guide](https://github.com/sonic-net/SONiC/wiki/Developing-Guide)
+
 
 ## Building
 
@@ -23,5 +25,14 @@ Branch:
 - Develop Branch: `Master`
 - Release Branch: `Tag`, e.g. 202505
 
+## 运维管理
 
+- [SONiC-MGMT](https://github.com/Azure/sonic-mgmt)
+  - 自动化测试框架
+  - 设备管理与运维工具
+  - 测试环境与仿真工具
+
+- 自动化测试 + 批量管理 + 故障诊断
+
+- [How to Deploy SONiC](https://github.com/sonic-net/SONiC/wiki/How-to-Deploy-SONiC)
 
