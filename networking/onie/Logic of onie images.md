@@ -40,6 +40,7 @@ fi
     - 若`onie_mode`设置为其他模式, 则进入自动其他模式
   - `onie-nos-mode -c`: 清除nos模式, 即未安装NOS, `onie_nos_mode=""`
 - 进入`uninstall|rescue|diag`模式将自动清除`onie_mode`以避免再次自动选中该模式, 其他均有粘连性, 若为`none`则自动选中`install`
+- `onie_mode`及`onie_nos_mode`均放在grub环境变量文件`/mnt/grub/grub_env`中
 
 
 
