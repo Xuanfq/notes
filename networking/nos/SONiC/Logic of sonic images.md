@@ -107,7 +107,7 @@ Image的类型有多种, e.g. onie (最多), raw, kvm etc.
 
 ### 磁盘分区结构
 
-- /boot/efi/EFI/                        # boot分区, SONiC下不会挂载??
+- /boot/efi/EFI/                        # boot分区, SONiC下不会挂载?? 不会，会挂载 /host/image-xxx/boot 到目录 /boot
   - SONiC-OS/
     - mmx64.efi                       # 编译并开启 secure boot 时才有
     - shimx64.efi                     # 编译并开启 secure boot 时才有
