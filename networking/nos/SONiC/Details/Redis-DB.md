@@ -36,10 +36,20 @@
   - 如下方的`STATE_DB.PSU_INFO.<psu_name>`的键为`PSU_INFO|<psu_name>`
   - 用Redis命令读取数据`FAST_RESTART_ENABLE_TABLE.system.enable`，enable为散列类型的key: `hget "FAST_RESTART_ENABLE_TABLE|system" enable`
 
+- 数据库
+  - 0号数据库 (APPL_DB): 存储所有应用程序生成的状态——路由、下一跳、邻居等。这是应用程序与其他SONiC子系统交互的入口点;
+  - 1号数据库 (ASIC_DB): 存放底层 ASIC 的状态信息和配置表项，格式对底层芯片友好，芯片重启可以从ASIC_DB快速恢复；
+  - 2号数据库 (CONTERS_DB): 存放每个端口计数器和统计信息，这些信息可以被cli使用或者反馈给telemetry；
+  - 3号数据库 (LOGLEVEL_DB): 存放日志配置等级信息；
+  - 4号数据库 (CONFIG_DB): 存储SONiC应用程序创建的配置状态——端口配置、接口、VLAN等，有的APP/模块可能没有配置，可以没有对应表，有的配置直接调用linux的命令进行配置，有的配置还需要- 下发到芯片，这时需要往APPL_DB里写；
+  - 5号数据库 (FLEX_COUNTER_DB): 存放灵活计数器配置；
+  - 6号数据库 (STATE_DB): 存储系统中配置实体的“关键”操作状态。此状态用于解决不同SONiC子系统之间的依赖关系。例如，LAG端口channel（由teamd子模块定义）可能指系统中可能存在或不存在的物理端口。另一个例子是VLAN的定义（通过vlanmgrd组件），它可能引用系统中存在未知的端口成员。本质上，该数据库存储了解决跨模块依赖关系所需的所有状态。
+
+
 
 ## 相关文档
 
-- src/sonic-swss/doc/swss-schema.md
+- src/sonic-swss/doc/swss-schema.md: https://github.com/sonic-net/sonic-swss/blob/master/doc/swss-schema.md
 - 使用 swssconfig 应用配置: https://github.com/sonic-net/SONiC/wiki/Using-swssconfig-to-apply-configuration
 
 
