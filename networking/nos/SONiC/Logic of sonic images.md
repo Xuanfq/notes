@@ -248,7 +248,7 @@ Image的类型有多种, e.g. onie (最多), raw, kvm etc.
                 1. 检查`/boot/efi`挂载情况, 若没挂载则尝试挂载: `! mount | grep -q "/boot/efi" && mount /boot/efi`
                 2. 从`$blk_dev`(onie)所在磁盘1-8分区查找EFI系统所在分区, 一般是分区1: `sgdisk -i $p $blk_dev | grep -q C12A7328-F81F-11D2-BA4B-00A0C93EC93B && uefi_part=$p`
                 3. 安装grub, 用的是onie环境下的grub工具, 可通过`installer.conf`对其进行替换: `grub-install --no-nvram --bootloader-id="$demo_volume_label" --efi-directory="/boot/efi" --boot-directory="$demo_mnt" --recheck "$blk_dev"`
-                4. 创建UEFI启动项: `grub=$(find /boot/efi/EFI/$demo_volume_label/ -name grub*.efi -exec basename {} \;); efibootmgr --quiet --create --label "$demo_volume_label" --disk $blk_dev --part $uefi_part --loader "/EFI/$demo_volume_label/$grub"`
+                4. 创建UEFI启动项: `grub=$(find /boot/efi/EFI/$demo_volume_label/ -name grub*.efi -exec basename {} \;); efibootmgr --quiet --create --label "$demo_volume_label" --disk $blk_dev --part $uefi_part --loader "/EFI/$demo_volume_label/$grub"` (`efibootmgr --create --label "SONiC-OS" --disk /dev/sda --part 1 --loader "/EFI/SONiC-OS/grubx64.efi"`)
           3. 否则安装legacy`grub`: `demo_install_grub "$demo_mnt" "$blk_dev"`
        2. 创建GRUB配置`grub.cfg`:
           1. 创建临时GRUB配置文件`grub_cfg`: `$(mktemp)`
