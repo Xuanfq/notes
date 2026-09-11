@@ -28,7 +28,7 @@ PTP 假设网络往返链路延时是**对称的**（即上行延时等于下行
 主时钟（Master）与从时钟（Slave）通过交换 4 个报文，记录 4 个精准的时间戳：
 
 1. Master $\rightarrow$ Slave (Sync 报文)：Master 在发出瞬间记录时间戳 $t_1$；Slave 在收到瞬间记录时间戳 $t_2$。
-2. Master $\rightarrow$ Slave (Follow_Up 报文)：Master 将 $t_1$ 的准确数值打包发送给 Slave（若硬件支持一步模式，则 $t_1$ 会直接写入 Sync 报文中）。
+2. Master $\rightarrow$ Slave (Follow_Up 报文)：Master 将 $t_1$ 的准确数值打包发送给 Slave（若硬件支持一步模式，则 $t_1$ 会直接写入 Sync 报文中）。（有此步骤的为Two-Step模式，无则为One-Step模式）
 3. Slave $\rightarrow$ Master (Delay_Req 报文)：Slave 在发出瞬间记录时间戳 $t_3$；Master 在收到瞬间记录时间戳 $t_4$。
 4. Master $\rightarrow$ Slave (Delay_Resp 报文)：Master 将 $t_4$ 的数值发送给 Slave。
 
