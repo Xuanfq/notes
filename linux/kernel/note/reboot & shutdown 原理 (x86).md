@@ -123,16 +123,16 @@ See the shutdown(8) man page for details.
 
 
 * **Halt 停机实现：**
-  1. 通过核间中断（IPI）向所有辅 CPU 核心发送停止信号。
-  2. 主 CPU 关闭中断（`cli`）。
-  3. 进入死循环并反复执行汇编指令 `hlt`（`native_halt()`），让 CPU 暂停指令运行并进入低功耗状态，电源维持供电（ACPI S0 状态）。
+  1. 关闭机器(`machine_shutdown()`) - 停止其他CPU和APIC，依次：关闭 IO APIC, 禁用 Local IRQ，停止 其他CPU 核心，关闭 Local APIC，恢复 Boot IRQ 模式，禁用 HPET，关闭 IOMMU。
+  3. 停止 本CPU 核心：禁用 Local IRQ，下线 CPU, 进入死循环并反复执行汇编指令 `hlt`（`native_halt()`），让 CPU 暂停指令运行并进入低功耗状态，电源维持供电（ACPI S0 状态）。
 
 
 * **Poweroff 切断电源实现：**
-  1. 停止所有 CPU 核心。
-  2. 调用 ACPI 子系统接口 `acpi_power_off()`。
-  3. 内核向 ACPI `PM1a_CNT` / `PM1b_CNT` 控制寄存器写入 `SLP_TYPx`（睡眠类型）和 `SLP_EN`（睡眠使能）标志位。
-  4. 主板电源管理芯片切断主电源（+12V、+5V、+3.3V），硬件进入 **ACPI S5 (Soft Off)** 状态，仅留 +5VSB 线路供电。
+  1. 全局`pm_power_off()`函数需要有具体实现，即需要注册电源管理回调
+  2. 若为非强制reboot，关闭机器(`machine_shutdown()`) - 停止其他CPU和APIC （同上）
+  3. 调用 `pm_power_off()` 进行电源管理关机（如 ACPI 子系统接口 `acpi_power_off()`，EFI 的 `pm_power_off()`，BMC 的 `ipmi_poweroff_function()`）
+  4. 内核向 ACPI `PM1a_CNT` / `PM1b_CNT` 控制寄存器写入 `SLP_TYPx`（睡眠类型）和 `SLP_EN`（睡眠使能）标志位。
+  5. 主板电源管理芯片切断主电源（+12V、+5V、+3.3V），硬件进入 **ACPI S5 (Soft Off)** 状态，仅留 +5VSB 线路供电。
 
 
 
