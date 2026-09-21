@@ -97,28 +97,42 @@ See the shutdown(8) man page for details.
 
 ### 3. x86/x64 硬件控制阶段（位于内核 `arch/x86/kernel/reboot.c`）
 
-`kernel_restart/halt/power_off()` 最终调用 `machine_restart/halt/power_off()`:
+`kernel_restart/halt/power_off()` 最终调用 `machine_restart/halt/power_off()` (linux/arch/x86/kernel/reboot.c):
 
 * **Reboot 硬件复位实现：**
-内核按优先级尝试以下 x86/x64 机制强制复位：
-1. **UEFI Runtime Services**：64 位 UEFI 系统上优先调用 `efi.reset_system()` 接口。
-2. **ACPI Reset Register**：向 ACPI FADT 表指定的复位寄存器写入复位值。
-3. **PCI Reset**：向 PCI 配置空间端口 `0xCF9` 写入 `0x06` 触发芯片组硬复位。
-4. **Keyboard Controller**：向传统 8042 键盘控制器 `0x64` 端口写入 `0xFE` 脉冲拉低 CPU RESET 线。
-5. **Triple Fault（三重故障）**：加载基址与限长均为 0 的 IDTR（中断描述符表寄存器）并触发中断，利用 CPU 保护机制引发 Triple Fault 强制硬件复位。
+
+  - 默认的回退执行链（按顺序尝试，直到硬件复位成功）
+    - **ACPI Reboot Register**（第 1 次）：写入 ACPI FADT 表声明的重置寄存器。
+    - **8042 Keyboard Controller**（第 1 次）：向 `0x64` 端口写入 `0xFE` 脉冲拉低 CPU RESET 引脚。（现8042 Keyboard Controller基本消失）
+    - **ACPI Reboot Register**（第 2 次）：防止某些芯片组响应延迟。
+    - **8042 Keyboard Controller**（第 2 次）：再次触发脉冲。
+    - **EFI Runtime Service**：若上述传统硬件端口均未生效，调用 UEFI 固件的 `efi.reset_system(...)`。
+    - **Legacy BIOS Call**：若为非 EFI 引导，尝试切回实模式调用 BIOS 中断。（向 CMOS 寄存器 0x​​0f 写入 0 `CMOS_WRITE(0x00, 0x8f)`；BIOS 的 POST（加电自检）例程会将其识别为执行正常重启的指令）
+  
+  - 特殊机制（仅通过 `reboot=` 参数或 DMI Quirks 触发）
+    - **PCI Reset (`0xCF9`)**：直接向 PCI 配置空间 `0xCF9` 端口写入 `0x06`(WarmReboot) / `0x0E`(ColdReboot) 触发芯片组 Hard Reset。
+      ```
+      u8 reboot_code = reboot_mode == REBOOT_WARM ?  0x06 : 0x0E;
+      u8 cf9 = inb(0xcf9) & ~reboot_code;      
+      outb(cf9|2, 0xcf9); /* Request hard reset */
+      udelay(50);
+      outb(cf9|reboot_code, 0xcf9); /* Actually do the reset */
+      ```
+    - **Triple Fault（三重故障）**：加载基址和限长均为 0 的 IDTR（Interrupt Descriptor Table Register，中断描述符表寄存器）使其触发异常，即利用 CPU 的硬件保护机制强行引发物理 Reset。
+      ```idt_invalidate(NULL); // load_idt(&{ .address = (unsigned long) 0, .size = 0 });```
 
 
 * **Halt 停机实现：**
-1. 通过核间中断（IPI）向所有辅 CPU 核心发送停止信号。
-2. 主 CPU 关闭中断（`cli`）。
-3. 进入死循环并反复执行汇编指令 `hlt`（`native_halt()`），让 CPU 暂停指令运行并进入低功耗状态，电源维持供电（ACPI S0 状态）。
+  1. 通过核间中断（IPI）向所有辅 CPU 核心发送停止信号。
+  2. 主 CPU 关闭中断（`cli`）。
+  3. 进入死循环并反复执行汇编指令 `hlt`（`native_halt()`），让 CPU 暂停指令运行并进入低功耗状态，电源维持供电（ACPI S0 状态）。
 
 
 * **Poweroff 切断电源实现：**
-1. 停止所有 CPU 核心。
-2. 调用 ACPI 子系统接口 `acpi_power_off()`。
-3. 内核向 ACPI `PM1a_CNT` / `PM1b_CNT` 控制寄存器写入 `SLP_TYPx`（睡眠类型）和 `SLP_EN`（睡眠使能）标志位。
-4. 主板电源管理芯片切断主电源（+12V、+5V、+3.3V），硬件进入 **ACPI S5 (Soft Off)** 状态，仅留 +5VSB 线路供电。
+  1. 停止所有 CPU 核心。
+  2. 调用 ACPI 子系统接口 `acpi_power_off()`。
+  3. 内核向 ACPI `PM1a_CNT` / `PM1b_CNT` 控制寄存器写入 `SLP_TYPx`（睡眠类型）和 `SLP_EN`（睡眠使能）标志位。
+  4. 主板电源管理芯片切断主电源（+12V、+5V、+3.3V），硬件进入 **ACPI S5 (Soft Off)** 状态，仅留 +5VSB 线路供电。
 
 
 
