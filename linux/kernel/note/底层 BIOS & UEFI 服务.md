@@ -9,7 +9,7 @@
 
 ---
 
-## 后台服务与接口列表
+## 后台服务与接口 - 服务列表
 
 保留和常驻的 BIOS/UEFI 后台服务与接口主要包括以下几类：
 
@@ -90,7 +90,7 @@ SMM 运行在高于操作系统和 Hypervisor 的特权级（Ring -2），对 Li
 
 ---
 
-## 后台服务与接口运行机制
+## 后台服务与接口 - 运行机制
 
 Linux 确实完全管理着系统中的进程和 CPU 时间片分配，**这些 BIOS/UEFI 后台服务绝大多数并不是在 OS 之上运行的“系统进程”**。
 
@@ -141,6 +141,56 @@ Linux 确实完全管理着系统中的进程和 CPU 时间片分配，**这些 
 | **UEFI Runtime Services** | Ring 0 (内核态) | **Linux 内核**（作为函数被主动调用） | 完全知情，主动控制 |
 | **ACPI 表与字节码** | Ring 0 (内核态) | **Linux 内核**（内核线程解释执行） | 完全知情，主动控制 |
 | **SMM (系统管理模式)** | **Ring -2 (硬件级)** | **CPU 硬件**（通过 SMI 硬中断强行抢占） | **完全无感**（被硬件暂停） |
+
+
+---
+
+## 后台服务与接口 - 物理存在方式
+
+### 固件预设代码与数据 - 位于动态RAM地址范围
+
+在现代计算机架构中， BIOS/UEFI 通过 **固件预设代码和数据**（如 UEFI Runtime Services、ACPI、SMM）的方式存在于 **内存** 中，且内存地址范围**绝大多数是动态的**，而不是固定的。
+
+在早期的传统 Legacy BIOS 时代，部分地址是固定的（例如著名的 `0x000F0000` 到 `0x000FFFFF` 的 64KB ROM 映射区）。
+
+但在现代 UEFI 系统中，固件代码变得非常庞大，UEFI 固件会在引导的 DXE（驱动执行环境）阶段扫描系统的物理内存（RAM），并根据当前的硬件配置、固件模块数量动态分配和映射这些空间。
+
+在探讨 **Linux Boot** 流程时，Linux 内核是如何知晓并管理这些动态地址的呢？具体机制和地址区域划分如下：
+
+### Linux 如何知道这些地址范围？
+
+Linux 完全依赖于 UEFI 在引导阶段传递给它的“内存映射表”（UEFI Memory Map）。
+
+在引导阶段（通过 GRUB 等 Bootloader 或 Linux 内核自带的 EFI Stub），在调用 `ExitBootServices()` 彻底接管系统之前，程序会调用 UEFI 的 API 函数 `GetMemoryMap()`。
+这个函数会返回一个详尽的清单，把系统所有的物理 RAM 划分成一个个区块，并标注每个区块的**类型（Type）**和**物理起始地址**。Linux 内核解析这个清单后，就会知道哪些内存可以给操作系统的应用使用，哪些必须保留给固件。
+
+
+### 具体服务在 RAM 中的存储类型与寻址方式
+
+根据 UEFI Memory Map 的分类，不同的固件服务会被放置在不同类型的内存区域中：
+
+#### 1. UEFI Runtime Services (运行时服务)
+
+* **内存类型**：UEFI 会将这些代码和数据标记为 `EfiRuntimeServicesCode`（运行时代码段）和 `EfiRuntimeServicesData`（运行时数据段）。
+* **Linux 如何处理**：内核解析内存映射表时看到这两个类型，就会将这些物理页标记为“保留”。在 Linux 内核初始化时，会调用 UEFI 的 `SetVirtualAddressMap()` 函数，将这些动态的物理地址重新映射到内核的虚拟地址空间中，以便内核后续在运行时调用它们（如读写 EFI 变量）。
+
+#### 2. ACPI 数据表 (电源与高级配置)
+
+* **内存类型**：ACPI 数据通常被标记为两种类型：
+* `EfiACPIReclaimMemory`：存放静态表（如 DSDT、SSDT），Linux 内核读取并解析完这些表格后，**可以将其回收**变成可用内存。
+* `EfiACPIMemoryNVS` (Non-Volatile Sleeping)：用于存放休眠（S3/S4）期间系统恢复所需的关键数据，Linux 必须**永久保留**，绝对不可覆盖。
+
+
+* **Linux 如何寻址**：除了通过内存映射表保护这些区域，Linux 还需要找到 ACPI 的“入口点”。UEFI 会通过其核心结构体 `EFI_SYSTEM_TABLE`（EFI 系统表）向操作系统传递一个配置表（Configuration Table），其中明确记录了 ACPI RSDP（Root System Description Pointer）的绝对物理首地址。内核通过这个指针就能顺藤摸瓜找到所有 ACPI 表。
+
+#### 3. SMM (系统管理模式 / SMRAM)
+
+* **存储位置**：SMM 的代码存放在 RAM 中一个特殊的隔离区域，通常被称为 **SMRAM**，现代架构中最常见的是分配在系统内存顶部的 **TSEG (Top of System Memory Segment)** 区。
+* **Linux 如何知道？—— 答案是：Linux 完全不知道。**
+* SMM 是对操作系统**完全隐形**的。
+* 在 UEFI 引导操作系统的早期阶段，主板的内存控制器（Memory Controller，如 CPU 内部的北桥）会被配置为将 SMRAM 物理锁定（Lock SMRAM）。
+* 当 UEFI 生成上述提到的 `GetMemoryMap()` 内存地图时，**它会直接把 SMRAM 所在的内存区域从物理总内存中“扣除”（直接抹除或标记为完全不可用/保留）。**
+* 这就是为什么如果你购买了 16GB 的物理内存，在 Linux 系统里用 `free -m` 往往只能看到 15.6GB 或 15.8GB。那几百兆的“失踪”内存，就是被 SMRAM 和其他硬件底层机制动态划走并对 OS 隐藏了。
 
 
 
