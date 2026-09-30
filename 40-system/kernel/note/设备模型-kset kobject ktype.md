@@ -209,21 +209,21 @@ enum kobj_ns_type {
 
 #### 模型和目录结构关系
 
-![Linux设备模型与目录映射](./设备模型-kset%20kobject%20ktype/81053ec69eb596556e8842c4517ca13f.png)
+![Linux设备模型与目录映射](./设备模型-kset%20kobject%20ktype.assets/81053ec69eb596556e8842c4517ca13f.png)
 
 #### kobject & kset & kobj_type
 
-![kobject & kset & kobj_type](./设备模型-kset%20kobject%20ktype/d7c38ae835161a9666ce15154aa7b66c.png)
+![kobject & kset & kobj_type](./设备模型-kset%20kobject%20ktype.assets/d7c38ae835161a9666ce15154aa7b66c.png)
 
 #### kobject & kobj_type
 
-![kobject & kobj_type](./设备模型-kset%20kobject%20ktype/fbd2a449080451b612cb2a3275822af6.png)
+![kobject & kobj_type](./设备模型-kset%20kobject%20ktype.assets/fbd2a449080451b612cb2a3275822af6.png)
 
 - 像release这些, 一般创建时都有设定默认值, 能在源码 `lib/kobject.c`中找到
 
 #### 文件系统表现
 
-![文件系统表现](./设备模型-kset%20kobject%20ktype/b42bd4366d86712947eda621da37f770.png)
+![文件系统表现](./设备模型-kset%20kobject%20ktype.assets/b42bd4366d86712947eda621da37f770.png)
 
 ## 组成原理源码解析
 
