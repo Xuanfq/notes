@@ -1,1 +1,0 @@
-obj-m := fpga_xcvr.o
