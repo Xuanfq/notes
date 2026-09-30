@@ -2,7 +2,9 @@
 
 
 
-# GPT分区表详
+# GPT分区表详解
+
+> 相关：[GPT & MBR.md](GPT%20&%20MBR.md)（MBR 与 GPT 两种分区方式对比）、[BIOS UEFI & BootLoader.md](BIOS%20UEFI%20&%20BootLoader.md)（含「GPT分区的结构」一节）。
 
 
 
