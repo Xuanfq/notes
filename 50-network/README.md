@@ -6,8 +6,8 @@
 | `optical/` | 光模块：类型、封装标准 |
 | `hardware/` | 硬件原理：交换机高精度时间同步 |
 | `software/` | SNMP 等软件组件 |
-| `nos/` | 网络操作系统：sonic、onl |
-| `onie/` | ONIE：启动/镜像逻辑、机型适配、Secure Boot |
+| `nos/` | 网络操作系统：sonic、onl（ONL 机型示例在 `onl/Machine Implementation/packages/`） |
+| `onie/` | ONIE：启动/镜像逻辑、机型适配（示例代码在 `Machine Implementation/machine/`）、Secure Boot |
 | `misc/` | 交换机与路由器对比 |
 
 ## 目录内笔记
