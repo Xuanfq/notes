@@ -6,7 +6,7 @@
 |---|---|
 | `basics/` | 底层基础：BIOS/UEFI、ACPI、BootLoader、GPT/MBR 分区表、I2C、GPIO、字节序 |
 | `bootloader/` | grub、uboot |
-| `kernel/` | 内核 API、驱动模型、启动流程、调试（driver / note / reference） |
+| `kernel/` | overview 总览 · build 编译打包 · startup 启动与关机 · driver 驱动与设备模型 · dev 开发与调试 · subsystems 子系统 |
 | `knowledge/` | 启动参数、runlevel、printk 等 |
 | `usage/` | Linux 日常命令与运维 |
 | `vm/` | KVM 等虚拟化 |
@@ -37,39 +37,45 @@
 - [GNU Tools](c/GNU%20Tools.md)
 - [编译链接](c/编译链接.md)
 
-### kernel
-- [API](kernel/API.md)
-- [BusyBox](kernel/BusyBox.md)
-- [Kernel Compile](kernel/Kernel%20Compile.md)
-- [Kernel Debug - QEMU & GDB](kernel/Kernel%20Debug%20-%20QEMU%20&%20GDB.md)
-- [Kernel Dev - Add Syscall](kernel/Kernel%20Dev%20-%20Add%20Syscall.md)
-- [Kernel Download](kernel/Kernel%20Download.md)
-- [Linux Dev - Add Module](kernel/Linux%20Dev%20-%20Add%20Module.md)
-- [Linux fs](kernel/Linux%20fs.md)
-- [Linux Initramfs Demo](kernel/Linux%20Initramfs%20Demo.md)
-- [Linux Startup Procedure](kernel/Linux%20Startup%20Procedure.md)
+### kernel/build
+- [BusyBox](kernel/build/BusyBox.md)
+- [Kernel Compile](kernel/build/Kernel%20Compile.md)
+- [Kernel Download](kernel/build/Kernel%20Download.md)
+- [Linux Initramfs Demo](kernel/build/Linux%20Initramfs%20Demo.md)
+
+### kernel/dev
+- [Kernel Debug - QEMU & GDB](kernel/dev/Kernel%20Debug%20-%20QEMU%20&%20GDB.md)
+- [Kernel Dev - Add Syscall](kernel/dev/Kernel%20Dev%20-%20Add%20Syscall.md)
+- [Linux Dev - Add Module](kernel/dev/Linux%20Dev%20-%20Add%20Module.md)
+- [基于ioctl的接口](kernel/dev/基于ioctl的接口.md)
+
+### kernel/driver
+- [驱动模型](kernel/driver/驱动模型.md)
+- [驱动认知](kernel/driver/驱动认知.md)
+- [设备链接与电源管理](kernel/driver/设备链接与电源管理.md)
+- [设备模型-kset kobject ktype](kernel/driver/设备模型-kset%20kobject%20ktype.md)
+- [设备模型之kset_kobj_ktype分析](kernel/driver/设备模型之kset_kobj_ktype分析.md)
+- [设备资源访问](kernel/driver/设备资源访问.md)
 
 ### kernel/driver/i2c
 - [I2C Code](kernel/driver/i2c/I2C%20Code.md)
 - [I2C MUX](kernel/driver/i2c/I2C%20MUX.md)
 - [I2C设备的添加方法](kernel/driver/i2c/I2C设备的添加方法.md)
 
-### kernel/note
-- [CPU空闲时间管理](kernel/note/CPU空闲时间管理.md)
-- [PCIe](kernel/note/PCIe.md)
-- [reboot & shutdown 原理 (x86)](kernel/note/reboot%20&%20shutdown%20原理%20(x86).md)
-- [底层 BIOS & UEFI 服务](kernel/note/底层%20BIOS%20&%20UEFI%20服务.md)
-- [基于ioctl的接口](kernel/note/基于ioctl的接口.md)
-- [内核目录结构](kernel/note/内核目录结构.md)
-- [驱动模型](kernel/note/驱动模型.md)
-- [设备链接与电源管理](kernel/note/设备链接与电源管理.md)
-- [设备模型-kset kobject ktype](kernel/note/设备模型-kset%20kobject%20ktype.md)
-- [设备资源访问](kernel/note/设备资源访问.md)
-- [虚拟文件系统VFS](kernel/note/虚拟文件系统VFS.md)
+### kernel/overview
+- [API](kernel/overview/API.md)
+- [内核目录结构](kernel/overview/内核目录结构.md)
 
-### kernel/reference
-- [驱动认知](kernel/reference/驱动认知.md)
-- [设备模型之kset_kobj_ktype分析](kernel/reference/设备模型之kset_kobj_ktype分析.md)
+### kernel/startup
+- [Linux Startup Procedure](kernel/startup/Linux%20Startup%20Procedure.md)
+- [reboot & shutdown 原理 (x86)](kernel/startup/reboot%20&%20shutdown%20原理%20(x86).md)
+- [底层 BIOS & UEFI 服务](kernel/startup/底层%20BIOS%20&%20UEFI%20服务.md)
+
+### kernel/subsystems
+- [CPU空闲时间管理](kernel/subsystems/CPU空闲时间管理.md)
+- [Linux fs](kernel/subsystems/Linux%20fs.md)
+- [PCIe](kernel/subsystems/PCIe.md)
+- [虚拟文件系统VFS](kernel/subsystems/虚拟文件系统VFS.md)
 
 ### knowledge
 - [Linux File cmdline](knowledge/Linux%20File%20cmdline.md)

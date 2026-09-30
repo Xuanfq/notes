@@ -1,5 +1,7 @@
 # 设备模型之kset/kobj/ktype分析
 
+> 相关：[设备模型-kset kobject ktype.md](设备模型-kset%20kobject%20ktype.md)（同一主题的另一份整理，两篇共用同一批插图）。
+
 
 
 # 背 景
