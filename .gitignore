@@ -1,2 +1,11 @@
 tmp/
 temp/
+
+# .scripts/download_images.sh 产生的备份中间产物，不要提交
+*.md.orig
+*.md.orig.*
+
+# 编辑器 / 系统
+Thumbs.db
+desktop.ini
+.DS_Store
