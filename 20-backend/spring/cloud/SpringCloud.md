@@ -786,7 +786,7 @@ ribbon:
 
 国内公司一般都推崇阿里巴巴的技术，比如注册中心，SpringCloudAlibaba也推出了一个名为Nacos的注册中心。
 
-[Nacos](../../middleware/nacos/笔记/Nacos.md)
+[Nacos](../../middleware/nacos/notes/Nacos.md)
 
 ## 5.1.认识和安装Nacos
 
@@ -796,7 +796,7 @@ ribbon:
 
 
 
-安装方式可以参考课前资料[Nacos安装指南](../../middleware/nacos/安装/Nacos安装指南.md)
+安装方式可以参考课前资料[Nacos安装指南](../../middleware/nacos/install/Nacos安装指南.md)
 
 
 
@@ -1420,7 +1420,7 @@ public class UserController {
 
 Nacos生产环境下一定要部署为集群状态，部署方式参考课前资料中的文档：
 
-[Nacos集群搭建](../../middleware/nacos/集群/Nacos集群搭建.md)
+[Nacos集群搭建](../../middleware/nacos/cluster/Nacos集群搭建.md)
 
 
 

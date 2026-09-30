@@ -20,7 +20,7 @@
 
 ## 约定
 
-1. **一篇笔记一个主题目录**：`<topic>/<note>.md`，图片放在同级 `<note>.assets/` 里，由 [.scripts/download_images.sh](.scripts/download_images.sh) 下载与维护。
+1. **一篇笔记一个主题目录**：`<topic>/<note>.md`，图片放在主题的 `assets/`，或笔记自己的 `<note>.assets/`（两种都在用，新建笔记用后者），由 [.scripts/download_images.sh](.scripts/download_images.sh) 下载与维护。
 2. **目录名用小写英文 + 短横线**；笔记文件名保留中文标题（可读性优先）。
 3. **一个主题有 3 篇以上笔记、或需要独立附件时**，才在它下面再分子目录。
 4. **图片就近放，大文件出仓**：超过约 2MB 的二进制、第三方源码、成套 PDF 资料都放在仓库外的 `D:\Project\notes-resources`（对照表见该目录的 README），仓库里只保留 Markdown 和图片。

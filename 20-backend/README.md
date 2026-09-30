@@ -34,6 +34,9 @@ Java 语言、Spring 生态、中间件、数据存储与工程实践。
 - [MySQL2](data/mysql/MySQL2.md)
 - [MySQL-Optimization](data/mysql/MySQL-Optimization.md)
 
+### data/redis
+- [redis](data/redis/README.md)
+
 ### data/redis/BasicKnowledge
 - [Redis](data/redis/BasicKnowledge/Redis.md)
 
@@ -45,9 +48,6 @@ Java 语言、Spring 生态、中间件、数据存储与工程实践。
 
 ### data/redis/Installation and Cluster
 - [Redis集群](data/redis/Installation%20and%20Cluster/Redis集群.md)
-
-### data/redis/Redis
-- [Redis](data/redis/Redis/Redis.md)
 
 ### java/collections
 - [集合框架](java/collections/集合框架.md)
@@ -100,8 +100,8 @@ Java 语言、Spring 生态、中间件、数据存储与工程实践。
 ### libs/swagger
 - [SpringBoot整合Swagger](libs/swagger/SpringBoot整合Swagger.md)
 
-### middleware/canal/安装部署
-- [安装Canal](middleware/canal/安装部署/安装Canal.md)
+### middleware/canal
+- [安装Canal](middleware/canal/安装Canal.md)
 
 ### middleware/dubbo
 - [Apache Dubbo](middleware/dubbo/Apache%20Dubbo.md)
@@ -115,8 +115,8 @@ Java 语言、Spring 生态、中间件、数据存储与工程实践。
 ### middleware/nacos/集群
 - [Nacos集群搭建](middleware/nacos/集群/Nacos集群搭建.md)
 
-### middleware/openresty/安装部署
-- [安装OpenResty](middleware/openresty/安装部署/安装OpenResty.md)
+### middleware/openresty
+- [安装OpenResty](middleware/openresty/安装OpenResty.md)
 
 ### middleware/quartz
 - [Quartz](middleware/quartz/Quartz.md)
@@ -154,8 +154,8 @@ Java 语言、Spring 生态、中间件、数据存储与工程实践。
 ### practice/interface-optimization
 - [Interface Optimization](practice/interface-optimization/Interface%20Optimization.md)
 
-### practice/multi-level-cache/基础知识
-- [多级缓存](practice/multi-level-cache/基础知识/多级缓存.md)
+### practice/multi-level-cache
+- [多级缓存](practice/multi-level-cache/多级缓存.md)
 
 ### practice/multi-level-cache/其他资料
 - [安装Canal](practice/multi-level-cache/其他资料/安装Canal.md)
@@ -165,8 +165,8 @@ Java 语言、Spring 生态、中间件、数据存储与工程实践。
 ### practice/technical-proposal
 - [技术方案](practice/technical-proposal/技术方案.md)
 
-### spring/boot/基础知识
-- [SpringBoot](spring/boot/基础知识/SpringBoot.md)
+### spring/boot
+- [SpringBoot](spring/boot/SpringBoot.md)
 
 ### spring/cloud
 - [SpringCloud](spring/cloud/SpringCloud.md)

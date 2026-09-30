@@ -19,7 +19,7 @@
 
 今天来聊一下Linux设备模型的基石：`kset/kobject/ktype`。
 
-![图片](./设备模型之kset_kobj_ktype分析/b42bd4366d86712947eda621da37f770.png)
+![图片](./设备模型之kset_kobj_ktype分析.assets/b42bd4366d86712947eda621da37f770.png)
 
 
 
@@ -35,7 +35,7 @@
 
 # 2. 数据结构
 
-![图片](./设备模型之kset_kobj_ktype分析/d7c38ae835161a9666ce15154aa7b66c.png)
+![图片](./设备模型之kset_kobj_ktype分析.assets/d7c38ae835161a9666ce15154aa7b66c.png)
 
 
 
@@ -120,7 +120,7 @@ struct attribute {
 
 可以看一下`kobject`创建的时候，与`ktype`的关系，这样理解起来更顺：
 
-![图片](./设备模型之kset_kobj_ktype分析/fbd2a449080451b612cb2a3275822af6.png)
+![图片](./设备模型之kset_kobj_ktype分析.assets/fbd2a449080451b612cb2a3275822af6.png)
 
 
 
@@ -133,7 +133,7 @@ struct attribute {
 
 为了更形象的说明这几个结构体的关系，再来一张图：
 
-![图片](./设备模型之kset_kobj_ktype分析/81053ec69eb596556e8842c4517ca13f.png)
+![图片](./设备模型之kset_kobj_ktype分析.assets/81053ec69eb596556e8842c4517ca13f.png)
 
 
 
@@ -141,7 +141,7 @@ struct attribute {
 
 如果只看`kset/kobject`的数据结构组织，可能还是会迷惑，它怎么跟Linux的设备模型相关？这时就不得不提到Linux内核中一个很精妙的存在`container_of`，它可以通过成员变量的地址来获取所在结构的地址信息。前文提到过`kobject/kset`结构本身不会单独使用，通常都是会嵌套在其他结构中，既然`kobjcet/kset`能组织成拓扑结构，那么包含它们的结构同样可以构建这个关系，因为可以通过`container_of`就可以找到结构体的首地址。
 
-![图片](./设备模型之kset_kobj_ktype分析/ed074c6ad18f946ee5a350b06d6549dd.png)
+![图片](./设备模型之kset_kobj_ktype分析.assets/ed074c6ad18f946ee5a350b06d6549dd.png)
 
 
 
@@ -154,7 +154,7 @@ struct attribute {
 
 `kobject/kset`的相关代码比较简单，毕竟它只是作为一个结构体嵌入其他high-level的结构中，充当纽带的作用。不过，我还是简单的上一张图吧：
 
-![图片](./设备模型之kset_kobj_ktype分析/de15dd8602f274ac0dec91fc0d22b6cc.png)
+![图片](./设备模型之kset_kobj_ktype分析.assets/de15dd8602f274ac0dec91fc0d22b6cc.png)
 
 
 
@@ -166,7 +166,7 @@ struct attribute {
 
 先上一个原理图：
 
-![图片](./设备模型之kset_kobj_ktype分析/0a21f1797ffaf278ce6a7386cbc73337.png)
+![图片](./设备模型之kset_kobj_ktype分析.assets/0a21f1797ffaf278ce6a7386cbc73337.png)
 
 
 
@@ -355,7 +355,7 @@ endif
 
 ## 4.3 测试结果
 
-![图片](./设备模型之kset_kobj_ktype分析/a65d5b400342dcc826aa45750e32230e.png)
+![图片](./设备模型之kset_kobj_ktype分析.assets/a65d5b400342dcc826aa45750e32230e.png)
 
 
 

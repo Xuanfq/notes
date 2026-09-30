@@ -21,7 +21,7 @@ download_image_for_single_markdown() {
     DOWNLOAD_DIR_NAME="$(basename $DOWNLOAD_DIR)"
     DOWNLOAD_DIR_NAME_NOSPACE=${DOWNLOAD_DIR_NAME// /%20}
     DOWNLOAD_SOURCE_NOTES="$DOWNLOAD_DIR/.sourcenotes"
-    BACKUP_MARKDOWN_FILE="$DOWNLOAD_DIR/$DOWNLOAD_DIR_NAME.md.orig"
+    BACKUP_MARKDOWN_FILE="$DOWNLOAD_DIR/$(basename "$MARKDOWN_FILE").orig"
 
     count_image=0
     count_image_exist=0
