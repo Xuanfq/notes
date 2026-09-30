@@ -4,7 +4,7 @@
 
 | 子目录 | 内容 |
 |---|---|
-| `firmware/` | BIOS/UEFI、ACPI、GPT/MBR、BootLoader、I2C、GPIO、字节序 |
+| `basics/` | 底层基础：BIOS/UEFI、ACPI、BootLoader、GPT/MBR 分区表、I2C、GPIO、字节序 |
 | `bootloader/` | grub、uboot |
 | `kernel/` | 内核 API、驱动模型、启动流程、调试（driver / note / reference） |
 | `knowledge/` | 启动参数、runlevel、printk 等 |
@@ -13,6 +13,16 @@
 | `c/` | C 语言与工具链：define、GDB、GNU Tools、编译链接 |
 
 ## 目录内笔记
+
+### basics
+- [ACPI S0-S5&G0-G3](basics/ACPI%20S0-S5&G0-G3.md)
+- [BIOS UEFI & BootLoader](basics/BIOS%20UEFI%20&%20BootLoader.md)
+- [BootLoader](basics/BootLoader.md)
+- [GPIO工作模式](basics/GPIO工作模式.md)
+- [GPT & MBR](basics/GPT%20&%20MBR.md)
+- [GPT分区表](basics/GPT分区表.md)
+- [I2C](basics/I2C.md)
+- [字节序大端小端](basics/字节序大端小端.md)
 
 ### bootloader/grub
 - [GRUB Demo](bootloader/grub/GRUB%20Demo.md)
@@ -26,16 +36,6 @@
 - [GDB](c/GDB.md)
 - [GNU Tools](c/GNU%20Tools.md)
 - [编译链接](c/编译链接.md)
-
-### firmware
-- [ACPI S0-S5&G0-G3](firmware/ACPI%20S0-S5&G0-G3.md)
-- [BIOS UEFI & BootLoader](firmware/BIOS%20UEFI%20&%20BootLoader.md)
-- [BootLoader](firmware/BootLoader.md)
-- [GPIO工作模式](firmware/GPIO工作模式.md)
-- [GPT & MBR](firmware/GPT%20&%20MBR.md)
-- [GPT分区表](firmware/GPT分区表.md)
-- [I2C](firmware/I2C.md)
-- [字节序大端小端](firmware/字节序大端小端.md)
 
 ### kernel
 - [API](kernel/API.md)

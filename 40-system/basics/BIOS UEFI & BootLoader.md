@@ -1,5 +1,7 @@
 # BIOS UEFI & BootLoader
 
+> 相关：[BootLoader.md](BootLoader.md)（引导程序本身）、[GPT & MBR.md](GPT%20&%20MBR.md)、[GPT分区表.md](GPT分区表.md)（本文「GPT分区的结构」一节与这两篇内容重叠）、[../bootloader/](../bootloader/)（GRUB、U-Boot 实操）。
+
 
 
 ## 什么是BIOS

@@ -1,5 +1,7 @@
 # GPT & MBR (分区表类型/磁盘分区方式)
 
+> 相关：[GPT分区表.md](GPT分区表.md)（GPT 结构与 parted 详解）、[BIOS UEFI & BootLoader.md](BIOS%20UEFI%20&%20BootLoader.md)（含「GPT分区的结构」一节）。
+
 > MBR: Master Boot Record, 主引导记录
 >
 > GPT: GUID Partition Table, 全局唯一标识分区表

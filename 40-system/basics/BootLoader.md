@@ -1,5 +1,7 @@
 # BootLoader
 
+> 相关：[BIOS UEFI & BootLoader.md](BIOS%20UEFI%20&%20BootLoader.md)（固件与自检视角）、[../bootloader/](../bootloader/)（GRUB、U-Boot 实操）。
+
 
 
 ## BootLoader作用
