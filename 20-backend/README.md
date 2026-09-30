@@ -145,8 +145,8 @@ Java 语言、Spring 生态、中间件、数据存储与工程实践。
 ### ops/docker/basic
 - [Docker](ops/docker/basic/Docker.md)
 
-### ops/docker/Install
-- [Docker安装](ops/docker/Install/Docker安装.md)
+### ops/docker/install
+- [Docker安装](ops/docker/install/Docker安装.md)
 
 ### ops/tomcat
 - [Tomcat](ops/tomcat/Tomcat.md)

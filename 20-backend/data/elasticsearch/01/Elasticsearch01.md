@@ -294,7 +294,7 @@ elasticsearch是面向**文档（Document）**存储的，可以是数据库中�
 
 参考资料：
 
-[安装Elasticsearch](../安装部署/安装Elasticsearch.md) 
+[安装Elasticsearch](../install/安装Elasticsearch.md) 
 
 
 
@@ -304,7 +304,7 @@ elasticsearch是面向**文档（Document）**存储的，可以是数据库中�
 
 参考资料：
 
-[安装Elasticsearch](../安装部署/安装Elasticsearch.md) 
+[安装Elasticsearch](../install/安装Elasticsearch.md) 
 
 
 

@@ -52,7 +52,7 @@ Nacos 的关键特性包括:
 
 
 
-安装方式可以参考资料[Nacos安装指南](../安装/Nacos安装指南.md)
+安装方式可以参考资料[Nacos安装指南](../install/Nacos安装指南.md)
 
 
 下面以小项目cloud-demo为例：
@@ -688,7 +688,7 @@ public class UserController {
 
 Nacos生产环境下一定要部署为集群状态，部署方式参考课前资料中的文档：
 
-[Nacos集群搭建](../集群/Nacos集群搭建.md)
+[Nacos集群搭建](../cluster/Nacos集群搭建.md)
 
 
 
