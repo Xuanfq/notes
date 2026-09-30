@@ -7,8 +7,6 @@
 
 ## 目录内笔记
 
-### （本层）
+### 90-refs
 - [LINK](LINK.md)
 - [NOUN](NOUN.md)
-- [noun-network](noun-network.md)
-

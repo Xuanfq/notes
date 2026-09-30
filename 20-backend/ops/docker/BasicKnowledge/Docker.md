@@ -258,7 +258,7 @@ DockerHub：
 
 企业部署一般都是采用Linux操作系统，而其中又数CentOS发行版占比最多，因此我们在CentOS下安装Docker。参考文档：
 
-[Docker安装](../安装相关/Docker安装.md)
+[Docker安装](../Install/Docker安装.md)
 
 
 
@@ -963,7 +963,7 @@ DockerCompose的详细语法参考官网：https://docs.docker.com/compose/compo
 
 ## 4.2.安装DockerCompose
 
-参考文档[Docker安装](../安装相关/Docker安装.md)
+参考文档[Docker安装](../Install/Docker安装.md)
 
 
 
@@ -1147,7 +1147,7 @@ docker-compose up -d
 
 ## 5.1.搭建私有镜像仓库
 
-参考文档[Docker安装](../安装相关/Docker安装.md)
+参考文档[Docker安装](../Install/Docker安装.md)
 
 
 

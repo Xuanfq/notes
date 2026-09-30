@@ -37,9 +37,8 @@
 - [Network Card - I210 Gigabit Network Connection](diagnosis/Network%20Card%20-%20I210%20Gigabit%20Network%20Connection.md)
 - [PCIe](diagnosis/PCIe.md)
 - [PHY (Ethernet)](diagnosis/PHY%20(Ethernet).md)
+- [diagnosis](diagnosis/README.md)
 - [RTC](diagnosis/RTC.md)
 - [Storage](diagnosis/Storage.md)
-- [Summary](diagnosis/Summary.md)
 - [TPM](diagnosis/TPM.md)
 - [USB](diagnosis/USB.md)
-
